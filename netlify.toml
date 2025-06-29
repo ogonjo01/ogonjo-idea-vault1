@@ -1,0 +1,13 @@
+[build]
+  # (if you have a build command, otherwise leave blank)
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"    # or wherever your Vite build lands
+
+[dev]
+  # point Netlify to your functions folder
+  functions = "netlify/functions"
+  # start your front-end dev server
+  command = "npm run dev"
+  # the port your React app runs on
+  port = 8081
