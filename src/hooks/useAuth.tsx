@@ -9,7 +9,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ user: User | null; error: Error | null }>;
-  signUp: (email: string, password: string) => Promise<{ user: User | null; error: Error | null }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ user: User | null; error: Error | null }>;
   signOut: () => Promise<Error | null>;
 }
 
@@ -50,12 +50,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { user: data.user, error: error };
   };
 
-  const signUp = async (email: string, password: string) => {
+  // CORRECTED signUp FUNCTION:
+  const signUp = async (email: string, password: string, name: string) => {
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      // Pass the name via options.data for user_metadata
+      options: {
+        data: {
+          full_name: name, // Supabase stores this in user.user_metadata.full_name
+        },
+      },
+    });
     setUser(data.user); // User might be null until email confirmed
     setSession(data.session);
     setLoading(false);
+
     // For signup, if successful, you might want to trigger profile creation immediately
     if (data.user) {
         // This is a good place to create the initial user profile with default role 'user'
@@ -64,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .insert({
                 id: data.user.id, // Supabase user ID
                 email: data.user.email,
-                full_name: data.user.email?.split('@')[0] || 'New User', // Default name
+                full_name: name, // Use the provided 'name' for the profile
                 role: 'user' // Default role
             });
         if (profileError) {

@@ -1,3 +1,4 @@
+// src/pages/Landing.tsx
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -73,12 +74,14 @@ const Landing = () => {
     }
   };
 
-  // This handleLogin function is defined but not used for direct login within this component.
-  // It might be a remnant or intended for use by the Header component.
-  // Given the current setup, the handleSubmit takes care of login.
-  // Keeping it as is for now as it's not hurting functionality.
-  const handleLogin = () => {
-    navigate('/dashboard'); // This seems like a direct redirect, not part of authentication flow.
+  // This is the function that the Header's login/signup buttons should call.
+  // It will switch the form to login mode and scroll to it.
+  const handleLoginClickFromHeader = () => {
+    setIsLogin(true); // Ensure the form is in login mode
+    const formElement = document.getElementById('auth-form');
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const handleGetStarted = () => {
@@ -99,8 +102,8 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Assuming Header doesn't need an onLogin prop for this setup, or it's handled differently */}
-      <Header />
+      {/* THIS IS THE ONLY LINE YOU NEED TO CHANGE/ADD IN YOUR LANDING.TSX */}
+      <Header onLogin={handleLoginClickFromHeader} />
 
       <main className="flex-1">
         {/* Hero Section */}
@@ -197,12 +200,11 @@ const Landing = () => {
 
                     {isLogin && (
                       <div className="text-right">
-                        {/* Attach the new handler to the Forgot password button */}
                         <Button
                           variant="link"
                           className="p-0 h-auto font-roboto text-sm"
                           onClick={handleForgotPasswordClick}
-                          type="button" // Important: Prevent this button from submitting the form
+                          type="button"
                         >
                           Forgot password?
                         </Button>
@@ -276,14 +278,14 @@ const Landing = () => {
                 Join thousands of entrepreneurs who are already using OGONJO to
                 discover and validate their next big business opportunity.
               </p>
-              <Button
-                size="lg"
-                className="bg-accent hover:bg-accent/90 text-accent-foreground font-roboto text-lg px-12 py-6"
-                onClick={handleGetStarted}
-              >
-                Start Exploring Ideas
-              </Button>
             </div>
+            <Button
+              size="lg"
+              className="bg-accent hover:bg-accent/90 text-accent-foreground font-roboto text-lg px-12 py-6"
+              onClick={handleGetStarted}
+            >
+              Start Exploring Ideas
+            </Button>
           </div>
         </section>
       </main>
