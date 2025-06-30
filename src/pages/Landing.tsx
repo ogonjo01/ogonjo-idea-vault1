@@ -40,37 +40,61 @@ const Landing = () => {
       return;
     }
 
-    try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (!error) {
-          navigate('/dashboard');
-          toast({
-            title: "Logged In Successfully!",
-            description: "Welcome back to OGONJO.",
-          });
-        }
+    // Removed the try...catch block here for authentication errors, as signIn/signUp return errors
+    // rather than throwing them. A general catch for unexpected runtime errors could still be useful.
+    if (isLogin) {
+      const { error } = await signIn(email, password);
+      if (!error) {
+        navigate('/dashboard');
+        toast({
+          title: "Logged In Successfully!",
+          description: "Welcome back to OGONJO.",
+        });
       } else {
-        const { error } = await signUp(email, password, name);
-        if (!error) {
-          // useAuth hook should already be showing a toast for sign up success/failure
-          // If you want a specific landing page toast:
-          toast({
-            title: "Account Created!",
-            description: "Please check your email to verify your account.",
-            variant: "default",
-          });
-          // After signup, you might want to switch to login mode for the user to sign in
-          setIsLogin(true);
+        // Handle specific login errors from Supabase
+        let errorMessage = "An unexpected error occurred during login.";
+        if (error.message.includes("Invalid login credentials")) {
+          errorMessage = "Invalid email or password. Please try again.";
+        } else if (error.message.includes("Email not confirmed")) {
+          errorMessage = "Please confirm your email address to log in.";
+        } else if (error.message.includes("User not found")) {
+          errorMessage = "No account found with this email. Please sign up.";
         }
+        // Add more specific checks if other Supabase error messages are known
+
+        toast({
+          title: "Login Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error('Login error:', error.message); // Keep console log for debugging
       }
-    } catch (error: any) { // Catch potential errors from signIn/signUp calls themselves
-      console.error('Authentication error:', error.message);
-      toast({
-        title: "Authentication Error",
-        description: error.message || "An unexpected error occurred during authentication.",
-        variant: "destructive",
-      });
+    } else { // Sign Up
+      const { error } = await signUp(email, password, name); // `name` parameter fixed in useAuth.tsx
+      if (!error) {
+        toast({
+          title: "Account Created!",
+          description: "Please check your email to verify your account. You can then log in.",
+          variant: "default",
+        });
+        setIsLogin(true); // Switch to login mode after successful signup
+      } else {
+        // Handle specific signup errors from Supabase
+        let errorMessage = "An unexpected error occurred during signup.";
+        if (error.message.includes("User already registered")) {
+          errorMessage = "An account with this email already exists. Please log in.";
+        } else if (error.message.includes("Password should be at least")) {
+            errorMessage = "Password is too short or does not meet requirements.";
+        }
+        // Add more specific checks for signup errors
+
+        toast({
+          title: "Signup Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error('Signup error:', error.message); // Keep console log for debugging
+      }
     }
   };
 
@@ -102,7 +126,7 @@ const Landing = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* THIS IS THE ONLY LINE YOU NEED TO CHANGE/ADD IN YOUR LANDING.TSX */}
+      {/* THIS IS THE ONLY LINE THAT WAS CHANGED FROM <Header /> */}
       <Header onLogin={handleLoginClickFromHeader} />
 
       <main className="flex-1">
