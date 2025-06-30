@@ -1,3 +1,4 @@
+// src/App.tsx
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -18,13 +19,12 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import FAQ from "./pages/FAQ";
 import LearnMore from "./pages/LearnMore";
-// IMPORTANT: Changed from Admin to AdminPanel to match your component file name
-import AdminPanel from "./pages/Admin"; // Corrected import name for your Admin component
-import AdminRoute from "./components/AdminRoute"; // This is your route guard component
+import AdminPanel from "./pages/Admin"; // Renamed Admin to AdminPanel
+import AdminRoute from "./components/AdminRoute";
+import PrivateRoute from "./components/PrivateRoute"; // <--- IMPORT THE NEW PRIVATE ROUTE
 import NotFound from "./pages/NotFound";
 import ForgotPassword from "./pages/ForgotPassword";
 import UpdatePassword from "./pages/UpdatePassword";
-import PrivateRoute from "./components/AdminRoute"; // Assuming you have a PrivateRoute for general user protection
 
 
 const queryClient = new QueryClient();
@@ -48,10 +48,9 @@ const App = () => (
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/faq" element={<FAQ />} />
             <Route path="/learn-more" element={<LearnMore />} />
-            
+
             {/* General User Protected Routes (accessible to any logged-in user) */}
-            {/* If Dashboard, Upload, Profile etc. need any logged-in user, wrap them with PrivateRoute */}
-            <Route element={<AdminPanel />}> 
+            <Route element={<PrivateRoute />}> {/* <--- USE THE NEW PRIVATE ROUTE HERE */}
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/presentation/:id" element={<Presentation />} />
               <Route path="/upload" element={<Upload />} />
@@ -59,7 +58,6 @@ const App = () => (
             </Route>
 
             {/* Admin Protected Route (accessible ONLY to admin users) */}
-            {/* Here, AdminRoute will directly render its children (AdminPanel) */}
             <Route path="/admin" element={<AdminRoute><AdminPanel /></AdminRoute>} />
 
             {/* Catch-all for 404 - make sure this is the LAST route */}
