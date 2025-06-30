@@ -48,6 +48,9 @@ const App = () => (
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/faq" element={<FAQ />} />
             <Route path="/learn-more" element={<LearnMore />} />
+            // in your App.tsx or Routes.tsx
+            <Route path="/presentations/:id" element={<Presentation />} />
+
 
             {/* General User Protected Routes (accessible to any logged-in user) */}
             <Route element={<PrivateRoute />}> {/* <--- USE THE NEW PRIVATE ROUTE HERE */}
