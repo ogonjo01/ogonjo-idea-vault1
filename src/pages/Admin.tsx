@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+//import Header from '@/components/Header';
+//import Footer from '@/components/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,17 +166,17 @@ export default function AdminPanel() {
 
   if (!user) return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      
       <main className="flex-1 flex items-center justify-center">
         <Card><CardContent>You must be logged in</CardContent></Card>
       </main>
-      <Footer />
+      
     </div>
   );
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      
       <main className="container mx-auto p-4 flex-1">
         {/* Admin header and controls */}
         <div className="flex justify-between items-center mb-4">
@@ -209,7 +209,7 @@ export default function AdminPanel() {
         )}
         {/* Lists of files and ideas... */}
       </main>
-      <Footer />
+      
     </div>
   );
 }

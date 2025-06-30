@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+//import Header from '@/components/Header';
+//import Footer from '@/components/Footer';
 // Removed IdeaCard import as it's no longer used
 import { Calendar, Settings, Loader2 } from 'lucide-react'; // Removed Heart, Download icons
 import { supabase } from '@/lib/supabase';
@@ -110,7 +110,7 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header showSearch={true} />
+      
 
       <main className="flex-1 container mx-auto px-4 py-8">
         {/* Profile Header */}
@@ -189,7 +189,7 @@ const Profile = () => {
         {/* Tabs component and its content are entirely removed */}
       </main>
 
-      <Footer />
+      
     </div>
   );
 };

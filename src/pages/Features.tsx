@@ -1,5 +1,5 @@
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+//import Header from '@/components/Header';
+//import Footer from '@/components/Footer';
 import { Card, CardContent } from '@/components/ui/card';
 import { Eye, Search, Tag, LayoutDashboard, Download, Star } from 'lucide-react';
 
@@ -39,7 +39,7 @@ const Features = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header />
+      
       
       <main className="flex-1 container mx-auto px-4 py-16">
         {/* Hero Section */}
@@ -73,7 +73,7 @@ const Features = () => {
         </div>
       </main>
 
-      <Footer />
+      
     </div>
   );
 };

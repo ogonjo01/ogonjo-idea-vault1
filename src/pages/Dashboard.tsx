@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useBusinessIdeas } from '@/hooks/useBusinessIdeas';
 import { Button } from '@/components/ui/button';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+//import Header from '@/components/Header';
+//import Footer from '@/components/Footer';
 import IdeaCard from '@/components/IdeaCard';
 import { categories } from '@/data/mockData';
 import { AlertTriangle } from 'lucide-react';
@@ -108,7 +108,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header showSearch />
+     
 
       <main className="flex-1 container mx-auto px-4 py-8">
         <h1 className="font-montserrat text-3xl lg:text-4xl text-foreground mb-2">
@@ -209,7 +209,7 @@ const Dashboard = () => {
 
       </main>
 
-      <Footer />
+     
     </div>
   );
 };

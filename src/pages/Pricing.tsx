@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+//import Header from '@/components/Header';
+//import Footer from '@/components/Footer';
 import { Check, Shield, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -88,7 +88,7 @@ const Pricing = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header />
+      
       
       <main className="flex-1 container mx-auto px-4 py-16">
         {/* Hero Section */}
@@ -342,7 +342,7 @@ const Pricing = () => {
         </DialogContent>
       </Dialog>
 
-      <Footer />
+      
     </div>
   );
 };

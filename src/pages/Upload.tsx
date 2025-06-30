@@ -7,8 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
+//import Header from '@/components/Header';
+//import Footer from '@/components/Footer';
 import { categories } from '@/data/mockData';
 import { Upload as UploadIcon, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -192,7 +192,7 @@ const Upload = () => {
   if (uploadComplete) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        <Header showSearch={true} />
+        
         
         <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
           <Card className="w-full max-w-md text-center">
@@ -223,14 +223,14 @@ const Upload = () => {
           </Card>
         </main>
 
-        <Footer />
+       
       </div>
     );
   }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header showSearch={true} />
+      
       
       <main className="flex-1 container mx-auto px-4 py-8">
         {/* Header */}
@@ -403,7 +403,7 @@ const Upload = () => {
         </div>
       </main>
 
-      <Footer />
+     
     </div>
   );
 };
