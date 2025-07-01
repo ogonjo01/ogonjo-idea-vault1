@@ -366,6 +366,18 @@ const BusinessCanvasGuide: React.FC = () => {
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 mt-12 border-t border-slate-200 pt-8">
             <header className="text-center mb-10">
                 <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 mb-2">Business Canvas Interactive Guide</h1>
+                <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
                 <p className="text-lg text-slate-600 max-w-3xl mx-auto">An interactive tool to help startups visualize, analyze, and iterate on their business models. Choose the right canvas and build your strategy.</p>
             </header>
 
@@ -404,7 +416,18 @@ const BusinessCanvasGuide: React.FC = () => {
                         </button>
                     </nav>
                 </div>
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
                 {activeTab === 'compare' && (
                     <div className="content-panel fade-in">
                         <div className="text-center mb-12">
@@ -439,6 +462,18 @@ const BusinessCanvasGuide: React.FC = () => {
                                             <li>Key Activities ➔ <strong className="text-teal-700">Solution</strong></li>
                                             <li>Key Resources ➔ <strong className="text-teal-700">Key Metrics</strong></li>
                                             <li>Customer Relationships ➔ <strong className="text-teal-700">Unfair Advantage</strong></li>
+                                      <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
                                         </ul>
                                     </div>
                                 </div>
@@ -535,6 +570,18 @@ const BusinessCanvasGuide: React.FC = () => {
                     <div className="content-panel fade-in">
                         <div className="text-center mb-8">
                             <h2 className="text-3xl font-bold text-slate-900 mb-2">My Business Idea: AI Consultant</h2>
+                            <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
                             <p className="text-slate-600 max-w-2xl mx-auto">Describe your business idea below, and Gemini will help you populate a Lean Canvas with initial insights tailored to your concept. This is a starting point for your strategic planning!</p>
                         </div>
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
@@ -585,6 +632,18 @@ const BusinessCanvasGuide: React.FC = () => {
                             </div>
                             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                 <h3 className="text-2xl font-bold text-red-600 mb-4 flex items-center">❌ Common Pitfalls</h3>
+                                <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
                                 <ul className="space-y-3">
                                     {appData.practices.pitfalls.map((item, index) => (
                                         <li key={index} className="text-slate-600 flex items-start">

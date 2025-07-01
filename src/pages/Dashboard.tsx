@@ -13,6 +13,8 @@ import { BusinessIdea } from '@/types/businessIdea';
 // Import the new BusinessCanvasGuide component
 import BusinessCanvasGuide from '@/components/BusinessCanvasGuide';
 
+
+
 const Dashboard = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const navigate = useNavigate();
@@ -105,25 +107,46 @@ const Dashboard = () => {
       </div>
     );
   }
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
   return (
     <div className="min-h-screen flex flex-col bg-background">
      
 
       <main className="flex-1 container mx-auto px-4 py-8">
-        <h1 className="font-montserrat text-3xl lg:text-4xl text-foreground mb-2">
+        <h1 className="font-montserrat text-4xl font-bold mb-4 text-foreground mb-2">
           Business Ideas Dashboard
+        
         </h1>
-        <p className="font-roboto text-lg text-muted-foreground mb-8">
-          Discover and explore curated business opportunities
-        </p>
+         <p className="text-xl mb-8 font-roboto">Join thousands of entrepreneurs who are already using OGONJO to discover and validate their next big business opportunity.</p>
 
         {searchQuery && (
           <p className="font-roboto text-muted-foreground mb-6">
             Showing results for "{searchQuery}" • {filteredIdeas.length} found
           </p>
         )}
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
         {/* Category Buttons */}
         <div className="flex flex-wrap gap-2 mb-8">
           {categories.map((cat) => (
@@ -183,6 +206,7 @@ const Dashboard = () => {
               >
                 View All Ideas
               </Button>
+              
             )}
           </div>
         )}
@@ -194,16 +218,19 @@ const Dashboard = () => {
           </p>
         )}
 
-        {/* Section: Ready to Transform Your Business Ideas? */}
-        <section className="py-16 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-center mt-16 rounded-lg shadow-xl">
-            <div className="max-w-4xl mx-auto px-4">
-                <h2 className="text-4xl font-bold mb-4 font-montserrat">Ready to Transform Your Business Ideas?</h2>
-                <p className="text-xl mb-8 font-roboto">Join thousands of entrepreneurs who are already using OGONJO to discover and validate their next big business opportunity.</p>
-                {/* You can add a button here for your platform if needed, e.g.: */}
-                {/* <Button className="inline-block bg-white text-emerald-700 hover:bg-gray-100 font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 font-roboto">Start Exploring Ideas</Button> */}
-            </div>
-        </section>
-
+        
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
         {/* Integrated Business Canvas Interactive Guide */}
         <BusinessCanvasGuide />
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface HeaderProps {
   onLogin?: () => void;
-  showSearch?: boolean;
+  showSearch?: boolean; // This prop will now be controlled by MainLayout based on path
 }
 
 const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
@@ -23,22 +23,49 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+
+  // DEBUG LOG 1: Verify the onLogin prop when the Header component renders
+  useEffect(() => {
+    console.log("Header Component Mounted/Updated. Current path:", location.pathname);
+    console.log("Header: Received onLogin prop type:", typeof onLogin, "Value:", onLogin);
+    if (typeof onLogin === 'function') {
+      console.log("Header: onLogin is a function. It should be callable.");
+    } else {
+      console.warn("Header: onLogin prop is NOT a function. This is problematic.");
+    }
+  }, [onLogin, location.pathname]);
+
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      // Navigate to dashboard with search query, which will trigger real search
-      navigate(`/dashboard?search=${encodeURIComponent(searchQuery.trim())}`);
+      // Navigate to dashboard (which is now '/') with search query
+      navigate(`/?search=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery(''); // Clear search input
     }
   };
 
   const handleLogout = async () => {
+    console.log("Header: Logout button clicked.");
     await signOut();
-    navigate('/');
+    navigate('/'); // Navigate to the new landing page (Dashboard) after logout
   };
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
   return (
+
+    
     <header className="bg-background border-b border-border sticky top-0 z-50">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
@@ -51,7 +78,8 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
           </Link>
 
           {/* Search Bar (Desktop) */}
-          {showSearch && isLoggedIn && (
+          {/* showSearch is now passed from MainLayout, so it will be true on '/' (Dashboard) */}
+          {showSearch && (
             <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-lg mx-8">
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -74,16 +102,15 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
                   <Link to="/features" className="font-roboto text-foreground hover:text-primary transition-colors">
                     Features
                   </Link>
-                  {/* Removed Pricing Link for logged out users */}
                   <Link to="/contact" className="font-roboto text-foreground hover:text-primary transition-colors">
                     Contact
                   </Link>
                 </nav>
                 <div className="flex items-center space-x-3">
-                  <Button variant="ghost" onClick={onLogin} className="font-roboto">
+                  <Button variant="ghost" onClick={() => { console.log("Header: Desktop Log In button clicked. Calling onLogin()."); onLogin?.(); }} className="font-roboto">
                     Log In
                   </Button>
-                  <Button onClick={onLogin} className="bg-accent hover:bg-accent/90 text-accent-foreground font-roboto">
+                  <Button onClick={() => { console.log("Header: Desktop Sign Up button clicked. Calling onLogin()."); onLogin?.(); }} className="bg-accent hover:bg-accent/90 text-accent-foreground font-roboto">
                     Sign Up
                   </Button>
                 </div>
@@ -91,10 +118,9 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
             ) : (
               <div className="flex items-center space-x-4">
                 <nav className="flex items-center space-x-4">
-                  <Link to="/dashboard" className="font-roboto text-foreground hover:text-primary transition-colors">
+                  <Link to="/" className="font-roboto text-foreground hover:text-primary transition-colors"> {/* Link to new landing page */}
                     Ideas
                   </Link>
-                  {/* Removed Pricing Link for logged in users */}
                 </nav>
                 <Link to="/upload">
                   <Button variant="ghost" size="sm" className="font-roboto">
@@ -147,7 +173,7 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
         {/* Mobile Menu */}
         {isMobileMenuOpen && (
           <div className="md:hidden py-4 border-t border-border">
-            {showSearch && isLoggedIn && (
+            {showSearch && ( // showSearch is true on '/' (Dashboard)
               <form onSubmit={handleSearch} className="mb-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -161,34 +187,33 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
                 </div>
               </form>
             )}
-            
+
             {!isLoggedIn ? (
               <div className="space-y-3">
-                <Link 
-                  to="/features" 
+                <Link
+                  to="/features"
                   className="block py-2 font-roboto text-foreground hover:text-primary"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Features
                 </Link>
-                {/* Removed Pricing Link for mobile logged out users */}
-                <Link 
-                  to="/contact" 
+                <Link
+                  to="/contact"
                   className="block py-2 font-roboto text-foreground hover:text-primary"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Contact
                 </Link>
                 <div className="pt-3 space-y-2">
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => { onLogin?.(); setIsMobileMenuOpen(false); }} 
+                  <Button
+                    variant="ghost"
+                    onClick={() => { console.log("Header: Mobile Log In button clicked. Calling onLogin()."); onLogin?.(); setIsMobileMenuOpen(false); }}
                     className="w-full justify-start font-roboto"
                   >
                     Log In
                   </Button>
-                  <Button 
-                    onClick={() => { onLogin?.(); setIsMobileMenuOpen(false); }} 
+                  <Button
+                    onClick={() => { console.log("Header: Mobile Sign Up button clicked. Calling onLogin()."); onLogin?.(); setIsMobileMenuOpen(false); }}
                     className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-roboto"
                   >
                     Sign Up
@@ -197,33 +222,31 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
               </div>
             ) : (
               <div className="space-y-3">
-                <Link 
-                  to="/dashboard" 
-                  // FIX: Corrected the unterminated string here
-                  className="block py-2 font-roboto text-foreground hover:text-primary" 
+                <Link
+                  to="/" // Link to new landing page
+                  className="block py-2 font-roboto text-foreground hover:text-primary"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Ideas
                 </Link>
-                {/* Removed Pricing Link for mobile logged in users */}
-                <Link 
-                  to="/upload" 
+                <Link
+                  to="/upload"
                   className="flex items-center py-2 font-roboto text-foreground hover:text-primary"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   <Upload className="h-4 w-4 mr-2" />
                   Upload
                 </Link>
-                <Link 
-                  to="/profile" 
+                <Link
+                  to="/profile"
                   className="block py-2 font-roboto text-foreground hover:text-primary"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Profile
                 </Link>
                 {isAdmin() && (
-                  <Link 
-                    to="/admin" 
+                  <Link
+                    to="/admin"
                     className="flex items-center py-2 font-roboto text-foreground hover:text-primary"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
@@ -231,9 +254,9 @@ const Header = ({ onLogin, showSearch = false }: HeaderProps) => {
                     Admin Panel
                   </Link>
                 )}
-                <Button 
-                  variant="ghost" 
-                  onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} 
+                <Button
+                  variant="ghost"
+                  onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
                   className="w-full justify-start font-roboto"
                 >
                   Logout

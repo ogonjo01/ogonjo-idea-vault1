@@ -45,7 +45,18 @@ const FAQ = () => {
             Find answers to common questions about our platform, subscriptions, and features.
           </p>
         </div>
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
         <Card className="max-w-4xl mx-auto">
           <CardContent className="p-8">
             <Accordion type="single" collapsible className="space-y-4">
@@ -67,12 +78,26 @@ const FAQ = () => {
         <div className="text-center mt-16">
           <p className="font-roboto text-muted-foreground mb-4">
             Still have questions?
+
           </p>
+          <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
           <a 
             href="/contact" 
             className="font-roboto text-primary hover:text-primary/80 transition-colors underline"
           >
             Contact our support team
+          
           </a>
         </div>
       </main>

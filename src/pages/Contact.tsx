@@ -45,7 +45,18 @@ const Contact = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       
-      
+      <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
       <main className="flex-1 container mx-auto px-4 py-16">
         {/* Hero Section */}
         <div className="text-center mb-16">
@@ -58,7 +69,18 @@ const Contact = () => {
             support team typically responds within 24 hours.
           </p>
         </div>
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto">
           {/* Contact Form */}
           <Card>
@@ -164,6 +186,18 @@ const Contact = () => {
                 <h3 className="font-montserrat font-semibold text-foreground mb-4">
                   Response Time
                 </h3>
+                <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
                 <p className="font-roboto text-muted-foreground">
                   We strive to respond to all inquiries within one business day. 
                   For urgent matters, please include "URGENT" in your subject line.

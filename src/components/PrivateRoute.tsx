@@ -1,31 +1,28 @@
 // src/components/PrivateRoute.tsx
 import { useEffect, ReactNode } from 'react';
-import { useNavigate, Outlet } from 'react-router-dom'; // Import Outlet for nested routes
+import { useNavigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/components/ui/use-toast'; // Import toast for user feedback
+import { useToast } from '@/components/ui/use-toast';
 
 interface PrivateRouteProps {
-  children?: ReactNode; // Optional, for direct component rendering if used as <PrivateRoute><MyComp/></PrivateRoute>
+  children?: ReactNode;
 }
 
 const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Only proceed with checks once authentication status is settled
     if (!authLoading) {
       if (!user) {
-        // User is not logged in, redirect to landing/login page
+        // User is not logged in, redirect to the new /auth page
         toast({ title: "Access Denied", description: "You must be logged in to access this page.", variant: "destructive" });
-        navigate('/');
+        navigate('/auth'); // Redirect to /auth instead of /
       }
-      // If user is logged in, do nothing here; the component will render its children/Outlet
     }
-  }, [user, authLoading, navigate, toast]); // Add toast to dependencies
+  }, [user, authLoading, navigate, toast]);
 
-  // Show a loading indicator while authentication status is being determined
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -37,13 +34,10 @@ const PrivateRoute = ({ children }: PrivateRouteProps) => {
     );
   }
 
-  // If user is authenticated and loading is complete, render children (for direct use) or Outlet (for nested routes)
   if (user) {
     return children ? <>{children}</> : <Outlet />;
   }
 
-  // If user is not authenticated and not loading, we've already initiated a redirect.
-  // Return null to prevent any flickering of unauthorized content.
   return null;
 };
 

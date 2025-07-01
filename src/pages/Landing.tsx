@@ -1,5 +1,5 @@
 // src/pages/Landing.tsx
-import { useState, useEffect, useRef } from 'react'; // Added useRef
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -7,11 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-// REMOVE Header and Footer imports from here, as they are now managed by MainLayout in App.tsx
-// import Header from '@/components/Header';
-// import Footer from '@/components/Footer';
-import { featuredBenefits } from '@/data/mockData';
-import { useToast } from '@/components/ui/use-toast';
+import { featuredBenefits } from '@/data/mockData'; // Assuming mockData exists
+import { useToast } from '@/components/ui/use-toast'; // Correct path for shadcn/ui toast hook
 
 const Landing = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -24,24 +21,15 @@ const Landing = () => {
   const [searchParams] = useSearchParams();
   const authFormRef = useRef<HTMLDivElement>(null); // Create a ref for the auth form
 
-  // Redirect to dashboard if already logged in
-  useEffect(() => {
-    if (user && !loading) {
-      console.log("Landing: User already logged in, redirecting to dashboard.");
-      navigate('/dashboard');
-    }
-  }, [user, loading, navigate]);
-
-  // NEW useEffect to handle 'auth' query parameter from Header clicks
+  // useEffect to handle 'auth' query parameter for scrolling to the form
+  // This will now trigger when navigating to /auth?auth=true
   useEffect(() => {
     if (searchParams.get('auth') === 'true') {
-      console.log("Landing: Auth query parameter detected.");
+      console.log("Landing: Auth query parameter detected on /auth path.");
       setIsLogin(true); // Ensure the form defaults to login mode
 
-      // Use the ref for scrolling
       if (authFormRef.current) {
         console.log("Landing: Found auth form element via ref. Attempting to scroll.");
-        // Calculate scroll position, accounting for a fixed header if present
         const headerHeight = 64; // Assuming your Header has a fixed height of 64px (h-16)
         const elementPosition = authFormRef.current.getBoundingClientRect().top + window.scrollY;
         const offsetPosition = elementPosition - headerHeight - 20; // 20px extra padding
@@ -55,10 +43,9 @@ const Landing = () => {
         console.error("Landing: Error: Auth form element ref is null. Cannot scroll.");
       }
       // Optional: Clear the query parameter after scrolling to prevent re-triggering on refresh
-      // This would prevent the scroll on a direct refresh of /?auth=true
-      // To implement: navigate(location.pathname, { replace: true });
+      // navigate(location.pathname, { replace: true }); // Requires 'location' from useLocation()
     }
-  }, [searchParams]); // Depend on searchParams to react to changes
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,7 +64,7 @@ const Landing = () => {
     if (isLogin) {
       const { error } = await signIn(email, password);
       if (!error) {
-        navigate('/dashboard');
+        navigate('/'); // Navigate to Dashboard (new landing page) after successful login
         toast({
           title: "Logged In Successfully!",
           description: "Welcome back to OGONJO.",
@@ -129,15 +116,17 @@ const Landing = () => {
   };
 
   const handleGetStarted = () => {
+    // If user is logged in, navigate to Dashboard (which is now '/')
     if (user) {
       console.log("Landing: Get Started clicked (user logged in), navigating to dashboard.");
-      navigate('/dashboard');
+      navigate('/'); // Navigate to the new landing page
     } else {
+      // If not logged in, scroll to the auth form on this page (/auth)
       console.log("Landing: Get Started clicked (user not logged in), attempting to scroll to auth form.");
       if (authFormRef.current) {
-        const headerHeight = 64; // Assuming your Header has a fixed height of 64px (h-16)
+        const headerHeight = 64;
         const elementPosition = authFormRef.current.getBoundingClientRect().top + window.scrollY;
-        const offsetPosition = elementPosition - headerHeight - 20; // 20px extra padding
+        const offsetPosition = elementPosition - headerHeight - 20;
 
         window.scrollTo({
           top: offsetPosition,
@@ -154,13 +143,22 @@ const Landing = () => {
     console.log("Landing: Forgot password clicked, navigating to /forgot-password.");
     navigate('/forgot-password');
   };
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
   return (
     // Removed outer div styling (min-h-screen, flex-col, bg-background) as MainLayout provides it
     // Main content of Landing page
     <div>
-      {/* Header component is now rendered by MainLayout in App.tsx, so remove it from here */}
-
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-16 lg:py-24">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -198,7 +196,7 @@ const Landing = () => {
 
           {/* Login/Signup Form - IMPORTANT: Attach the ref here */}
           <div className="lg:pl-8">
-            <Card id="auth-form" ref={authFormRef} className="w-full max-w-md mx-auto shadow-lg"> {/* <-- Attach ref here */}
+            <Card id="auth-form" ref={authFormRef} className="w-full max-w-md mx-auto shadow-lg">
               <CardHeader className="space-y-1">
                 <CardTitle className="font-montserrat text-2xl text-center">
                   {isLogin ? 'Welcome Back' : 'Join OGONJO'}
@@ -305,7 +303,18 @@ const Landing = () => {
               vetted by experts and updated daily.
             </p>
           </div>
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             {featuredBenefits.map((benefit, index) => (
               <div key={index} className="text-center space-y-4">
@@ -321,7 +330,18 @@ const Landing = () => {
           </div>
         </div>
       </section>
-
+<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
       {/* CTA Section */}
       <section className="py-16">
         <div className="container mx-auto px-4 text-center">
@@ -339,11 +359,22 @@ const Landing = () => {
             className="bg-accent hover:bg-accent/90 text-accent-foreground font-roboto text-lg px-12 py-6"
             onClick={handleGetStarted}
           >
+            <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
+  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
+  <ins className="adsbygoogle"
+       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
+       data-ad-client="ca-pub-7769353221684341"
+       data-ad-slot="7980803429"
+       data-ad-format="auto"
+       data-full-width-responsive="true"></ins>
+  <script>
+       (window.adsbygoogle = window.adsbygoogle || []).push({});
+  </script>
+</div>
             Start Exploring Ideas
           </Button>
         </div>
       </section>
-      {/* Footer component is now rendered by MainLayout in App.tsx, so remove it from here */}
     </div>
   );
 };
