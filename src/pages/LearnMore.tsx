@@ -17,18 +17,7 @@ const LearnMore = () => {
         <div className="text-center mb-16">
           <h1 className="font-montserrat font-bold text-4xl lg:text-5xl text-foreground mb-6">
             Turn Business Ideas into Action — One Slide at a Time
-            <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+      
           </h1>
           <p className="font-roboto text-xl text-muted-foreground max-w-4xl mx-auto leading-relaxed">
             Every great business starts with a single idea. Our platform helps you discover new business opportunities, 
@@ -143,18 +132,7 @@ const LearnMore = () => {
               <p className="font-roboto text-foreground text-center mt-6 font-medium">
                 Whether you're launching your first business or helping others build theirs — we're your daily edge.
               </p>
-              <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+          
             </CardContent>
           </Card>
         </section>
@@ -195,18 +173,7 @@ const LearnMore = () => {
                 <p className="font-roboto text-muted-foreground mb-4">
                   We believe that focus and quality matter. Keeping our platform behind a subscription helps us:
 
-                  <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+     
                 </p>
                 <div className="space-y-2">
                   {[
@@ -282,18 +249,7 @@ const LearnMore = () => {
             >
               Visit FAQ
             </Button>
-            <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+    
             {/* Removed Subscribe Now button */}
             {/*
             <Button 

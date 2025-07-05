@@ -10,19 +10,38 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-// REMOVED: Header and Footer imports as they are managed by MainLayout in App.tsx
 import { categories } from '@/data/mockData';
 import {
-  Upload as UploadIcon, // Correctly imported as UploadIcon
+  Upload as UploadIcon,
   CheckCircle,
-  FileText, // For title, description
-  Zap, // For category, tags
-  TrendingUp, // For difficulty
-  DollarSign, // For market size, investment needed
-  Calendar, // For timeline
-  Loader2 // For uploading spinner
+  FileText,
+  Zap,
+  TrendingUp,
+  DollarSign,
+  Calendar,
+  Loader2,
+  Youtube, // New icon for YouTube link
+  Book,    // New icon for Full Book link
+  Link    // New icon for Affiliate Links
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+
+// Define a mapping for category-based placeholder images (kept for consistency, though currently null in handleSubmit)
+const categoryThumbnails: { [key: string]: string } = {
+  'Technology': 'https://placehold.co/400x300/4CAF50/FFFFFF?text=Tech',
+  'Finance': 'https://placehold.co/400x300/2196F3/FFFFFF?text=Finance',
+  'Healthcare': 'https://placehold.co/400x300/FF5722/FFFFFF?text=Health',
+  'Education': 'https://placehold.co/400x300/9C27B0/FFFFFF?text=Edu',
+  'Retail': 'https://placehold.co/400x300/FFC107/333333?text=Retail',
+  'Food & Beverage': 'https://placehold.co/400x300/795548/FFFFFF?text=Food',
+  'Real Estate': 'https://placehold.co/400x300/607D8B/FFFFFF?text=RealEstate',
+  'Marketing': 'https://placehold.co/400x300/E91E63/FFFFFF?text=Marketing',
+  'Manufacturing': 'https://placehold.co/400x300/009688/FFFFFF?text=Manufact',
+  'Energy': 'https://placehold.co/400x300/FF9800/FFFFFF?text=Energy',
+  'AI': 'https://placehold.co/400x300/673AB7/FFFFFF?text=AI',
+  'Other': 'https://placehold.co/400x300/9E9E9E/FFFFFF?text=Other',
+};
+
 
 const Upload = () => {
   const navigate = useNavigate();
@@ -34,12 +53,16 @@ const Upload = () => {
     category: '',
     description: '',
     tags: '', // Comma-separated string
-    difficulty: '', // New field
-    market_size: '', // New field
-    investment_needed: '', // New field (corrected from investment_nc)
-    timeline: '', // New field
+    difficulty: '',
+    market_size: '',
+    investment_needed: '',
+    timeline: '',
+    // NEW FIELDS FOR LINKS
+    youtube_link: '',
+    full_book_link: '',
+    affiliate_links: '', // Will store comma-separated links
   });
-  const [file, setFile] = useState<File | null>(null); // For presentation PDF
+  const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadComplete, setUploadComplete] = useState(false);
@@ -51,19 +74,6 @@ const Upload = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      // Only allow PDF files
-      <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
       const validTypes = ['application/pdf'];
       if (!validTypes.includes(selectedFile.type)) {
         toast({
@@ -74,7 +84,6 @@ const Upload = () => {
         return;
       }
 
-      // Check file size (10MB limit)
       const maxSize = 10 * 1024 * 1024; // 10MB in bytes
       if (selectedFile.size > maxSize) {
         toast({
@@ -92,16 +101,13 @@ const Upload = () => {
   const uploadFile = async (file: File): Promise<string | null> => {
     try {
       const fileExt = file.name.split('.').pop();
-      // Add user ID to file path for better organization
       const fileName = `${user?.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      // FIX: Removed 'presentations/' prefix from filePath.
-      // The .from('presentations') already specifies the bucket.
       const filePath = fileName; 
 
       setUploadProgress(20);
 
       const { error: uploadError } = await supabase.storage
-        .from('presentations') // Correct bucket name
+        .from('presentations')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
@@ -109,8 +115,8 @@ const Upload = () => {
       setUploadProgress(60);
 
       const { data } = supabase.storage
-        .from('presentations') // Correct bucket name
-        .getPublicUrl(filePath); // This will now generate the correct URL
+        .from('presentations')
+        .getPublicUrl(filePath);
 
       setUploadProgress(80);
       return data.publicUrl;
@@ -123,7 +129,7 @@ const Upload = () => {
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Comprehensive validation for all fields, including new ones
+    // Comprehensive validation for all required fields
     if (!formData.title || !formData.category || !formData.description || !file ||
         !formData.difficulty || !formData.market_size || !formData.investment_needed || !formData.timeline) {
       toast({
@@ -150,14 +156,15 @@ const Upload = () => {
 
     try {
       setUploadProgress(10);
-
-      // Upload presentation file
+      
       presentationUrl = await uploadFile(file);
-
+      
       setUploadProgress(70);
 
-      // Prepare tags as an array (even if input is comma-separated string)
       const tagsArray = formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+
+      // Thumbnail URL will be null to trigger random color fallback in IdeaCard.tsx
+      const thumbnail_url = null; 
 
       // Save business idea to database
       const ideaData = {
@@ -168,25 +175,27 @@ const Upload = () => {
         market_size: formData.market_size,
         investment_needed: formData.investment_needed,
         timeline: formData.timeline,
-        tags: tagsArray, // Store as array
-        // Hardcoded thumbnail as per your provided snippet's original structure
-        thumbnail_url: null,
+        tags: tagsArray,
+        thumbnail_url: thumbnail_url,
         presentation_url: presentationUrl,
         author_id: user.id,
-        created_by: user.id, // Ensure this is user.id (UUID)
+        created_by: user.id,
         views: 0,
         likes: 0,
         comments: 0,
         is_featured: false,
+        // NEW FIELDS INCLUDED IN ideaData
+        youtube_link: formData.youtube_link || null, // Store null if empty
+        full_book_link: formData.full_book_link || null, // Store null if empty
+        affiliate_links: formData.affiliate_links || null, // Store null if empty
       };
 
-      // DEBUG: Log before insert
       console.log("Inserting idea data:", ideaData);
 
       const { data, error } = await supabase
         .from('business_ideas')
         .insert([ideaData])
-        .select(); // Use .select() to get the inserted row back
+        .select();
 
       if (error) {
         throw error;
@@ -202,17 +211,16 @@ const Upload = () => {
         variant: "default",
       });
 
-      // Navigate to the new idea's presentation page
       if (data && data.length > 0) {
         navigate(`/presentation/${data[0].id}`);
       } else {
-        navigate('/dashboard'); // Fallback if no data returned
+        navigate('/dashboard');
       }
 
     } catch (err: any) {
       console.error('Error uploading:', err);
       setIsUploading(false);
-      setUploadProgress(0); // Reset progress on error
+      setUploadProgress(0);
       toast({
         title: "Upload Failed",
         description: err.message || "There was an error uploading your presentation. Please try again.",
@@ -223,6 +231,7 @@ const Upload = () => {
     user, file, navigate, toast,
     formData.title, formData.category, formData.description, formData.tags,
     formData.difficulty, formData.market_size, formData.investment_needed, formData.timeline,
+    formData.youtube_link, formData.full_book_link, formData.affiliate_links, // Include new fields in dependencies
     uploadFile
   ]);
 
@@ -236,10 +245,13 @@ const Upload = () => {
       market_size: '',
       investment_needed: '',
       timeline: '',
+      youtube_link: '',
+      full_book_link: '',
+      affiliate_links: '',
     });
     setFile(null);
     setUploadComplete(false);
-    setIsUploading(false); // Ensure uploading state is reset
+    setIsUploading(false);
     setUploadProgress(0);
   };
 
@@ -248,11 +260,10 @@ const Upload = () => {
   if (uploadComplete) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        {/* Header and Footer are provided by MainLayout */}
         <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
           <Card className="w-full max-w-md text-center">
             <CardContent className="p-8">
-              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" /> {/* Use a specific green color */}
+              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
               <h2 className="font-montserrat font-bold text-2xl text-foreground mb-2">
                 Upload Successful!
               </h2>
@@ -283,7 +294,6 @@ const Upload = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Header and Footer are provided by MainLayout */}
       <main className="flex-1 container mx-auto px-4 py-8">
         <h1 className="font-montserrat font-bold text-3xl lg:text-4xl text-foreground mb-8 text-center">
           Upload New Business Idea
@@ -295,7 +305,6 @@ const Upload = () => {
           Note: Please upload PDF files for best viewing experience
         </p>
 
-        {/* Upload Form */}
         <div className="max-w-2xl mx-auto">
           <Card>
             <CardHeader>
@@ -314,10 +323,10 @@ const Upload = () => {
                     <input
                       type="file"
                       id="file-upload"
-                      accept=".pdf" // Only accept PDF
+                      accept=".pdf"
                       onChange={handleFileChange}
                       className="hidden"
-                      required // Make sure presentation file is required
+                      required
                     />
                     <label htmlFor="file-upload" className="cursor-pointer block">
                       <UploadIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -479,6 +488,59 @@ const Upload = () => {
                   />
                 </div>
 
+                {/* NEW: YouTube Video Link */}
+                <div className="space-y-2">
+                  <Label htmlFor="youtube-link" className="font-roboto font-medium flex items-center">
+                    <Youtube className="mr-2 h-5 w-5 text-red-500" /> YouTube Video Link (Optional)
+                  </Label>
+                  <Input
+                    id="youtube-link"
+                    type="url" // Use type="url" for better validation
+                    placeholder="e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    value={formData.youtube_link}
+                    onChange={(e) => handleInputChange('youtube_link', e.target.value)}
+                    className="font-roboto"
+                  />
+                  <p className="font-roboto text-xs text-muted-foreground">
+                    Link to a relevant YouTube video for this idea.
+                  </p>
+                </div>
+
+                {/* NEW: Full Book/Idea Explanation Link */}
+                <div className="space-y-2">
+                  <Label htmlFor="full-book-link" className="font-roboto font-medium flex items-center">
+                    <Book className="mr-2 h-5 w-5 text-green-600" /> Full Idea/Book Link (Optional)
+                  </Label>
+                  <Input
+                    id="full-book-link"
+                    type="url"
+                    placeholder="e.g., https://example.com/full-business-plan.pdf"
+                    value={formData.full_book_link}
+                    onChange={(e) => handleInputChange('full_book_link', e.target.value)}
+                    className="font-roboto"
+                  />
+                  <p className="font-roboto text-xs text-muted-foreground">
+                    Link to a comprehensive guide or full book on this business idea.
+                  </p>
+                </div>
+
+                {/* NEW: Affiliate Book Recommendation Links */}
+                <div className="space-y-2">
+                  <Label htmlFor="affiliate-links" className="font-roboto font-medium flex items-center">
+                    <Link className="mr-2 h-5 w-5 text-blue-600" /> Recommended Books (Affiliate Links, Optional)
+                  </Label>
+                  <Textarea
+                    id="affiliate-links"
+                    placeholder="Enter comma-separated affiliate links to recommended books. E.g., link1, link2, link3"
+                    value={formData.affiliate_links}
+                    onChange={(e) => handleInputChange('affiliate_links', e.target.value)}
+                    className="font-roboto min-h-[80px]"
+                  />
+                  <p className="font-roboto text-xs text-muted-foreground">
+                    Provide comma-separated URLs to books that strengthen knowledge for this business.
+                  </p>
+                </div>
+
                 {/* Tags */}
                 <div className="space-y-2">
                   <Label htmlFor="tags" className="font-roboto font-medium flex items-center">
@@ -528,19 +590,6 @@ const Upload = () => {
                     </>
                   )}
                 </Button>
-
-                <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
               </form>
             </CardContent>
           </Card>

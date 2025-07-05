@@ -107,46 +107,40 @@ const Dashboard = () => {
       </div>
     );
   }
-<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
      
 
       <main className="flex-1 container mx-auto px-4 py-8">
-        <h1 className="font-montserrat text-4xl font-bold mb-4 text-foreground mb-2">
-          Business Ideas Dashboard
-        
-        </h1>
-         <p className="text-xl mb-8 font-roboto">Join thousands of entrepreneurs who are already using OGONJO to discover and validate their next big business opportunity.</p>
+        <div
+          className="relative rounded-lg overflow-hidden mb-8"
+          style={{
+            backgroundImage:
+              "url('https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=1200&q=80')",
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            minHeight: '260px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+          }}
+        >
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative z-10 flex flex-col items-center justify-center h-full py-12 px-4 text-center">
+            <h1 className="font-montserrat text-4xl font-bold mb-4 text-white drop-shadow-lg">
+              Ignite Your Vision, Shape the Future
+            </h1>
+            <p className="text-xl mb-6 font-roboto text-gray-200 max-w-2xl drop-shadow">
+              Every breakthrough starts with a single idea. OGONJO empowers you to turn inspiration into impact—because the world changes when you dare to build.
+            </p>
+          </div>
+        </div>
 
         {searchQuery && (
           <p className="font-roboto text-muted-foreground mb-6">
             Showing results for "{searchQuery}" • {filteredIdeas.length} found
           </p>
         )}
-<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+
         {/* Category Buttons */}
         <div className="flex flex-wrap gap-2 mb-8">
           {categories.map((cat) => (
@@ -217,20 +211,6 @@ const Dashboard = () => {
             Showing {filteredIdeas.length} of {ideas.length} ideas
           </p>
         )}
-
-        
-<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
         {/* Integrated Business Canvas Interactive Guide */}
         <BusinessCanvasGuide />
 

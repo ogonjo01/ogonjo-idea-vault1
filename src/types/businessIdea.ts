@@ -39,4 +39,9 @@ export interface BusinessIdea {
   price?: number; // New: Potential price or cost associated with the idea/solution
   currency?: string; // New: Currency for the price
   hasPurchased?: boolean; // New: Indicates if the current user has "purchased" or unlocked this idea
+
+  // Added properties for new links
+  youtube_link?: string | null; // URL for a related YouTube video
+  full_book_link?: string | null; // URL for a comprehensive guide or book
+  affiliate_links?: string | null; // Comma-separated string of affiliate book links
 }

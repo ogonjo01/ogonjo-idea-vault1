@@ -143,18 +143,7 @@ const Landing = () => {
     console.log("Landing: Forgot password clicked, navigating to /forgot-password.");
     navigate('/forgot-password');
   };
-<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+
   return (
     // Removed outer div styling (min-h-screen, flex-col, bg-background) as MainLayout provides it
     // Main content of Landing page
@@ -303,18 +292,7 @@ const Landing = () => {
               vetted by experts and updated daily.
             </p>
           </div>
-<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             {featuredBenefits.map((benefit, index) => (
               <div key={index} className="text-center space-y-4">
@@ -330,18 +308,7 @@ const Landing = () => {
           </div>
         </div>
       </section>
-<div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+
       {/* CTA Section */}
       <section className="py-16">
         <div className="container mx-auto px-4 text-center">
@@ -359,18 +326,6 @@ const Landing = () => {
             className="bg-accent hover:bg-accent/90 text-accent-foreground font-roboto text-lg px-12 py-6"
             onClick={handleGetStarted}
           >
-            <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
             Start Exploring Ideas
           </Button>
         </div>

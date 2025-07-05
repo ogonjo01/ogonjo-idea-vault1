@@ -85,18 +85,7 @@ const Recommendations: React.FC<RecommendationsProps> = ({
     return (
       <div className="text-center py-8 text-red-500 text-sm">
         <p>{error}</p>
-        <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+    
       </div>
     );
   }
@@ -105,18 +94,8 @@ const Recommendations: React.FC<RecommendationsProps> = ({
     return (
       <div className="text-center py-8 text-muted-foreground text-sm">
         <p>No similar ideas found at the moment.</p>
-        <div className="my-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-center text-gray-500 dark:text-gray-400">
-  <p className="font-roboto text-sm">Advertisement</p> {/* You can keep this label or remove it */}
-  <ins className="adsbygoogle"
-       style={{ display: 'block', textAlign: 'center', minHeight: '100px' }} // Use React style object
-       data-ad-client="ca-pub-7769353221684341"
-       data-ad-slot="7980803429"
-       data-ad-format="auto"
-       data-full-width-responsive="true"></ins>
-  <script>
-       (window.adsbygoogle = window.adsbygoogle || []).push({});
-  </script>
-</div>
+        <p className="mt-2">Check back later or explore other categories.</p>
+        <p className="mt-2">You can also create a new idea to get started!</p>
       </div>
     );
   }
