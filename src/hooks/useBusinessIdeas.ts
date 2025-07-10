@@ -70,11 +70,11 @@ export function useBusinessIdeas() {
   // Function to increment views - called from Presentation.tsx
   const incrementView = useCallback(async (ideaId: string) => {
     try {
-      // Calling the PostgreSQL RPC function
-      const { data, error: rpcError } = await supabase.rpc('increment_idea_views', { p_idea_id: ideaId });
+      // FIX: Changed parameter name from 'p_idea_id' to 'idea_id_param'
+      const { data, error: rpcError } = await supabase.rpc('increment_idea_views', { idea_id_param: ideaId });
 
       if (rpcError) {
-        console.error('Error incrementing view count via RPC:', rpcError.message);
+        console.error('Error incrementing view count via RPC:', rpcError.message, 'Code:', rpcError.code, 'Details:', rpcError.details);
         // Do not throw here, just log, as it shouldn't block page load
       } else {
         console.log('View count incremented for idea:', ideaId, 'New views (RPC response):', data);

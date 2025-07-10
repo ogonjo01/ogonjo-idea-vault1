@@ -1,5 +1,5 @@
 // src/hooks/useIdeaInteractions.ts
-import { useState, useCallback } from 'react'; // <--- Make sure useCallback is imported
+import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -43,6 +43,7 @@ export function useIdeaInteractions() {
 
         if (deleteError) throw deleteError;
 
+        // Ensure these RPC calls for likes also use the correct function name and parameter
         const { error: rpcError } = await supabase.rpc('decrement_likes', { idea_id_param: ideaId });
         if (rpcError) throw rpcError;
 
@@ -58,7 +59,7 @@ export function useIdeaInteractions() {
 
         if (insertError) {
           if (insertError.code === '23505') {
-             toast({
+              toast({
               title: "Already liked",
               description: "You have already liked this idea.",
               variant: "default",
@@ -68,6 +69,7 @@ export function useIdeaInteractions() {
           throw insertError;
         }
 
+        // Ensure these RPC calls for likes also use the correct function name and parameter
         const { error: rpcError } = await supabase.rpc('increment_likes', { idea_id_param: ideaId });
         if (rpcError) throw rpcError;
 
@@ -121,6 +123,7 @@ export function useIdeaInteractions() {
 
       if (insertError) throw insertError;
 
+      // Ensure this RPC call for comments also uses the correct function name and parameter
       const { error: rpcError } = await supabase.rpc('increment_comments', { idea_id_param: ideaId });
       if (rpcError) throw rpcError;
 
@@ -179,10 +182,14 @@ export function useIdeaInteractions() {
 
   const incrementViews = useCallback(async (ideaId: string) => {
     try {
-      const { error } = await supabase.rpc('increment_views', { idea_id_param: ideaId });
-      if (error) throw error;
+      // FIX: Changed RPC function name from 'increment_views' to 'increment_idea_views'
+      const { error } = await supabase.rpc('increment_idea_views', { idea_id_param: ideaId });
+      if (error) {
+        console.error('Error incrementing views:', error.message, 'Code:', error.code, 'Details:', error.details);
+        throw error; // Re-throw to propagate the error if needed
+      }
     } catch (error: any) {
-      console.error('Error incrementing views:', error.message);
+      console.error('Unexpected error in incrementViews:', error.message);
     }
   }, []); // Dependencies: empty array as it doesn't depend on external props/state
 
