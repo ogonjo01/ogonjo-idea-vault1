@@ -1,19 +1,21 @@
+// src/pages/Dashboard.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useBusinessIdeas } from '@/hooks/useBusinessIdeas';
 import { Button } from '@/components/ui/button';
-//import Header from '@/components/Header';
-//import Footer from '@/components/Footer';
+//import Header from '@/components/Header'; // Keep commented if not used
+//import Footer from '@/components/Footer'; // Keep commented if not used
 import IdeaCard from '@/components/IdeaCard';
-import { categories } from '@/data/mockData';
+// REMOVED: import { categories } from '@/data/mockData';
+// NEW: Import the new BUSINESS_CATEGORIES
+import { BUSINESS_CATEGORIES } from '@/constants/businessCategories'; // Adjust path if necessary, e.g., ../constants/businessCategories
+
 import { AlertTriangle } from 'lucide-react';
 import { BusinessIdea } from '@/types/businessIdea';
 
 // Import the new BusinessCanvasGuide component
 import BusinessCanvasGuide from '@/components/BusinessCanvasGuide';
-
-
 
 const Dashboard = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -110,8 +112,8 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-     
-
+      {/* Header and Footer are commented out, assuming they are handled by a parent layout */}
+      {/* <Header /> */}
       <main className="flex-1 container mx-auto px-4 py-8">
         <div
           className="relative rounded-lg overflow-hidden mb-8"
@@ -141,9 +143,23 @@ const Dashboard = () => {
           </p>
         )}
 
-        {/* Category Buttons */}
+        {/* Category Buttons - Now using BUSINESS_CATEGORIES */}
         <div className="flex flex-wrap gap-2 mb-8">
-          {categories.map((cat) => (
+          {/* Add "All" button first */}
+          <Button
+            key="All"
+            size="sm"
+            variant={selectedCategory === 'All' ? 'default' : 'outline'}
+            onClick={() => setSelectedCategory('All')}
+            className={`font-roboto transition-colors ${
+              selectedCategory === 'All'
+                ? 'bg-primary hover:bg-primary/90 text-primary-foreground' // Use primary for 'All'
+                : 'hover:bg-secondary'
+            }`}
+          >
+            All
+          </Button>
+          {BUSINESS_CATEGORIES.map((cat) => (
             <Button
               key={cat}
               size="sm"
@@ -151,7 +167,7 @@ const Dashboard = () => {
               onClick={() => setSelectedCategory(cat)}
               className={`font-roboto transition-colors ${
                 selectedCategory === cat
-                  ? 'bg-accent hover:bg-accent/90 text-accent-foreground'
+                  ? 'bg-accent hover:bg-accent/90 text-accent-foreground' // Use accent for selected category
                   : 'hover:bg-secondary'
               }`}
             >
@@ -169,7 +185,7 @@ const Dashboard = () => {
                 id={idea.id}
                 title={idea.title}
                 category={idea.category}
-                thumbnail={idea.thumbnail_url}
+                thumbnail={idea.thumbnail_url} // Assuming thumbnail is correctly passed from DB
                 views={idea.views}
                 likes={idea.likes}
                 comments={idea.comments}
@@ -200,7 +216,7 @@ const Dashboard = () => {
               >
                 View All Ideas
               </Button>
-              
+
             )}
           </div>
         )}
@@ -216,7 +232,7 @@ const Dashboard = () => {
 
       </main>
 
-     
+      {/* <Footer /> */}
     </div>
   );
 };

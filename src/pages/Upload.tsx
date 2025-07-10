@@ -10,7 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { categories } from '@/data/mockData';
+// REMOVED: import { categories } from '@/data/mockData';
+// NEW: Import the new BUSINESS_CATEGORIES
+import { BUSINESS_CATEGORIES } from '@/constants/businessCategories'; // Adjust path if necessary, e.g., ../constants/businessCategories
+
 import {
   Upload as UploadIcon,
   CheckCircle,
@@ -20,9 +23,9 @@ import {
   DollarSign,
   Calendar,
   Loader2,
-  Youtube, // New icon for YouTube link
-  Book,    // New icon for Full Book link
-  Link    // New icon for Affiliate Links
+  Youtube,
+  Book,
+  Link
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -50,7 +53,7 @@ const Upload = () => {
 
   const [formData, setFormData] = useState({
     title: '',
-    category: '',
+    category: '', // Will be initialized with the first category from the new list
     description: '',
     tags: '', // Comma-separated string
     difficulty: '',
@@ -66,6 +69,14 @@ const Upload = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadComplete, setUploadComplete] = useState(false);
+
+  // Initialize category with the first item from BUSINESS_CATEGORIES
+  React.useEffect(() => {
+    if (BUSINESS_CATEGORIES.length > 0 && !formData.category) {
+      setFormData(prev => ({ ...prev, category: BUSINESS_CATEGORIES[0] }));
+    }
+  }, [formData.category]);
+
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -102,7 +113,7 @@ const Upload = () => {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${user?.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const filePath = fileName; 
+      const filePath = fileName;
 
       setUploadProgress(20);
 
@@ -156,15 +167,15 @@ const Upload = () => {
 
     try {
       setUploadProgress(10);
-      
+
       presentationUrl = await uploadFile(file);
-      
+
       setUploadProgress(70);
 
       const tagsArray = formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
 
       // Thumbnail URL will be null to trigger random color fallback in IdeaCard.tsx
-      const thumbnail_url = null; 
+      const thumbnail_url = null;
 
       // Save business idea to database
       const ideaData = {
@@ -238,7 +249,7 @@ const Upload = () => {
   const handleNewUpload = () => {
     setFormData({
       title: '',
-      category: '',
+      category: '', // Reset to empty, will be re-initialized by useEffect
       description: '',
       tags: '',
       difficulty: '',
@@ -255,7 +266,8 @@ const Upload = () => {
     setUploadProgress(0);
   };
 
-  const filteredCategories = categories.filter(cat => cat !== 'All');
+  // Use BUSINESS_CATEGORIES directly
+  // const filteredCategories = categories.filter(cat => cat !== 'All'); // No longer needed
 
   if (uploadComplete) {
     return (
@@ -394,7 +406,8 @@ const Upload = () => {
                       <SelectValue placeholder="Select a category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {filteredCategories.map((category) => (
+                      {/* Use BUSINESS_CATEGORIES directly */}
+                      {BUSINESS_CATEGORIES.map((category) => (
                         <SelectItem key={category} value={category} className="font-roboto">
                           {category}
                         </SelectItem>
