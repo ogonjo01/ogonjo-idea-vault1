@@ -281,7 +281,7 @@ const App = () => {
                     </Route>
                   </Route>
                   <Route element={<MainLayout isAuthRoute={true} />}>
-                    <Route path="/auth" element={<Auth />} />
+                    <Route path="auth" element={<Auth />} />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
                     <Route path="/update-password" element={<UpdatePassword />} />
                   </Route>
