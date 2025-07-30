@@ -1,9 +1,9 @@
 // src/hooks/useBusinessIdeas.ts
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase'; // Ensure this path is correct: src/lib/supabase.ts or supabaseClient.ts
+import { supabase } from '@/services/supabase'; // Ensure this path is correct: src/lib/supabase.ts or supabaseClient.ts
 import { BusinessIdea } from '@/types/businessIdea'; // Assuming you have this type
 import { useToast } from '@/components/ui/use-toast'; // Correct path for shadcn/ui toast hook
-import { useAuth } from './useAuth'; // Assuming useAuth is in the same hooks directory or similar path
+import { useAuth } from '../pages/Auth'; // Assuming useAuth is in the same hooks directory or similar path
 
 export function useBusinessIdeas() {
   const [ideas, setIdeas] = useState<BusinessIdea[]>([]);

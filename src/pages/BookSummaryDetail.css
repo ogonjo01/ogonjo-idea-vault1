@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.top-header-container {
+  @apply bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-200;
+}
+
+.title {
+  @apply text-2xl font-bold text-gray-900 mb-2 text-center;
+}
+
+.author {
+  @apply text-lg text-gray-600 mb-4 text-center;
+}
+
+.stats-row {
+  @apply flex justify-around items-center mb-4 w-full;
+}
+
+.stat-item {
+  @apply flex items-center;
+}
+
+.stat-text {
+  @apply text-gray-700 ml-1;
+}
+
+.like-button {
+  @apply flex items-center bg-gray-100 border border-gray-300 rounded-lg px-3 py-1 hover:bg-gray-200;
+}
+
+.like-button-text {
+  @apply text-gray-700 ml-1;
+}
+
+.divider {
+  @apply h-px bg-gray-200 w-4/5 mx-auto my-4;
+}
+
+.short-description-header {
+  @apply text-xl font-bold text-gray-800 mb-2 text-center;
+}
+
+.short-description-text {
+  @apply text-gray-700 leading-relaxed mb-4 text-justify;
+}
+
+.read-more-button {
+  @apply flex items-center bg-blue-500 text-white rounded-lg px-4 py-2 mt-4 hover:bg-blue-600;
+}
+
+.read-more-button-text {
+  @apply font-medium;
+}
+
+.read-more-disabled-container {
+  @apply bg-gray-100 border border-gray-200 rounded-lg p-4 mt-4 text-center;
+}
+
+.read-more-disabled-text {
+  @apply text-gray-500 text-sm;
+}
+
+.links-section {
+  @apply mt-6 pt-4 border-t border-gray-200;
+}
+
+.links-header {
+  @apply text-xl font-bold text-gray-800 mb-4 text-center;
+}
+
+.link-button {
+  @apply flex items-center bg-gray-100 border border-gray-200 rounded-lg px-4 py-2 mb-2 hover:bg-gray-200;
+}
+
+.link-button-text {
+  @apply text-gray-700 ml-2;
+}
+
+.loading-container {
+  @apply flex items-center justify-center h-screen bg-gray-50;
+}
+
+.spinner {
+  @apply w-12 h-12 border-4 border-t-blue-500 border-blue-200 rounded-full animate-spin;
+}
+
+.loading-text {
+  @apply mt-2 text-lg text-gray-700;
+}
+
+.error-container {
+  @apply flex flex-col items-center justify-center h-screen bg-gray-50 p-4;
+}
+
+.error-text {
+  @apply text-red-500 text-center mb-4;
+}
+
+.retry-button {
+  @apply bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600;
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/pages/Auth';
+import { supabase } from '@/services/supabase';
 //import Header from '@/components/Header';
 //import Footer from '@/components/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, FileText } from 'lucide-react';
-import { Database } from '@/lib/supabase';
+import { Database } from '@/services/supabase';
 
 type BusinessIdea = Database['public']['Tables']['business_ideas']['Row'];
 type UploadedFile = { name: string; metadata?: { size?: number } };

@@ -1,6 +1,6 @@
 // src/components/Recommendations.tsx
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/services/supabase';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';

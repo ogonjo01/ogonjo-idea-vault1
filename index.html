@@ -3,44 +3,53 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OGONJO - Unlock Daily Business Ideas</title> <!-- Main browser tab title -->
+    <title>OGONJO - Unlock Daily Business Ideas</title>
     <meta name="description" content="Unlock daily business ideas and join our community to access fresh, curated startup concepts." />
     <meta name="author" content="OGONJO" />
 
-    <!-- Google Fonts - Keep these if you are using them -->
+    <!-- Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" integrity="sha512-Fo3rlrZj/k7ujTnHg4CGR2D7kSs0v4LLanw2qksYuRlEzO+tcaEPQogQ0KaoGN26/zrn20ImR1DfuLWnOo7aBA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
 
     <!-- OGONJO Favicon -->
-    <!-- Ensure your favicon.ico is in the /public directory -->
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
-  
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7769353221684341"
-     crossorigin="anonymous"></script>
-    <!-- END GOOGLE ADSENSE VERIFICATION CODE -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7769353221684341" crossorigin="anonymous"></script>
 
     <!-- OGONJO Open Graph / Social Media Meta Tags -->
-    <!-- These control how your site appears when shared on platforms like Facebook, LinkedIn -->
-    <meta property="og:title" content="OGONJO - Unlock Daily Business Ideas" /> <!-- More descriptive title -->
-    <meta property="og:description" content="Join OGONJO to access fresh, curated startup concepts and transform your entrepreneurial journey." /> <!-- More descriptive description -->
+    <meta property="og:title" content="OGONJO - Unlock Daily Business Ideas" />
+    <meta property="og:description" content="Join OGONJO to access fresh, curated startup concepts and transform your entrepreneurial journey." />
     <meta property="og:type" content="website" />
-    <!-- IMPORTANT: Use absolute URL for og:image for best reliability across platforms -->
-    <!-- Replace 'https://your-ogonjo-app.netlify.app/' with your actual Netlify URL -->
     <meta property="og:image" content="https://dreamy-choux-ec7a29.netlify.app/ogonjo.jpg" />
-    <meta property="og:url" content="https://your-ogonjo-app.netlify.app/" /> <!-- Replace with your actual Netlify URL -->
+    <meta property="og:url" content="https://your-ogonjo-app.netlify.app/" />
 
     <!-- OGONJO Twitter Card Meta Tags -->
-    <!-- These control how your site appears when shared on Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="OGONJO - Unlock Daily Business Ideas" /> <!-- More descriptive title -->
-    <meta name="twitter:description" content="Join OGONJO to access fresh, curated startup concepts and transform your entrepreneurial journey." /> <!-- More descriptive description -->
-    <!-- IMPORTANT: Use absolute URL for twitter:image for best reliability -->
-    <!-- Replace 'https://your-ogonjo-app.netlify.app/' with your actual Netlify URL -->
+    <meta name="twitter:title" content="OGONJO - Unlock Daily Business Ideas" />
+    <meta name="twitter:description" content="Join OGONJO to access fresh, curated startup concepts and transform your entrepreneurial journey." />
     <meta name="twitter:image" content="https://dreamy-choux-ec7a29.netlify.app/ogonjo.jpg" />
-    <meta name="twitter:site" content="@OGONJO_App" /> <!-- Replace with your actual Twitter handle if you have one -->
+    <meta name="twitter:site" content="@OGONJO_App" />
 
+    <!-- Inline CSS to reset and set default background -->
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        min-height: 100vh;
+        background-color: var(--theme-color-background, #0d033a);
+        font-family: 'Montserrat', sans-serif;
+      }
+      #root {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -26,9 +26,9 @@ import {
   Link // Added for affiliate links
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/services/supabase';
 import { BusinessIdea } from '@/types/businessIdea';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/pages/Auth';
 import { useBusinessIdeas } from '@/hooks/useBusinessIdeas';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';

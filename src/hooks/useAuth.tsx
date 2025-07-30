@@ -1,6 +1,6 @@
 // src/hooks/useAuth.ts
 import { useState, useEffect, useContext, createContext } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/services/supabase';
 import { Session, User } from '@supabase/supabase-js';
 
 // Define the shape of your AuthContext values

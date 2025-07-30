@@ -1,7 +1,7 @@
 // src/pages/Upload.tsx
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/services/supabase';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +27,7 @@ import {
   Book,
   Link
 } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/pages/Auth';
 
 // Define a mapping for category-based placeholder images (kept for consistency, though currently null in handleSubmit)
 const categoryThumbnails: { [key: string]: string } = {

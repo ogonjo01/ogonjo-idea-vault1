@@ -1,7 +1,7 @@
 // src/pages/ForgotPassword.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase'; // Your Supabase client
+import { supabase } from '@/services/supabase'; // Your Supabase client
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

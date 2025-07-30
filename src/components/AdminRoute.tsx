@@ -1,7 +1,7 @@
 // src/components/AdminRoute.tsx
 import { useEffect, ReactNode } from 'react';
 import { useNavigate, Outlet } from 'react-router-dom'; // Import Outlet if used for nested routes
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/pages/Auth';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/components/ui/use-toast'; // Import toast for user feedback
 

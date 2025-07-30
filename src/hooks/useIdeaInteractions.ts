@@ -1,7 +1,7 @@
 // src/hooks/useIdeaInteractions.ts
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/services/supabase';
+import { useAuth } from '@/pages/Auth';
 import { useToast } from '@/hooks/use-toast';
 
 // Assuming you have this type defined somewhere, e.g., src/types/comment.ts

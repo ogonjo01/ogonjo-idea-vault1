@@ -1,21 +1,25 @@
-// src/pages/Dashboard.tsx
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useBusinessIdeas } from '@/hooks/useBusinessIdeas';
-import { Button } from '@/components/ui/button';
-//import Header from '@/components/Header'; // Keep commented if not used
-//import Footer from '@/components/Footer'; // Keep commented if not used
-import IdeaCard from '@/components/IdeaCard';
-// REMOVED: import { categories } from '@/data/mockData';
-// NEW: Import the new BUSINESS_CATEGORIES
-import { BUSINESS_CATEGORIES } from '@/constants/businessCategories'; // Adjust path if necessary, e.g., ../constants/businessCategories
+import { supabase } from '@/services/supabase';
+import StrategyCard from '@/components/StrategyCard';
+import { INVESTMENT_CATEGORIES } from '@/constants/investmentCategories';
+import StrategyCarousel from './StrategyCarousel'; // Added import
+import './Dashboard.css';
 
 import { AlertTriangle } from 'lucide-react';
-import { BusinessIdea } from '@/types/businessIdea';
 
-// Import the new BusinessCanvasGuide component
-import BusinessCanvasGuide from '@/components/BusinessCanvasGuide';
+interface InvestmentStrategy {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  affiliate_link: string | null;
+  views: number;
+  likes: number;
+  isLiked: boolean;
+  created_at: string;
+}
 
 const Dashboard = () => {
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -23,13 +27,10 @@ const Dashboard = () => {
   const [searchParams] = useSearchParams();
   const searchQuery = searchParams.get('search') || '';
   const { user, loading: authLoading } = useAuth();
-  const {
-    ideas,
-    loading: ideasLoading,
-    error,
-    searchIdeas,
-    refetch
-  } = useBusinessIdeas();
+  const [strategies, setStrategies] = useState<InvestmentStrategy[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filteredStrategies, setFilteredStrategies] = useState<InvestmentStrategy[]>([]);
 
   const initialLoad = useRef(true);
   const searchDebounceRef = useRef<number>();
@@ -41,198 +42,210 @@ const Dashboard = () => {
     }
   }, [authLoading, user, navigate]);
 
-  // Debounce search
+  // Fetch investment strategies
+  useEffect(() => {
+    const fetchStrategies = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data, error: supabaseError } = await supabase
+          .from('inv_investment_strategies')
+          .select('id, title, category, description, affiliate_link, views, likes, created_at')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+
+        if (supabaseError) throw supabaseError;
+        if (data) {
+          const strategiesWithLikes = await Promise.all(data.map(async (strategy) => {
+            if (user) {
+              const { data: likeData } = await supabase
+                .from('inv_user_likes')
+                .select('id')
+                .eq('user_id', user.id)
+                .eq('strategy_id', strategy.id)
+                .single();
+              return { ...strategy, isLiked: !!likeData };
+            }
+            return { ...strategy, isLiked: false };
+          }));
+          setStrategies(strategiesWithLikes);
+        }
+      } catch (err: any) {
+        setError(`Failed to load strategies: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStrategies();
+  }, [user]);
+
+  // Debounce search and filter
   useEffect(() => {
     if (authLoading) return;
-    window.clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = window.setTimeout(() => {
-      if (searchQuery.trim()) {
-        searchIdeas(searchQuery);
-      } else if (!initialLoad.current) {
-        refetch();
+    const handler = setTimeout(() => {
+      let currentFiltered = [...strategies];
+      if (selectedCategory !== 'All') {
+        currentFiltered = currentFiltered.filter(s => s.category === selectedCategory);
       }
-      setSelectedCategory('All');
-      initialLoad.current = false;
+      if (searchQuery.trim() !== '') {
+        const lowercasedSearch = searchQuery.trim().toLowerCase();
+        currentFiltered = currentFiltered.filter(
+          s =>
+            s.title.toLowerCase().includes(lowercasedSearch) ||
+            s.description.toLowerCase().includes(lowercasedSearch) ||
+            s.category?.toLowerCase().includes(lowercasedSearch)
+        );
+      }
+      setFilteredStrategies(currentFiltered);
     }, 300);
-    return () => window.clearTimeout(searchDebounceRef.current);
-  }, [searchQuery, authLoading, searchIdeas, refetch]);
+    return () => clearTimeout(handler);
+  }, [searchQuery, selectedCategory, strategies, authLoading]);
 
-  // Filter by category
-  const filteredIdeas = useMemo(() => {
-    if (selectedCategory === 'All') return ideas;
-    return ideas.filter(
-      (i) => i.category?.toLowerCase() === selectedCategory.toLowerCase()
-    );
-  }, [ideas, selectedCategory]);
+  const handleCategoryFilterPress = useCallback((category: string) => {
+    setSelectedCategory(category);
+    setSearchQuery('');
+  }, []);
 
-  const handleIdeaClick = (id: string) => {
-    navigate(`/presentation/${id}`);
-  };
-
-  // Loading state
-  if (authLoading || ideasLoading) {
+  const renderStrategySection = useCallback((title: string, data: InvestmentStrategy[]) => {
+    if (data.length === 0) return null;
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
-        <div className="animate-spin w-16 h-16 border-4 border-t-primary border-primary/20 rounded-full" />
-        <p className="mt-4 font-roboto text-muted-foreground">
-          Loading business ideas...
-        </p>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
-        <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
-        <h3 className="font-montserrat text-xl text-foreground mb-2">
-          Unable to Load Business Ideas
-        </h3>
-        <p className="font-roboto text-muted-foreground mb-6">
-          {error.includes('timed out')
-            ? 'The request timed out. Check your connection.'
-            : error}
-        </p>
-        <div className="space-x-3">
-          <Button onClick={() => window.location.reload()} className="font-roboto">
-            Try Again
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate('/')}
-            className="font-roboto"
-          >
-            Go Home
-          </Button>
+      <div className="section-container">
+        <div className="section-header-row">
+          <h2 className="section-header">{title}</h2>
+          <button className="see-all-button" onClick={() => alert(`Navigate to a full list of ${title}`)}>
+            See All <span className="chevron-icon">›</span>
+          </button>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* Header and Footer are commented out, assuming they are handled by a parent layout */}
-      {/* <Header /> */}
-      <main className="flex-1 container mx-auto px-4 py-8">
-        <div
-          className="relative rounded-lg overflow-hidden mb-8"
-          style={{
-            backgroundImage:
-              "url('https://images.unsplash.com/photo-1465101046530-73398c7f28ca?auto=format&fit=crop&w=1200&q=80')",
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            minHeight: '260px',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
-          }}
-        >
-          <div className="absolute inset-0 bg-black/60" />
-          <div className="relative z-10 flex flex-col items-center justify-center h-full py-12 px-4 text-center">
-            <h1 className="font-montserrat text-4xl font-bold mb-4 text-white drop-shadow-lg">
-              Ignite Your Vision, Shape the Future
-            </h1>
-            <p className="text-xl mb-6 font-roboto text-gray-200 max-w-2xl drop-shadow">
-              Every breakthrough starts with a single idea. OGONJO empowers you to turn inspiration into impact—because the world changes when you dare to build.
-            </p>
-          </div>
-        </div>
-
-        {searchQuery && (
-          <p className="font-roboto text-muted-foreground mb-6">
-            Showing results for "{searchQuery}" • {filteredIdeas.length} found
-          </p>
-        )}
-
-        {/* Category Buttons - Now using BUSINESS_CATEGORIES */}
-        <div className="flex flex-wrap gap-2 mb-8">
-          {/* Add "All" button first */}
-          <Button
-            key="All"
-            size="sm"
-            variant={selectedCategory === 'All' ? 'default' : 'outline'}
-            onClick={() => setSelectedCategory('All')}
-            className={`font-roboto transition-colors ${
-              selectedCategory === 'All'
-                ? 'bg-primary hover:bg-primary/90 text-primary-foreground' // Use primary for 'All'
-                : 'hover:bg-secondary'
-            }`}
-          >
-            All
-          </Button>
-          {BUSINESS_CATEGORIES.map((cat) => (
-            <Button
-              key={cat}
-              size="sm"
-              variant={selectedCategory === cat ? 'default' : 'outline'}
-              onClick={() => setSelectedCategory(cat)}
-              className={`font-roboto transition-colors ${
-                selectedCategory === cat
-                  ? 'bg-accent hover:bg-accent/90 text-accent-foreground' // Use accent for selected category
-                  : 'hover:bg-secondary'
-              }`}
-            >
-              {cat}
-            </Button>
+        <div className="horizontal-list">
+          {data.map((item) => (
+            <StrategyCard
+              key={item.id}
+              id={item.id}
+              title={item.title}
+              category={item.category}
+              description={item.description}
+              views={item.views}
+              likes={item.likes}
+              isLiked={item.isLiked}
+              onClick={() => handleStrategyClick(item.id)}
+              onInvest={() => handleInvestClick(item.affiliate_link)}
+              className="hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+            />
           ))}
         </div>
+      </div>
+    );
+  }, []);
 
-        {/* Ideas Grid */}
-        {filteredIdeas.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredIdeas.map((idea) => (
-              <IdeaCard
-                key={idea.id}
-                id={idea.id}
-                title={idea.title}
-                category={idea.category}
-                thumbnail={idea.thumbnail_url} // Assuming thumbnail is correctly passed from DB
-                views={idea.views}
-                likes={idea.likes}
-                comments={idea.comments}
-                isLiked={idea.isLiked}
-                onClick={() => handleIdeaClick(idea.id)}
-              />
-            ))}
-          </div>
+  const handleStrategyClick = (id: string) => {
+    navigate(`/strategy-detail/${id}`);
+  };
+
+  const handleInvestClick = (affiliateLink: string | null) => {
+    if (affiliateLink) {
+      window.open(affiliate_link, '_blank');
+    } else {
+      alert('Investment link not available for this strategy.');
+    }
+  };
+
+  if (loading && strategies.length === 0) {
+    return (
+      <div className="loading-overlay">
+        <div className="spinner"></div>
+        <p className="loading-text">Loading investment strategies...</p>
+      </div>
+    );
+  }
+
+  if (error && strategies.length === 0) {
+    return (
+      <div className="error-container">
+        <p className="error-text">{error}</p>
+        <button className="retry-button" onClick={() => fetchStrategies()}>Retry</button>
+      </div>
+    );
+  }
+
+  const allCategories = ['All', ...new Set(strategies.map(s => s.category).filter(Boolean))];
+
+  return (
+    <div className="safe-area">
+      <div className="carousel-wrapper" style={{ zIndex: 5 }}>
+        <StrategyCarousel strategies={strategies} />
+      </div>
+      <div className="content-wrapper" style={{ zIndex: 10, position: 'relative' }}>
+        <div className="search-container">
+          <span className="search-icon">🔍</span>
+          <input
+            className="search-input"
+            placeholder="Search by title, category, or description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery.length > 0 && (
+            <button className="clear-search-button" onClick={() => setSearchQuery('')}>
+              ✕
+            </button>
+          )}
+        </div>
+        <div className="category-filter-container sticky">
+          {allCategories.map((cat) => (
+            <button
+              key={cat}
+              className={`category-filter-pill ${selectedCategory === cat ? 'category-filter-pill-active' : ''}`}
+              onClick={() => handleCategoryFilterPress(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+        {(searchQuery.trim() !== '' || selectedCategory !== 'All') ? (
+          filteredStrategies.length > 0 ? (
+            <div className="filtered-results-container">
+              <h2 className="section-header">Search Results</h2>
+              <div className="horizontal-list">
+                {filteredStrategies.map((item) => (
+                  <StrategyCard
+                    key={item.id}
+                    id={item.id}
+                    title={item.title}
+                    category={item.category}
+                    description={item.description}
+                    views={item.views}
+                    likes={item.likes}
+                    isLiked={item.isLiked}
+                    onClick={() => handleStrategyClick(item.id)}
+                    onInvest={() => handleInvestClick(item.affiliate_link)}
+                    className="hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state-container">
+              <p className="empty-state-text">No strategies found.</p>
+            </div>
+          )
         ) : (
-          <div className="text-center py-16">
-            <div className="text-6xl mb-4">🔍</div>
-            <h3 className="font-montserrat text-xl text-foreground mb-2">
-              No ideas found
-            </h3>
-            <p className="font-roboto text-muted-foreground mb-4 max-w-md mx-auto">
-              {searchQuery
-                ? `No business ideas match "${searchQuery}".`
-                : `No ideas in "${selectedCategory}" category.`}
-            </p>
-            {(searchQuery || selectedCategory !== 'All') && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedCategory('All');
-                  navigate('/dashboard');
-                }}
-                className="font-roboto"
-              >
-                View All Ideas
-              </Button>
-
+          <>
+            <div className="ad-banner">Ad: Invest with Confidence - Free Trial</div>
+            {renderStrategySection('Latest Strategies', [...strategies].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6))}
+            {renderStrategySection('Most Popular Strategies', [...strategies].sort((a, b) => b.views - a.views).slice(0, 6))}
+            {Object.entries(
+              strategies.reduce((acc, strategy) => {
+                if (strategy.category) acc[strategy.category] = [...(acc[strategy.category] || []), strategy];
+                return acc;
+              }, {} as { [key: string]: InvestmentStrategy[] })
+            ).map(([category, strategies]) =>
+              renderStrategySection(`Top in ${category}`, strategies.sort((a, b) => b.views - a.views).slice(0, 6))
             )}
-          </div>
+            <div className="ad-banner">Ad: Expert Investment Tools - Join Now</div>
+            <div className="ad-banner">Ad: Maximize Returns with OGONJO</div>
+          </>
         )}
-
-        {/* Footer stats - keep if needed, otherwise remove */}
-        {filteredIdeas.length > 0 && (
-          <p className="mt-12 text-center font-roboto text-sm text-muted-foreground">
-            Showing {filteredIdeas.length} of {ideas.length} ideas
-          </p>
-        )}
-        {/* Integrated Business Canvas Interactive Guide */}
-        <BusinessCanvasGuide />
-
-      </main>
-
-      {/* <Footer /> */}
+      </div>
     </div>
   );
 };

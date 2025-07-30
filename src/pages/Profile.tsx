@@ -4,24 +4,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-//import Header from '@/components/Header';
-//import Footer from '@/components/Footer';
-// Removed IdeaCard import as it's no longer used
-import { Calendar, Settings, Loader2 } from 'lucide-react'; // Removed Heart, Download icons
-import { supabase } from '@/lib/supabase';
+import { Calendar, Settings, Loader2 } from 'lucide-react';
+import { supabase } from '@/services/supabase';
 
 // --- INTERFACES ---
 interface UserProfile {
   id: string;
   full_name: string;
   email: string;
-  created_at: string; // From 'profiles' table
-  plan: string; // From 'profiles' table
+  created_at: string;
+  plan: string;
   avatar_url?: string;
 }
-
-// Removed Idea, LikedIdeaSupabaseRow, DownloadedIdeaSupabaseRow interfaces
-// as their data is no longer fetched or used in the component.
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -29,18 +23,15 @@ const Profile = () => {
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<UserProfile | null>(null);
 
-  // Removed state for likedIdeas, downloadedIdeas, ideasUploaded
-
   useEffect(() => {
-    const fetchUserProfile = async () => { // Renamed function as it only fetches profile now
+    const fetchUserProfile = async () => {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        // --- Fetch user profile data from 'profiles' table ---
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('full_name, created_at, plan, avatar_url, email') // Select 'created_at', 'plan', 'email' to match DB
+          .select('full_name, created_at, plan, avatar_url, email')
           .eq('id', user.id)
           .single();
 
@@ -56,7 +47,6 @@ const Profile = () => {
             avatar_url: profileData.avatar_url,
           });
         }
-        // Removed fetching logic for liked ideas, downloaded ideas, and uploaded ideas
       } else {
         console.warn('No user session found, redirecting to login.');
         navigate('/login');
@@ -64,7 +54,7 @@ const Profile = () => {
       setLoading(false);
     };
 
-    fetchUserProfile(); // Call the renamed function
+    fetchUserProfile();
   }, [navigate]);
 
   const handleLogout = async () => {
@@ -110,14 +100,11 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      
-
       <main className="flex-1 container mx-auto px-4 py-8">
         {/* Profile Header */}
         <Card className="mb-8">
           <CardContent className="p-8">
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
-              {/* Avatar and Basic Info */}
               <div className="flex items-center gap-4">
                 <Avatar className="h-20 w-20">
                   {userData.avatar_url ? (
@@ -144,52 +131,60 @@ const Profile = () => {
                   </div>
                 </div>
               </div>
-
-              {/* Only Logout Button for MVP */}
               <div className="md:ml-auto flex gap-2">
                 <Button variant="destructive" className="font-roboto" onClick={handleLogout}>
                   Logout
                 </Button>
               </div>
             </div>
-
-            {/* Removed the stats section entirely as requested */}
-            {/* Keeping this comment block for easy re-introduction if needed later */}
-            {/*
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-8 pt-6 border-t border-border">
-              <div className="text-center">
-                <div className="text-2xl font-montserrat font-bold text-primary mb-1">
-                  {likedIdeas.length}
-                </div>
-                <div className="font-roboto text-sm text-muted-foreground">
-                  Ideas Liked
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-montserrat font-bold text-primary mb-1">
-                  {downloadedIdeas.length}
-                </div>
-                <div className="font-roboto text-sm text-muted-foreground">
-                  Ideas Downloaded
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-montserrat font-bold text-primary mb-1">
-                  {ideasUploaded}
-                </div>
-                <div className="font-roboto text-sm text-muted-foreground">
-                  Ideas Uploaded
-                </div>
-              </div>
-            </div>
-            */}
           </CardContent>
         </Card>
 
-        {/* Tabs component and its content are entirely removed */}
+        {/* Upload Content Buttons */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="font-montserrat text-2xl text-foreground">Upload Content</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Button
+              className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
+              onClick={() => navigate('/upload-investments')}
+            >
+              📊 Investments
+            </Button>
+            <Button
+              className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
+              onClick={() => navigate('/upload-innovations')}
+            >
+              💡 Innovations
+            </Button>
+            <Button
+              className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
+              onClick={() => navigate('/upload-learning')}
+            >
+              🏫 Learning
+            </Button>
+            <Button
+              className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
+              onClick={() => navigate('/upload-summaries')}
+            >
+              📚 Summaries
+            </Button>
+            <Button
+              className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
+              onClick={() => navigate('/upload-wisdom')}
+            >
+              💬 Wisdom
+            </Button>
+            <Button
+              className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
+              onClick={() => navigate('/upload-audiobooks')}
+            >
+              🎧 Audio Books
+            </Button>
+          </CardContent>
+        </Card>
       </main>
-
-      
     </div>
   );
 };
