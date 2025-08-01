@@ -1,3 +1,4 @@
+// src/App.tsx
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -47,14 +48,20 @@ import FAQ from './pages/FAQ';
 const queryClient = new QueryClient();
 
 const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
-  const { user, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const location = useLocation();
   const [unreadCount, setUnreadCount] = useState(0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
+  // Define toggleMobileMenu function
+  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+
+  // Define toggleProfileMenu function
+  const toggleProfileMenu = () => setIsProfileOpen(!isProfileOpen);
+
   useEffect(() => {
-    if (!user) {
+    if (loading || !user) {
       setUnreadCount(0);
       return;
     }
@@ -84,10 +91,11 @@ const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [user]);
+  }, [user, loading]);
 
-  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
-  const toggleProfileMenu = () => setIsProfileOpen(!isProfileOpen);
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   return (
     <div className={`min-h-screen flex flex-col ${isAuthRoute ? 'auth-layout' : ''}`}>
