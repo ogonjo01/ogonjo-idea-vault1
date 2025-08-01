@@ -5,40 +5,48 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 
-// API call to xAI via Vite proxy
+// API call to xAI
 const enhanceInvestmentContent = async (description: string, strategySteps: string) => {
-  const apiKey = import.meta.env.VITE_XAI_API_KEY; // Load from .env.local
+  const apiKey = import.meta.env.VITE_XAI_API_KEY;
   if (!apiKey) {
-    throw new Error('xAI API key is missing. Please configure VITE_XAI_API_KEY in .env.local.');
+    console.error('xAI API key is missing. Please configure VITE_XAI_API_KEY in .env.local.');
+    throw new Error('xAI API key is missing.');
   }
 
-  const response = await fetch('/api/xai', { // Use proxy path from vite.config.ts
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      description,
-      strategy_steps: strategySteps.split('\n').map(step => step.trim()),
-      task: 'enhance_investment_content',
-    }),
-  });
+  try {
+    const response = await fetch('https://api.x.ai/v1/grok/enhance', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        description,
+        strategy_steps: strategySteps.split('\n').map(step => step.trim()),
+        task: 'enhance_investment_content',
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`API error: ${response.statusText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('xAI API error:', response.status, errorText);
+      throw new Error(`API error: ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return {
+      enhancedDescription: data.enhanced_description || `Enhanced Overview: ${description}. This strategy provides a structured approach to maximize returns while managing risks.`,
+      enhancedSteps: JSON.stringify({
+        steps: data.enhanced_steps || strategySteps.split('\n').map((step, index) => ({
+          step_number: index + 1,
+          description: `Step ${index + 1}: ${step.trim()} - Execute with due diligence.`,
+        })),
+      }),
+    };
+  } catch (err) {
+    console.error('Enhancement failed:', err);
+    throw err;
   }
-
-  const data = await response.json();
-  return {
-    enhancedDescription: data.enhanced_description || `Enhanced Overview: ${description}. This strategy provides a structured approach to maximize returns while managing risks.`,
-    enhancedSteps: JSON.stringify({
-      steps: data.enhanced_steps || strategySteps.split('\n').map((step, index) => ({
-        step_number: index + 1,
-        description: `Step ${index + 1}: ${step.trim()} - Execute with due diligence.`,
-      })),
-    }),
-  };
 };
 
 const UploadInvestments = () => {
@@ -57,12 +65,12 @@ const UploadInvestments = () => {
   });
 
   useEffect(() => {
-    // Ensure user is authenticated
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) navigate('/login');
+      console.log('Auth check:', user ? 'Authenticated' : 'Not authenticated');
+      if (!user) navigate('/auth');
     };
-    checkAuth();
+    checkAuth().catch(err => console.error('Auth check failed:', err));
   }, [navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -76,13 +84,13 @@ const UploadInvestments = () => {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setError('User not authenticated.');
+      setError('Please log in to upload.');
       setLoading(false);
       return;
     }
 
     try {
-      // Enhance content with xAI API via proxy
+      console.log('Form data:', formData);
       const { enhancedDescription, enhancedSteps } = await enhanceInvestmentContent(formData.description, formData.strategy_steps);
 
       const data = {
@@ -102,12 +110,13 @@ const UploadInvestments = () => {
         user_id: user.id,
       };
 
+      console.log('Data to insert:', data);
       const { error: insertError } = await supabase
         .from('inv_investment_strategies')
         .insert(data);
 
       if (insertError) {
-        console.error('Error uploading investment strategy:', insertError.message);
+        console.error('Supabase insert error:', insertError.message);
         setError(`Failed to upload: ${insertError.message}`);
       } else {
         setFormData({
@@ -124,7 +133,9 @@ const UploadInvestments = () => {
         navigate('/profile');
       }
     } catch (err) {
-      setError(`AI enhancement failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Submission error:', err);
+      setError(`AI enhancement or upload failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
