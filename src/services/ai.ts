@@ -18,6 +18,5 @@ export async function callEnhancementAPI(
     const errText = await resp.text();
     throw new Error(`Enhancement API error: ${resp.status} – ${errText}`);
   }
-
   return resp.json();
 }
