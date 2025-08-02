@@ -1,3 +1,5 @@
+import { GoogleAuth } from 'google-auth-library';
+
 const { GoogleAuth } = require('google-auth-library');
 
 export async function handler(event) {
