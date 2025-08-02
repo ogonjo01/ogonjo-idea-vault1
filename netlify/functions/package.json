@@ -1,0 +1,7 @@
+{
+  "name": "functions",
+  "type": "module",
+  "dependencies": {
+    "google-auth-library": "^10.2.0"
+  }
+}
