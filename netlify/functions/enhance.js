@@ -1,25 +1,34 @@
+// netlify/functions/enhance.js
+import { GoogleAuth } from 'google-auth-library';
+
 export async function handler(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const { description, steps } = JSON.parse(event.body);
-
-  console.log('Received payload:', { description, steps });
-  console.log('GEMINI_API_KEY set:', !!process.env.GEMINI_API_KEY);
-
   try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', {
+    const { description, steps } = JSON.parse(event.body);
+
+    // 1) Initialize Google Auth client using the service account key
+    const auth = new GoogleAuth({
+      credentials: JSON.parse(process.env.GCP_SERVICE_ACCOUNT_KEY),
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+    const client = await auth.getClient();
+
+    // 2) Call the Gemini generateContent endpoint
+    const url =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+    const aiResponse = await client.request({
+      url,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
-      },
-      body: JSON.stringify({
+      data: {
         contents: [
           {
             parts: [
-              { text: 'You are an investment strategy enhancer. Improve the description and steps for clarity and professionalism. Return the enhanced description as the first line, followed by enhanced steps, one per line.' },
+              {
+                text: 'You are an investment strategy enhancer. Improve the description and steps for clarity and professionalism.',
+              },
               { text: `Description: ${description}\nSteps: ${steps}` },
             ],
           },
@@ -28,45 +37,39 @@ export async function handler(event) {
           temperature: 0.7,
           maxOutputTokens: 500,
         },
-      }),
+      },
     });
 
-    const data = await resp.json();
-    console.log('Gemini Response:', resp.status, data);
+    const data = aiResponse.data;
 
-    if (!resp.ok) {
-      throw new Error(`Gemini API error: ${resp.status} - ${JSON.stringify(data)}`);
-    }
+    // 3) Extract and structure the output
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const [firstLine, ...rest] = rawText.split('\n');
+    const enhancedDescription = firstLine.trim();
+    const enhancedSteps = rest.map((line, i) => ({
+      step_number: i + 1,
+      description: line.trim(),
+    }));
 
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const lines = textResponse.split('\n').filter(line => line.trim().length > 0);
-
+    // 4) Return with CORS headers
     return {
-      statusCode: resp.status,
+      statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://ogonjo.com',
+        'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST',
         'Access-Control-Allow-Headers': 'Content-Type',
       },
       body: JSON.stringify({
-        enhanced_description: lines[0] || description,
-        enhanced_steps: lines.slice(1).map((step, index) => ({
-          step_number: index + 1,
-          description: step.trim(),
-        })) || steps.split('\n').filter(line => line.trim().length > 0).map((step, index) => ({
-          step_number: index + 1,
-          description: step.trim(),
-        })),
+        enhanced_description: enhancedDescription,
+        enhanced_steps: enhancedSteps,
       }),
     };
-  } catch (error) {
-    console.error('Error in enhance function:', error);
+  } catch (err) {
+    console.error('Enhance function error:', err);
     return {
       statusCode: 500,
-      headers: {
-        'Access-Control-Allow-Origin': 'https://ogonjo.com',
-      },
-      body: JSON.stringify({ error: 'Internal server error', details: error.message }),
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ error: 'Internal server error', details: err.message }),
     };
   }
 }
