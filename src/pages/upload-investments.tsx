@@ -28,7 +28,7 @@ const UploadInvestments = () => {
     });
   }, [navigate]);
 
-  const handleChange = (e: any) =>
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -110,7 +110,28 @@ const UploadInvestments = () => {
           <CardContent className="p-6">
             {error && <p className="text-destructive mb-4">{error}</p>}
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* … all your input fields here … */}
+              {/* Add your input fields here, e.g.: */}
+              <input
+                name="title"
+                value={formData.title}
+                onChange={handleChange}
+                placeholder="Title"
+                className="w-full p-2 border rounded"
+              />
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Description"
+                className="w-full p-2 border rounded"
+              />
+              <textarea
+                name="strategy_steps"
+                value={formData.strategy_steps}
+                onChange={handleChange}
+                placeholder="Strategy Steps (one per line)"
+                className="w-full p-2 border rounded"
+              />
               <Button
                 type="submit"
                 className="font-roboto bg-foreground hover:bg-foreground/90 text-white"
