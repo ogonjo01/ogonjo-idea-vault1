@@ -21,12 +21,14 @@ const enhanceInvestmentContent = async (description: string, strategySteps: stri
     }
 
     const data = await response.json();
+    // Ensure enhanced_steps is always an array
+    const enhancedStepsArray = Array.isArray(data.enhanced_steps) ? data.enhanced_steps : [];
     return {
       enhancedDescription: data.enhanced_description || `Enhanced Overview: ${description}. This strategy provides a structured approach to maximize returns while managing risks.`,
       enhancedSteps: JSON.stringify({
-        steps: data.enhanced_steps || strategySteps.split('\n').map((step, index) => ({
+        steps: enhancedStepsArray.length > 0 ? enhancedStepsArray : strategySteps.split('\n').filter(line => line.trim().length > 0).map((step, index) => ({
           step_number: index + 1,
-          description: `Step ${index + 1}: ${step.trim()} - Execute with due diligence.`,
+          description: step.trim(),
         })),
       }),
     };
