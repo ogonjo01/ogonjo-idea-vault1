@@ -1,10 +1,10 @@
-const fs = require('fs');
-const path = require('path');
+import { copyFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
-const source = path.join(__dirname, '..', 'public', '_redirects');
-const destination = path.join(__dirname, '..', 'dist', '_redirects');
+const source = join(__dirname, '..', 'public', '_redirects');
+const destination = join(__dirname, '..', 'dist', '_redirects');
 
-if (fs.existsSync(source)) {
-  fs.copyFileSync(source, destination);
+if (existsSync(source)) {
+  copyFileSync(source, destination);
   console.log('Copied _redirects to dist/');
 }
