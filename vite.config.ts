@@ -4,7 +4,6 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 
 export default defineConfig(({ mode }) => {
-  // Load env file based on mode
   const env = loadEnv(mode, process.cwd(), '');
   console.log('Loaded env variables:', env); // Debug log
 
@@ -25,13 +24,12 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       include: [],
     },
-    base: mode === "production" ? "/ogonjo.com/" : "/", // Ensure this matches your deployment subpath
+    base: "/", // Root path for ogonjo.com
     build: {
       outDir: "dist",
       assetsDir: "assets",
       rollupOptions: {
         output: {
-          // Ensure chunk file names are consistent
           chunkFileNames: "assets/[name]-[hash].js",
           entryFileNames: "assets/[name]-[hash].js",
           assetFileNames: "assets/[name]-[hash].[ext]",
