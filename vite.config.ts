@@ -25,7 +25,19 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       include: [],
     },
-    base: mode === "production" ? "/ogonjo.com/" : "/", // Adjust base for production
+    base: mode === "production" ? "/ogonjo.com/" : "/", // Ensure this matches your deployment subpath
+    build: {
+      outDir: "dist",
+      assetsDir: "assets",
+      rollupOptions: {
+        output: {
+          // Ensure chunk file names are consistent
+          chunkFileNames: "assets/[name]-[hash].js",
+          entryFileNames: "assets/[name]-[hash].js",
+          assetFileNames: "assets/[name]-[hash].[ext]",
+        },
+      },
+    },
     define: {
       'import.meta.env.VITE_XAI_API_KEY': JSON.stringify(env.VITE_XAI_API_KEY),
     },
