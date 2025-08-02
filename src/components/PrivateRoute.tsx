@@ -1,18 +1,15 @@
-// ogonjo-web-app/src/components/PrivateRoute.tsx
-import React from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+// src/components/PrivateRoute.tsx
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 
-const PrivateRoute: React.FC = () => {
-  const { user } = useAuth();
-  const location = useLocation();
+const PrivateRoute = () => {
+  const { user, loading } = useAuth();
 
-  if (!user) {
-    // Redirect to login page, preserving the intended destination
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>; // Or a spinner
   }
 
-  return <Outlet />;
+  return user ? <Outlet /> : <Navigate to="/auth" replace state={{ from: window.location.pathname }} />;
 };
 
 export default PrivateRoute;
