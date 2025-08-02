@@ -1,3 +1,5 @@
+// netlify/functions/enhance.js
+
 export async function handler(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
@@ -6,18 +8,23 @@ export async function handler(event) {
   const { description, steps } = JSON.parse(event.body);
 
   try {
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent', {
+    // Note: we’re using the API key via query param, not a Bearer header
+    const apiKey = encodeURIComponent(process.env.GEMINI_API_KEY);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const resp = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [
           {
             parts: [
-              { text: 'You are an investment strategy enhancer. Improve the description and steps for clarity and professionalism.' },
-              { text: `Description: ${description}\nSteps: ${steps}` },
+              {
+                text: 'You are an investment strategy enhancer. Improve the description and steps for clarity and professionalism.'
+              },
+              {
+                text: `Description: ${description}\nSteps: ${steps}`
+              }
             ],
           },
         ],
@@ -32,26 +39,26 @@ export async function handler(event) {
     console.log('Gemini Response:', resp.status, data);
 
     if (!resp.ok) {
-      throw new Error(`Gemini API error: ${resp.status} - ${JSON.stringify(data)}`);
+      throw new Error(`Gemini API error: ${resp.status} – ${JSON.stringify(data)}`);
     }
 
+    // Parse out your enhanced description & steps
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const [firstLine, ...restLines] = raw.split('\n');
+    const enhancedDescription = firstLine.trim();
+    const enhancedSteps = restLines.map((line, i) => ({
+      step_number: i + 1,
+      description: line.trim(),
+    }));
+
     return {
-      statusCode: resp.status,
+      statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://ogonjo.com',
+        'Access-Control-Allow-Origin': 'https://ogonjo.com', // or '*' 
         'Access-Control-Allow-Methods': 'POST',
         'Access-Control-Allow-Headers': 'Content-Type',
       },
-      body: JSON.stringify({
-        enhanced_description: data.candidates?.[0]?.content?.parts?.[0]?.text.split('\n')[0] || description,
-        enhanced_steps: data.candidates?.[0]?.content?.parts?.[0]?.text.split('\n').slice(1).map((step, index) => ({
-          step_number: index + 1,
-          description: step.trim(),
-        })) || steps.split('\n').map((step, index) => ({
-          step_number: index + 1,
-          description: step.trim(),
-        })),
-      }),
+      body: JSON.stringify({ enhanced_description: enhancedDescription, enhanced_steps: enhancedSteps }),
     };
   } catch (error) {
     console.error('Error in enhance function:', error);
@@ -60,7 +67,10 @@ export async function handler(event) {
       headers: {
         'Access-Control-Allow-Origin': 'https://ogonjo.com',
       },
-      body: JSON.stringify({ error: 'Internal server error', details: error.message }),
+      body: JSON.stringify({
+        error: 'Internal server error',
+        details: error.message,
+      }),
     };
   }
 }
