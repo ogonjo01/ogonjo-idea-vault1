@@ -1,32 +1,33 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::", // Allows IPv6 and IPv4
-    port: 8082, // Match the port from your error
-    proxy: {
-      '/api/xai': {
-        target: 'https://api.x.ai/v1/grok/enhance',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/xai/, ''),
+export default defineConfig(({ mode }) => {
+  // Load env file based on mode
+  const env = loadEnv(mode, process.cwd(), '');
+  console.log('Loaded env variables:', env); // Debug log
+
+  return {
+    server: {
+      host: "::",
+      port: 8082,
+    },
+    plugins: [
+      react(),
+      mode === "development" && componentTagger(),
+    ].filter(Boolean),
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
       },
     },
-  },
-  plugins: [
-    react(),
-    mode === "development" && componentTagger(),
-  ].filter(Boolean),
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+    optimizeDeps: {
+      include: [],
     },
-  },
-  optimizeDeps: {
-    include: [
-      "pdfjs-dist/build/pdf.worker.entry",
-    ],
-  },
-}));
+    base: mode === "production" ? "/ogonjo.com/" : "/", // Adjust base for production
+    define: {
+      'import.meta.env.VITE_XAI_API_KEY': JSON.stringify(env.VITE_XAI_API_KEY),
+    },
+  };
+});
