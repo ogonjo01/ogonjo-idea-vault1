@@ -1,6 +1,9 @@
+// netlify/functions/enhance.js
+
 import { GoogleAuth } from 'google-auth-library';
 
 export async function handler(event) {
+  // Only accept POST
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -9,11 +12,11 @@ export async function handler(event) {
     };
   }
 
-  let description, steps;
+  let payload;
   try {
-    ({ description, steps } = JSON.parse(event.body));
+    payload = JSON.parse(event.body);
   } catch (parseErr) {
-    console.error('Bad JSON input:', parseErr);
+    console.error('Bad request JSON:', parseErr);
     return {
       statusCode: 400,
       headers: { 'Access-Control-Allow-Origin': '*' },
@@ -21,14 +24,17 @@ export async function handler(event) {
     };
   }
 
+  const { description, steps } = payload;
+
   try {
-    // Google Auth & Gemini request as before...
+    // Auth setup
     const auth = new GoogleAuth({
       credentials: JSON.parse(process.env.GCP_SERVICE_ACCOUNT_KEY),
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
     });
     const client = await auth.getClient();
 
+    // Call Gemini
     const url =
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
     const aiResponse = await client.request({
@@ -51,10 +57,10 @@ export async function handler(event) {
     });
 
     const data = aiResponse.data;
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const [firstLine, ...rest] = rawText.split('\n');
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const [firstLine, ...restLines] = rawText.split('\n');
     const enhancedDescription = firstLine.trim();
-    const enhancedSteps = rest.map((line, i) => ({
+    const enhancedSteps = restLines.map((line, i) => ({
       step_number: i + 1,
       description: line.trim(),
     }));
