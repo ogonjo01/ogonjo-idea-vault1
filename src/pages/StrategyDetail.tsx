@@ -5,7 +5,7 @@ import StrategyStepsModal from '../components/StrategyStepsModal';
 import './StrategyDetail.css';
 
 interface StrategyStep {
-  step: string;
+step_number: string;
   description: string;
 }
 
