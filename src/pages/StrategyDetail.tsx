@@ -5,98 +5,107 @@ import StrategyStepsModal from '../components/StrategyStepsModal';
 import './StrategyDetail.css';
 
 interface StrategyStep {
-step_number: string;
+  step_number: number;
   description: string;
+}
+
+interface BookRec {
+  title: string;
+  affiliate_link: string;
+  retail_link?: string;
+}
+
+interface Quote {
+  quote: string;
+  source?: string;
+}
+
+interface StrategyInsights {
+  overview: string;
+  why_it_matters?: string;
+  how_it_works?: string;
+  key_considerations?: string[];
+  steps: StrategyStep[];
+  book_recommendations?: BookRec[];
+  memorable_quotes?: Quote[];
 }
 
 interface InvestmentStrategyDetail {
   id: string;
   title: string;
   category: string;
-  description: string;
   affiliate_link: string | null;
   views: number;
   likes: number;
   risk_level: string;
   expected_returns: string;
-  strategy_steps: StrategyStep[] | null;
+  strategy_insights: StrategyInsights;
 }
 
-function StrategyDetail() {
+export default function StrategyDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const [strategy, setStrategy] = useState<InvestmentStrategyDetail | null>(null);
-  const [likes, setLikes] = useState(0);
-  const [views, setViews] = useState(0);
-  const [isLiked, setIsLiked] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [likes, setLikes]       = useState(0);
+  const [views, setViews]       = useState(0);
+  const [isLiked, setIsLiked]   = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const fetchStrategyDetails = useCallback(async () => {
+  const fetchDetails = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    setError(null);
-
     try {
-      const { data, error: supabaseError } = await supabase
+      const { data, error: sbErr } = await supabase
         .from('inv_investment_strategies')
-        .select(`
-          id, title, category, description, affiliate_link, views, likes,
-          risk_level, expected_returns, strategy_steps
-        `)
+        .select(`id,title,category,affiliate_link,views,likes,
+                  risk_level,expected_returns,strategy_insights`)
         .eq('id', id)
         .single();
 
-      if (supabaseError) throw supabaseError;
+      if (sbErr) throw sbErr;
+      if (!data) throw new Error('Not found');
 
-      if (data) {
-        // Ensure strategy_steps is an array
-        const steps = Array.isArray(data.strategy_steps) ? data.strategy_steps : [];
-        setStrategy({ ...data, strategy_steps: steps });
-        setLikes(data.likes || 0);
-        setViews(data.views || 0);
+      // parse JSONB if returned as text
+      const insights: StrategyInsights =
+        typeof data.strategy_insights === 'string'
+          ? JSON.parse(data.strategy_insights)
+          : data.strategy_insights;
 
-        // Increment views
-        await supabase.rpc('increment_views', { strategy_id: id });
-        setViews((prev) => prev + 1);
+      setStrategy({ ...data, strategy_insights: insights });
+      setLikes(data.likes);
+      setViews(data.views);
+      // increment view count
+      await supabase.rpc('increment_views', { strategy_id: id });
+      setViews(v => v + 1);
 
-        // Check if user already liked it
-        if (user) {
-          const { data: likeData, error: likeError } = await supabase
-            .from('user_likes')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('strategy_id', id)
-            .single();
-
-          if (!likeError) {
-            setIsLiked(!!likeData);
-          }
-        }
-      } else {
-        setError('Strategy not found.');
+      // check like status
+      if (user) {
+        const { data: likeData } = await supabase
+          .from('user_likes')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('strategy_id', id)
+          .single();
+        setIsLiked(!!likeData);
       }
-    } catch (err: any) {
-      setError(`Failed to load strategy details: ${err.message}`);
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
   }, [id, user]);
 
-  useEffect(() => {
-    fetchStrategyDetails();
-  }, [fetchStrategyDetails]);
+  useEffect(() => { fetchDetails(); }, [fetchDetails]);
 
-  const handleLikePress = async () => {
+  const toggleLike = async () => {
     if (!user) {
-      alert('Please log in to like this strategy.');
       navigate('/auth?auth=true');
       return;
     }
-
     try {
       if (isLiked) {
         await supabase
@@ -105,122 +114,135 @@ function StrategyDetail() {
           .eq('user_id', user.id)
           .eq('strategy_id', id);
         await supabase.rpc('decrement_likes', { strategy_id: id });
-        setLikes((prev) => Math.max(0, prev - 1));
-        setIsLiked(false);
+        setLikes(l => l - 1);
       } else {
         await supabase
           .from('user_likes')
           .insert({ user_id: user.id, strategy_id: id });
         await supabase.rpc('increment_likes', { strategy_id: id });
-        setLikes((prev) => prev + 1);
-        setIsLiked(true);
+        setLikes(l => l + 1);
       }
-    } catch (err: any) {
-      alert('Failed to update like status.');
-      console.error('Error updating like status:', err.message);
+      setIsLiked(l => !l);
+    } catch {
+      alert('Failed to update like');
     }
   };
 
-  const handleInvestClick = (affiliateLink: string | null) => {
-    if (affiliateLink) {
-      window.open(affiliateLink, '_blank');
-    } else {
-      alert('Investment link not available.');
-    }
+  const openAffiliate = () => {
+    if (strategy?.affiliate_link) window.open(strategy.affiliate_link, '_blank');
+    else alert('No affiliate link');
   };
 
-  if (loading) {
-    return (
-      <div className="page-container loading-container">
-        <div className="spinner"></div>
-        <p className="loading-text">Loading strategy...</p>
-      </div>
-    );
-  }
+  if (loading) return <p className="loading">Loading…</p>;
+  if (error || !strategy) return (
+    <div className="error">
+      <p>{error || 'Strategy not found'}</p>
+      <button onClick={fetchDetails}>Retry</button>
+    </div>
+  );
 
-  if (error || !strategy) {
-    return (
-      <div className="page-container error-container">
-        <p className="error-text">{error || 'Strategy not found.'}</p>
-        <button className="retry-button" onClick={fetchStrategyDetails}>
-          Retry
-        </button>
-      </div>
-    );
-  }
+  const { strategy_insights: ins } = strategy;
 
   return (
-    <div className="page-container">
-      <div className="top-header-container">
-        <h1 className="title">{strategy.title}</h1>
-        <p className="author">Category: {strategy.category}</p>
-
-        <div className="stats-row">
-          <div className="stat-item">
-            ❤️ <span className="stat-text">{likes}</span>
-          </div>
-          <div className="stat-item">
-            👁️ <span className="stat-text">{views}</span>
-          </div>
-          <button className="like-button" onClick={handleLikePress}>
-            <svg
-              className={`w-6 h-6 mr-1 ${isLiked ? 'text-red-500' : 'text-gray-700'}`}
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path
-                fillRule="evenodd"
-                d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z"
-                clipRule="evenodd"
-              />
-            </svg>
-            {isLiked ? 'Liked' : 'Like'}
+    <div className="strategy-detail">
+      <header>
+        <h1>{strategy.title}</h1>
+        <span className="category">{strategy.category}</span>
+        <div className="stats">
+          <button onClick={toggleLike} className={isLiked ? 'liked' : ''}>
+            ❤️ {likes}
           </button>
+          <span>👁️ {views}</span>
         </div>
+      </header>
 
-        <div className="divider"></div>
+      <section className="overview">
+        <h2>Overview</h2>
+        <p>{ins.overview}</p>
+      </section>
 
-        <h2 className="short-description-header">Strategy Overview:</h2>
-        <p className="short-description-text">{strategy.description}</p>
+      {ins.why_it_matters && (
+        <section className="why-matters">
+          <h2>Why It Matters</h2>
+          <p>{ins.why_it_matters}</p>
+        </section>
+      )}
 
-        <button className="read-more-button" onClick={() => setIsModalOpen(true)}>
-          View Strategy Steps
-        </button>
+      {ins.how_it_works && (
+        <section className="how-it-works">
+          <h2>How It Works</h2>
+          <p>{ins.how_it_works}</p>
+        </section>
+      )}
 
-        <button
-          className="read-more-button bg-green-600 hover:bg-green-700"
-          onClick={() => handleInvestClick(strategy.affiliate_link)}
-        >
+      {ins.key_considerations?.length > 0 && (
+        <section className="key-considerations">
+          <h2>Key Considerations</h2>
+          <ul>
+            {ins.key_considerations.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        </section>
+      )}
+
+      <section className="steps-preview">
+        <h2>Steps</h2>
+        <button onClick={() => setModalOpen(true)}>View All Steps</button>
+      </section>
+
+      {ins.book_recommendations?.length > 0 && (
+        <section className="books">
+          <h2>Recommended Reading</h2>
+          <ul>
+            {ins.book_recommendations.map((b, i) => (
+              <li key={i}>
+                <span>{b.title}</span>
+                <a
+                  href={b.affiliate_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="affiliate-btn"
+                >
+                  Buy (Affiliate)
+                </a>
+                {b.retail_link && (
+                  <a
+                    href={b.retail_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="retail-link"
+                  >
+                    (Retail)
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {ins.memorable_quotes?.length > 0 && (
+        <section className="quotes">
+          <h2>Memorable Quotes</h2>
+          {ins.memorable_quotes.map((q, i) => (
+            <blockquote key={i}>
+              “{q.quote}”{q.source && <cite>— {q.source}</cite>}
+            </blockquote>
+          ))}
+        </section>
+      )}
+
+      <footer>
+        <button onClick={openAffiliate} className="invest-btn">
           Invest Now
         </button>
-      </div>
+      </footer>
 
-      <div className="links-section">
-        <h2 className="links-header">Strategy Insights:</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="link-item">
-            <p className="font-roboto text-sm text-muted-foreground">
-              Risk Level: {strategy.risk_level || 'N/A'}
-            </p>
-          </div>
-          <div className="link-item">
-            <p className="font-roboto text-sm text-muted-foreground">
-              Expected Returns: {strategy.expected_returns || 'N/A'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {Array.isArray(strategy.strategy_steps) && (
-        <StrategyStepsModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          strategySteps={strategy.strategy_steps}
-          strategyTitle={strategy.title}
-        />
-      )}
+      <StrategyStepsModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        strategySteps={ins.steps}
+        strategyTitle={strategy.title}
+      />
     </div>
   );
 }
-
-export default StrategyDetail;
