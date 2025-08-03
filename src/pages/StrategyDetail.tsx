@@ -20,7 +20,7 @@ interface InvestmentStrategyDetail {
   likes: number;
   risk_level: string | null;
   expected_returns: string | null;
-  strategy_steps: StrategyStep[] | null;
+  strategy_steps: StrategyStep[] | string | null;
   investment_synopsis?: { what_is_it?: string; who_offers_it?: string; goal?: string; fit_check?: string };
   returns_projections?: { expected_returns?: string; guaranteed?: string; time_horizon?: string; examples_check?: string };
   risk_assessment?: { potential_issues?: string[]; capital_risk?: string; risk_types?: string[]; legal_risks?: string[]; affordability_check?: string };
@@ -35,6 +35,7 @@ interface InvestmentStrategyDetail {
   key_metrics?: { roi?: string; npv?: string; irr?: string; payback_period?: string; cash_flow?: string; analysis_check?: string };
   red_flags?: { pressure_tactics?: string; clarity_issues?: string; risk_hype?: string; instinct_check?: string };
 }
+
 
 function StrategyDetail() {
   const { id } = useParams<{ id: string }>();
@@ -59,10 +60,7 @@ function StrategyDetail() {
         .select(`
           id, title, category, description, affiliate_link, views, likes,
           risk_level, expected_returns, strategy_steps, investment_synopsis,
-          returns_projections, risk_assessment, historical_performance,
-          liquidity_profile, cost_structure, management_team, legal_compliance,
-          operational_mechanics, personal_alignment, exit_strategy, key_metrics,
-          red_flags
+          returns_projections, risk_assessment
         `)
         .eq('id', id)
         .single();
@@ -71,17 +69,27 @@ function StrategyDetail() {
 
       if (data) {
         const parsed: any = { ...data };
-        [
-          'strategy_steps', 'investment_synopsis', 'returns_projections',
-          'risk_assessment', 'historical_performance', 'liquidity_profile',
-          'cost_structure', 'management_team', 'legal_compliance',
-          'operational_mechanics', 'personal_alignment', 'exit_strategy',
-          'key_metrics', 'red_flags'
-        ].forEach((field) => {
-          if (typeof parsed[field] === 'string') {
-            try { parsed[field] = JSON.parse(parsed[field]); } catch { /* leave as-is */ }
+        // Parse nested JSON fields safely with double parsing for strategy_steps
+        const parseField = (field: string | null | undefined) => {
+          if (typeof field === 'string') {
+            try {
+              const outer = JSON.parse(field);
+              if (outer && typeof outer.steps === 'string') {
+                return JSON.parse(outer.steps); // Double parse to get the array
+              }
+              return outer || null; // Handle cases where steps is not nested
+            } catch (e) {
+              console.warn(`Failed to parse ${field}:`, e);
+              return null;
+            }
           }
-        });
+          return field;
+        };
+
+        parsed.strategy_steps = (parseField(parsed.strategy_steps) as StrategyStep[]) || [];
+        parsed.investment_synopsis = parseField(parsed.investment_synopsis) || {};
+        parsed.returns_projections = parseField(parsed.returns_projections) || {};
+        parsed.risk_assessment = parseField(parsed.risk_assessment) || {};
 
         setStrategy(parsed as InvestmentStrategyDetail);
         setLikes(data.likes || 0);
@@ -159,24 +167,20 @@ function StrategyDetail() {
     title, category, description,
     risk_level, expected_returns,
     investment_synopsis, returns_projections,
-    risk_assessment, historical_performance,
-    liquidity_profile, cost_structure,
-    management_team, legal_compliance,
-    operational_mechanics, personal_alignment,
-    exit_strategy, key_metrics, red_flags,
+    risk_assessment, strategy_steps,
   } = strategy;
 
   return (
     <div className="strategy-detail container mx-auto p-6 max-w-4xl">
       <div className="bg-white overflow-hidden shadow-2xl rounded-xl border-0">
         <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-6">
-          <h1 className="text-4xl font-extrabold tracking-tight">{title}</h1>
-          <p className="text-lg font-medium mt-1">{category}</p>
+          <h1 className="text-4xl font-extrabold tracking-tight">{title || 'Untitled Strategy'}</h1>
+          <p className="text-lg font-medium mt-1">{category || 'Uncategorized'}</p>
         </div>
         <div className="p-6 space-y-8">
           <section className="bg-gray-50 p-5 rounded-xl border border-gray-200">
             <h2 className="text-2xl font-semibold text-teal-800">Summary</h2>
-            <p className="text-gray-700 mt-3 leading-relaxed">{description}</p>
+            <p className="text-gray-700 mt-3 leading-relaxed">{description || 'No description available.'}</p>
           </section>
           <section className="flex justify-between items-center gap-4 bg-gray-50 p-4 rounded-xl">
             <div className="text-center md:text-left">
@@ -211,8 +215,8 @@ function StrategyDetail() {
       <StrategyStepsModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        strategySteps={strategy.strategy_steps || []}
-        strategyTitle={title}
+        strategySteps={Array.isArray(strategy_steps) ? strategy_steps : []}
+        strategyTitle={title || 'Untitled Strategy'}
         investmentData={strategy}
       />
     </div>
