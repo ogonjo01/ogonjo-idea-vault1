@@ -1,39 +1,16 @@
 // netlify/functions/enhance.js
-
 export async function handler(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
+  let { description, steps } = JSON.parse(event.body);
+
   try {
-    const { description = '', steps = '' } = JSON.parse(event.body);
-
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-
-   const prompt = `
-You are a top-tier business strategist and educator writing high-value content for professionals. 
-
-Your task is to take a short draft consisting of a description and steps — and expand it into a complete, 15–20 minute read. Your response should follow this structure:
-
-1. Begin with an **engaging, well-written summary** that sets the tone and purpose.
-2. Rewrite and **expand the description** into 3–4 full paragraphs. Make it informative, inspiring, and persuasive.
-3. Rewrite each step into a detailed, numbered section — each step should include:
-   - A clear explanation.
-   - Practical advice or how-to guidance.
-   - (If appropriate) An example or scenario.
-   - Make each step roughly 150–200 words.
-4. Avoid repetition and fluff. Write with clarity, flow, and depth.
-
-Now, expand the following:
-
-Description:
-${description}
-
-Steps:
-${typeof steps === 'string' ? steps : JSON.stringify(steps)}
-`;
-
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not set');
+    }
 
     const resp = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
@@ -41,8 +18,18 @@ ${typeof steps === 'string' ? steps : JSON.stringify(steps)}
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt.trim() }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+          contents: [
+            {
+              parts: [
+                {
+                  text:
+                    'You are a globally recognized investment strategist and content expert. Enhance the following description and steps into a professional investment strategy for categories like book summaries, courses, quizzes, or business ideas. Return a JSON object with: investment_synopsis ({what_is_it, who_offers_it, goal, fit_check}), returns_projections ({expected_returns, guaranteed, time_horizon, examples_check}), risk_assessment ({potential_issues, capital_risk, risk_types, legal_risks, affordability_check}), historical_performance ({past_performance, verifiable_data, downturn_performance, disclaimer_check}), liquidity_profile ({ease_of_withdrawal, lock_in_period, penalties, exit_check}), cost_structure ({management_fees, hidden_costs, impact_check}), management_team ({key_personnel, track_record, credentials, conflicts, trust_check}), legal_compliance ({regulatory_body, documentation, legal_history, scam_check}), operational_mechanics ({return_generation, investment_allocation, contingency_plan, simplicity_check}), personal_alignment ({risk_tolerance, income_needs, tax_strategy, diversification, suitability_check}), exit_strategy ({exit_process, transferability, buyer_availability, plan_check}), key_metrics ({roi, npv, irr, payback_period, cash_flow, analysis_check}), red_flags ({pressure_tactics, clarity_issues, risk_hype, instinct_check}). Ensure content is sophisticated, value-driven, and actionable.',
+                },
+                { text: `Description: ${description}\nSteps: ${steps}` },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
         }),
       }
     );
@@ -53,17 +40,26 @@ ${typeof steps === 'string' ? steps : JSON.stringify(steps)}
       throw new Error(`Gemini API ${resp.status}: ${raw}`);
     }
 
-    const data = JSON.parse(raw);
-    const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-    const lines = aiText.split('\n').map((line) => line.trim()).filter(Boolean);
-
-    // Heuristically separate description from steps
-    const enhancedDescription = lines[0];
-    const enhancedSteps = lines.slice(1).map((stepText, i) => ({
-      step_number: i + 1,
-      description: stepText.replace(/^\d+\.\s*/, ''), // strip leading numbering
-    }));
+    let enhancedData;
+    try {
+      enhancedData = JSON.parse(raw);
+    } catch {
+      enhancedData = {
+        investment_synopsis: { what_is_it: description, who_offers_it: '', goal: '', fit_check: '' },
+        returns_projections: { expected_returns: '', guaranteed: '', time_horizon: '', examples_check: '' },
+        risk_assessment: { potential_issues: [], capital_risk: '', risk_types: [], legal_risks: '', affordability_check: '' },
+        historical_performance: { past_performance: '', verifiable_data: '', downturn_performance: '', disclaimer_check: '' },
+        liquidity_profile: { ease_of_withdrawal: '', lock_in_period: '', penalties: '', exit_check: '' },
+        cost_structure: { management_fees: '', hidden_costs: '', impact_check: '' },
+        management_team: { key_personnel: '', track_record: '', credentials: '', conflicts: '', trust_check: '' },
+        legal_compliance: { regulatory_body: '', documentation: '', legal_history: '', scam_check: '' },
+        operational_mechanics: { return_generation: '', investment_allocation: '', contingency_plan: '', simplicity_check: '' },
+        personal_alignment: { risk_tolerance: '', income_needs: '', tax_strategy: '', diversification: '', suitability_check: '' },
+        exit_strategy: { exit_process: '', transferability: '', buyer_availability: '', plan_check: '' },
+        key_metrics: { roi: '', npv: '', irr: '', payback_period: '', cash_flow: '', analysis_check: '' },
+        red_flags: { pressure_tactics: '', clarity_issues: '', risk_hype: '', instinct_check: '' },
+      };
+    }
 
     return {
       statusCode: 200,
@@ -72,10 +68,7 @@ ${typeof steps === 'string' ? steps : JSON.stringify(steps)}
         'Access-Control-Allow-Methods': 'POST',
         'Access-Control-Allow-Headers': 'Content-Type',
       },
-      body: JSON.stringify({
-        enhanced_description: enhancedDescription,
-        enhanced_steps: enhancedSteps,
-      }),
+      body: JSON.stringify(enhancedData),
     };
   } catch (err) {
     console.error('Enhance failed:', err);
