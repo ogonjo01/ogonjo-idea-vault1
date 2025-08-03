@@ -99,7 +99,7 @@ const UploadInvestments = () => {
         likes: 0,
         risk_level: formData.risk_level || null,
         expected_returns: formData.expected_returns || null,
-        strategy_steps: enhancedSteps,
+        strategy_steps: JSON.stringify({ steps: enhancedSteps }),
         is_active: formData.is_active,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

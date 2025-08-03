@@ -1,49 +1,41 @@
-// src/services/ai.ts
+// src/services/ai.ts  
 
-export interface EnhancementResult {
-  enhanced_description: string;
-  enhanced_steps: { step_number: number; description: string }[];
-}
-
-export async function callEnhancementAPI(
+export async function enhanceInvestmentContent(
   description: string,
-  steps: string
-): Promise<EnhancementResult> {
-  if (!description || !steps) {
-    throw new Error('Description and steps must be provided.');
-  }
-
-  const resp = await fetch('/.netlify/functions/enhance', {
+  strategySteps: string
+): Promise<{
+  enhancedDescription: string;
+  enhancedSteps: { step_number: number; description: string }[];
+}> {
+  const res = await fetch('/.netlify/functions/enhance', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, steps }),
+    body: JSON.stringify({ description, steps: strategySteps }),
   });
-
-  const text = await resp.text();
-  let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    console.error('Enhance function returned invalid JSON:', text);
-    throw new Error(`Enhancement API error: ${resp.status} – invalid JSON response`);
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Enhancement API Error ${res.status}: ${txt}`);
   }
 
-  if (!resp.ok) {
-    console.error('Enhancement API error details:', data);
-    throw new Error(`Enhancement API error: ${resp.status} – ${data.error || JSON.stringify(data)}`);
+  const data = await res.json();
+  if (typeof data.enhanced_description !== 'string') {
+    throw new Error('Invalid response: missing enhanced_description');
   }
-
-  // Validate shape
-  if (
-    typeof data.enhanced_description !== 'string' ||
-    !Array.isArray(data.enhanced_steps)
-  ) {
-    console.error('Unexpected response shape:', data);
-    throw new Error('Enhancement API returned unexpected data');
+  if (!Array.isArray(data.enhanced_steps)) {
+    console.warn('enhanced_steps not an array, falling back to original steps');
+    // fallback: split the original lines
+    const lines = strategySteps
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    data.enhanced_steps = lines.map((l, i) => ({
+      step_number: i + 1,
+      description: l,
+    }));
   }
 
   return {
-    enhanced_description: data.enhanced_description,
-    enhanced_steps: data.enhanced_steps,
+    enhancedDescription: data.enhanced_description,
+    enhancedSteps: data.enhanced_steps,
   };
 }
