@@ -94,150 +94,147 @@ const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
 
   return (
     <div className={`min-h-screen flex flex-col ${isAuthRoute ? 'auth-layout' : ''}`}>
-      <header className="fixed w-full top-0 z-50 bg-white shadow-md border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-3">
-            <div className="flex items-center">
-              <h1 className="text-xl sm:text-2xl font-bold text-teal-700">OGONJO</h1>
-            </div>
-            <div className="flex items-center space-x-2">
-              {!user ? (
-                <div className="space-x-2 hidden md:flex">
-                  <NavLink
-                    to="/auth?mode=signIn"
-                    className="px-3 py-1 bg-teal-700 text-white rounded-md hover:bg-teal-800 text-sm transition-all duration-300"
-                  >
-                    Login
-                  </NavLink>
-                  <NavLink
-                    to="/auth?mode=signUp"
-                    className="px-3 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 text-sm transition-all duration-300"
-                  >
-                    Signup
-                  </NavLink>
-                </div>
-              ) : (
-                <button
-                  onClick={toggleProfileMenu}
-                  className="flex items-center text-gray-700 hover:text-teal-700 focus:outline-none text-sm"
-                >
-                  <span role="img" aria-label="profile" className="text-lg">👤</span>
-                  <span className="ml-1 hidden sm:inline">Profile</span>
-                </button>
-              )}
-              <button
-                onClick={toggleMobileMenu}
-                className="md:hidden text-gray-700 hover:text-teal-700 focus:outline-none text-2xl"
-              >
-                ☰
-              </button>
-            </div>
-          </div>
-          {/* Mobile Navigation */}
-          {isMobileMenuOpen && (
-            <div className="md:hidden absolute top-14 right-4 w-48 bg-white shadow-lg rounded-lg p-2 z-50">
-              <NavLink
-                to="/dashboard"
-                className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-blue-100 hover:text-blue-900 ${isActive ? 'bg-blue-100 text-blue-800' : ''}`}
-                onClick={toggleMobileMenu}
-              >
+      <header className="fixed w-full top-0 z-50 bg-white shadow-md border-b border-gray-200 h-14">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-full justify-between">
+          <div className="flex items-center space-x-4">
+            <h1 className="text-xl sm:text-2xl font-bold text-teal-700">OGONJO</h1>
+            <nav className="hidden md:flex space-x-4">
+              <NavLink to="/dashboard" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'} hover:bg-blue-200 hover:text-blue-900 transition-all duration-300`} end>
                 <span role="img" aria-label="dashboard" className="mr-1">📊</span> Investments
               </NavLink>
-              <NavLink
-                to="/ideas"
-                className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-green-100 hover:text-green-900 ${isActive ? 'bg-green-100 text-green-800' : ''}`}
-                onClick={toggleMobileMenu}
-              >
+              <NavLink to="/ideas" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'} hover:bg-green-200 hover:text-green-900 transition-all duration-300`} end>
                 <span role="img" aria-label="innovations" className="mr-1">💡</span> Innovations
               </NavLink>
-              <NavLink
-                to="/courses"
-                className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-purple-100 hover:text-purple-900 ${isActive ? 'bg-purple-100 text-purple-800' : ''}`}
-                onClick={toggleMobileMenu}
-              >
+              <NavLink to="/courses" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'} hover:bg-purple-200 hover:text-purple-900 transition-all duration-300`} end>
                 <span role="img" aria-label="learning" className="mr-1">🏫</span> Learning
               </NavLink>
-              <NavLink
-                to="/book-summaries"
-                className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-yellow-100 hover:text-yellow-900 ${isActive ? 'bg-yellow-100 text-yellow-800' : ''}`}
-                onClick={toggleMobileMenu}
-              >
+              <NavLink to="/book-summaries" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700'} hover:bg-yellow-200 hover:text-yellow-900 transition-all duration-300`} end>
                 <span role="img" aria-label="summaries" className="mr-1">📚</span> Summaries
               </NavLink>
-              <NavLink
-                to="/quotes"
-                className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-red-100 hover:text-red-900 ${isActive ? 'bg-red-100 text-red-800' : ''}`}
-                onClick={toggleMobileMenu}
-              >
+              <NavLink to="/quotes" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'} hover:bg-red-200 hover:text-red-900 transition-all duration-300`} end>
                 <span role="img" aria-label="wisdom" className="mr-1">💬</span> Wisdom
               </NavLink>
-              <NavLink
-                to="/insights"
-                className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-teal-100 hover:text-teal-900 ${isActive ? 'bg-teal-100 text-teal-800' : ''}`}
-                onClick={toggleMobileMenu}
-              >
+              <NavLink to="/insights" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-700'} hover:bg-teal-200 hover:text-teal-900 transition-all duration-300`} end>
                 <span role="img" aria-label="audio books" className="mr-1">🎧</span> Audio Books
                 {unreadCount > 0 && <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-semibold text-white bg-red-500 rounded-full">{unreadCount > 9 ? '9+' : unreadCount}</span>}
               </NavLink>
-              {!user && (
-                <>
-                  <NavLink
-                    to="/auth?mode=signIn"
-                    className="block px-4 py-2 rounded-md text-gray-700 hover:bg-blue-100 hover:text-blue-900"
-                    onClick={toggleMobileMenu}
-                  >
-                    Login
-                  </NavLink>
-                  <NavLink
-                    to="/auth?mode=signUp"
-                    className="block px-4 py-2 rounded-md text-gray-700 hover:bg-green-100 hover:text-green-900"
-                    onClick={toggleMobileMenu}
-                  >
-                    Signup
-                  </NavLink>
-                </>
-              )}
-              {user && (
+            </nav>
+          </div>
+          <div className="flex items-center space-x-2">
+            {!user ? (
+              <div className="space-x-2 hidden md:flex">
                 <NavLink
-                  to="/profile"
-                  className="block px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100"
-                  onClick={() => { toggleProfileMenu(); toggleMobileMenu(); }}
+                  to="/auth?mode=signIn"
+                  className="px-3 py-1 bg-teal-700 text-white rounded-md hover:bg-teal-800 text-sm transition-all duration-300"
                 >
-                  Profile
+                  Login
                 </NavLink>
-              )}
-            </div>
-          )}
-          {/* Profile Menu */}
-          {isProfileOpen && user && (
-            <div className="absolute top-14 right-4 w-48 bg-white shadow-lg rounded-lg p-2 z-50 md:top-12">
-              <NavLink to="/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md" onClick={toggleProfileMenu}>Profile</NavLink>
-              <button onClick={() => { signOut(); toggleProfileMenu(); }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md">Logout</button>
-            </div>
-          )}
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex space-x-4 mt-2">
-            <NavLink to="/dashboard" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'} hover:bg-blue-200 hover:text-blue-900 transition-all duration-300`} end>
+                <NavLink
+                  to="/auth?mode=signUp"
+                  className="px-3 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 text-sm transition-all duration-300"
+                >
+                  Signup
+                </NavLink>
+              </div>
+            ) : (
+              <button
+                onClick={toggleProfileMenu}
+                className="flex items-center text-gray-700 hover:text-teal-700 focus:outline-none text-sm"
+              >
+                <span role="img" aria-label="profile" className="text-lg">👤</span>
+                <span className="ml-1 hidden sm:inline">Profile</span>
+              </button>
+            )}
+            <button
+              onClick={toggleMobileMenu}
+              className="md:hidden text-gray-700 hover:text-teal-700 focus:outline-none text-2xl"
+            >
+              ☰
+            </button>
+          </div>
+        </div>
+        {/* Mobile Navigation */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden absolute top-14 right-4 w-48 bg-white shadow-lg rounded-lg p-2 z-50">
+            <NavLink
+              to="/dashboard"
+              className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-blue-100 hover:text-blue-900 ${isActive ? 'bg-blue-100 text-blue-800' : ''}`}
+              onClick={toggleMobileMenu}
+            >
               <span role="img" aria-label="dashboard" className="mr-1">📊</span> Investments
             </NavLink>
-            <NavLink to="/ideas" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'} hover:bg-green-200 hover:text-green-900 transition-all duration-300`} end>
+            <NavLink
+              to="/ideas"
+              className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-green-100 hover:text-green-900 ${isActive ? 'bg-green-100 text-green-800' : ''}`}
+              onClick={toggleMobileMenu}
+            >
               <span role="img" aria-label="innovations" className="mr-1">💡</span> Innovations
             </NavLink>
-            <NavLink to="/courses" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'} hover:bg-purple-200 hover:text-purple-900 transition-all duration-300`} end>
+            <NavLink
+              to="/courses"
+              className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-purple-100 hover:text-purple-900 ${isActive ? 'bg-purple-100 text-purple-800' : ''}`}
+              onClick={toggleMobileMenu}
+            >
               <span role="img" aria-label="learning" className="mr-1">🏫</span> Learning
             </NavLink>
-            <NavLink to="/book-summaries" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700'} hover:bg-yellow-200 hover:text-yellow-900 transition-all duration-300`} end>
+            <NavLink
+              to="/book-summaries"
+              className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-yellow-100 hover:text-yellow-900 ${isActive ? 'bg-yellow-100 text-yellow-800' : ''}`}
+              onClick={toggleMobileMenu}
+            >
               <span role="img" aria-label="summaries" className="mr-1">📚</span> Summaries
             </NavLink>
-            <NavLink to="/quotes" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'} hover:bg-red-200 hover:text-red-900 transition-all duration-300`} end>
+            <NavLink
+              to="/quotes"
+              className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-red-100 hover:text-red-900 ${isActive ? 'bg-red-100 text-red-800' : ''}`}
+              onClick={toggleMobileMenu}
+            >
               <span role="img" aria-label="wisdom" className="mr-1">💬</span> Wisdom
             </NavLink>
-            <NavLink to="/insights" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-700'} hover:bg-teal-200 hover:text-teal-900 transition-all duration-300`} end>
+            <NavLink
+              to="/insights"
+              className={({ isActive }) => `block px-4 py-2 rounded-md text-gray-700 hover:bg-teal-100 hover:text-teal-900 ${isActive ? 'bg-teal-100 text-teal-800' : ''}`}
+              onClick={toggleMobileMenu}
+            >
               <span role="img" aria-label="audio books" className="mr-1">🎧</span> Audio Books
               {unreadCount > 0 && <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-semibold text-white bg-red-500 rounded-full">{unreadCount > 9 ? '9+' : unreadCount}</span>}
             </NavLink>
-          </nav>
-        </div>
+            {!user && (
+              <>
+                <NavLink
+                  to="/auth?mode=signIn"
+                  className="block px-4 py-2 rounded-md text-gray-700 hover:bg-blue-100 hover:text-blue-900"
+                  onClick={toggleMobileMenu}
+                >
+                  Login
+                </NavLink>
+                <NavLink
+                  to="/auth?mode=signUp"
+                  className="block px-4 py-2 rounded-md text-gray-700 hover:bg-green-100 hover:text-green-900"
+                  onClick={toggleMobileMenu}
+                >
+                  Signup
+                </NavLink>
+              </>
+            )}
+            {user && (
+              <NavLink
+                to="/profile"
+                className="block px-4 py-2 rounded-md text-gray-700 hover:bg-gray-100"
+                onClick={() => { toggleProfileMenu(); toggleMobileMenu(); }}
+              >
+                Profile
+              </NavLink>
+            )}
+          </div>
+        )}
+        {/* Profile Menu */}
+        {isProfileOpen && user && (
+          <div className="absolute top-14 right-4 w-48 bg-white shadow-lg rounded-lg p-2 z-50 md:top-12">
+            <NavLink to="/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md" onClick={toggleProfileMenu}>Profile</NavLink>
+            <button onClick={() => { signOut(); toggleProfileMenu(); }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md">Logout</button>
+          </div>
+        )}
       </header>
       <main className="flex-1 pt-16 container mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <Outlet />
