@@ -122,7 +122,7 @@ const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
                   className="flex items-center text-gray-700 hover:text-teal-700 focus:outline-none text-sm"
                 >
                   <span role="img" aria-label="profile" className="text-lg">👤</span>
-                  <span className="ml-1 hidden sm:inline">{user.email?.split('@')[0]}</span>
+                  <span className="ml-1 hidden sm:inline">Profile</span>
                 </button>
               )}
               <button
