@@ -19,16 +19,22 @@ interface UserProfile {
 
 const Profile = () => {
   const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState<UserProfile | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState(false); // Track upload success
 
   useEffect(() => {
     const fetchUserProfile = async () => {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
 
-      if (user) {
+        if (!user) {
+          console.warn('No user session found, redirecting to login.');
+          navigate('/auth?mode=signIn');
+          return;
+        }
+
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('full_name, created_at, plan, avatar_url, email')
@@ -37,32 +43,35 @@ const Profile = () => {
 
         if (profileError) {
           console.error('Error fetching user profile:', profileError.message);
+          setUserData(null); // Fallback to null if error occurs
         } else if (profileData) {
           setUserData({
             id: user.id,
-            full_name: profileData.full_name,
+            full_name: profileData.full_name || 'Unknown User',
             email: profileData.email || 'N/A',
-            created_at: profileData.created_at,
-            plan: profileData.plan,
+            created_at: profileData.created_at || new Date().toISOString(),
+            plan: profileData.plan || 'Free',
             avatar_url: profileData.avatar_url,
           });
         }
-      } else {
-        console.warn('No user session found, redirecting to login.');
-        navigate('/login');
+      } catch (error) {
+        console.error('Unexpected error fetching profile:', error);
+        setUserData(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchUserProfile();
   }, [navigate]);
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Error logging out:', error.message);
-    } else {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       navigate('/');
+    } catch (error) {
+      console.error('Error logging out:', error.message);
     }
   };
 
@@ -80,6 +89,17 @@ const Profile = () => {
     }
   };
 
+  // Handle auto-redirect after upload
+  useEffect(() => {
+    if (uploadSuccess) {
+      const timer = setTimeout(() => {
+        navigate('/dashboard');
+        setUploadSuccess(false); // Reset after redirect
+      }, 2000); // 2-second delay for user feedback
+      return () => clearTimeout(timer);
+    }
+  }, [uploadSuccess, navigate]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -93,7 +113,7 @@ const Profile = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <p className="text-lg text-destructive">Could not load user data. Please ensure you are logged in.</p>
-        <Button onClick={() => navigate('/login')} className="mt-4">Go to Login</Button>
+        <Button onClick={() => navigate('/auth?mode=signIn')} className="mt-4">Go to Login</Button>
       </div>
     );
   }
@@ -132,6 +152,9 @@ const Profile = () => {
                 </div>
               </div>
               <div className="md:ml-auto flex gap-2">
+                <Button variant="outline" onClick={() => navigate('/dashboard')} className="font-roboto">
+                  Back to Dashboard
+                </Button>
                 <Button variant="destructive" className="font-roboto" onClick={handleLogout}>
                   Logout
                 </Button>
@@ -148,37 +171,37 @@ const Profile = () => {
           <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <Button
               className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
-              onClick={() => navigate('/upload-investments')}
+              onClick={() => { navigate('/upload-investments'); setUploadSuccess(true); }}
             >
               📊 Investments
             </Button>
             <Button
               className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
-              onClick={() => navigate('/upload-innovations')}
+              onClick={() => { navigate('/upload-innovations'); setUploadSuccess(true); }}
             >
               💡 Innovations
             </Button>
             <Button
               className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
-              onClick={() => navigate('/upload-learning')}
+              onClick={() => { navigate('/upload-learning'); setUploadSuccess(true); }}
             >
               🏫 Learning
             </Button>
             <Button
               className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
-              onClick={() => navigate('/upload-summaries')}
+              onClick={() => { navigate('/upload-summaries'); setUploadSuccess(true); }}
             >
               📚 Summaries
             </Button>
             <Button
               className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
-              onClick={() => navigate('/upload-wisdom')}
+              onClick={() => { navigate('/upload-wisdom'); setUploadSuccess(true); }}
             >
               💬 Wisdom
             </Button>
             <Button
               className="font-roboto bg-foreground hover:bg-foreground/90 text-white flex items-center justify-center gap-2"
-              onClick={() => navigate('/upload-audiobooks')}
+              onClick={() => { navigate('/upload-audiobooks'); setUploadSuccess(true); }}
             >
               🎧 Audio Books
             </Button>
