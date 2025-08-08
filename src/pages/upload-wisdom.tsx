@@ -4,13 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
-
-// Simulate AI API (replace with actual API call if available)
-const enhanceQuoteContent = async (quoteText: string) => {
-  // Mock AI enhancement (replace with real API call, e.g., xAI API)
-  const enhancedQuoteText = `Enhanced Quote: "${quoteText.trim()}." This reflects a profound business principle, encouraging strategic growth and resilience.`;
-  return { enhancedQuoteText };
-};
+import { v4 as uuidv4 } from 'uuid';
 
 const UploadWisdom = () => {
   const navigate = useNavigate();
@@ -22,6 +16,19 @@ const UploadWisdom = () => {
     category: '',
     status: 'pending',
   });
+
+  const categories = [
+    'Leadership',
+    'Entrepreneurship & Risk',
+    'Innovation & Creativity',
+    'Success & Motivation',
+    'Failure & Learning',
+    'Money & Finance',
+    'Strategy & Vision',
+    'Marketing & Branding',
+    'Productivity & Time Management',
+    'Teamwork & Culture',
+  ];
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -48,11 +55,9 @@ const UploadWisdom = () => {
       return;
     }
 
-    const { enhancedQuoteText } = await enhanceQuoteContent(formData.quote_text);
-
     const data = {
-      id: crypto.randomUUID(),
-      quote_text: enhancedQuoteText,
+      id: uuidv4(),
+      quote_text: formData.quote_text,
       author: formData.author,
       category: formData.category,
       likes: 0,
@@ -117,30 +122,21 @@ const UploadWisdom = () => {
               </div>
               <div>
                 <label htmlFor="category" className="block text-sm font-roboto text-muted-foreground mb-1">Category</label>
-                <input
-                  type="text"
+                <select
                   id="category"
                   name="category"
                   value={formData.category}
                   onChange={handleChange}
                   className="w-full p-2 border border-input bg-background rounded-md"
                   required
-                />
-              </div>
-              <div>
-                <label htmlFor="status" className="block text-sm font-roboto text-muted-foreground mb-1">Status</label>
-                <select
-                  id="status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md"
                 >
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
+                  <option value="">Select a category</option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                 </select>
               </div>
+              
               <Button
                 type="submit"
                 className="font-roboto bg-foreground hover:bg-foreground/90 text-white"

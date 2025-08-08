@@ -1,72 +1,46 @@
 // src/components/StrategyStepsModal.tsx
-import { useState, useEffect } from 'react';
+import React from 'react';
 
 interface StrategyStep {
   step_number: number;
   description: string;
 }
-
-interface StrategyStepsModalProps {
+interface Props {
   isOpen: boolean;
   onClose: () => void;
   strategySteps: StrategyStep[];
   strategyTitle: string;
 }
 
-const StrategyStepsModal = ({
-  isOpen,
-  onClose,
-  strategySteps,
-  strategyTitle,
-}: StrategyStepsModalProps) => {
+const StrategyStepsModal: React.FC<Props> = ({ isOpen, onClose, strategySteps, strategyTitle }) => {
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-gray-900/70 to-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
-      <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-lg border border-teal-100 transform transition-all duration-300 ease-in-out hover:shadow-3xl">
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="font-montserrat text-2xl font-bold text-teal-800 tracking-wide">
-            {strategyTitle} Execution Framework
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-teal-600 transition-colors duration-200"
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center backdrop-blur-sm z-50">
+      <div className="bg-white w-full max-w-3xl p-8 rounded-2xl shadow-2xl border border-gray-200">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-bold text-blue-700">{strategyTitle} Execution</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-red-500 transition">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
-        <div className="space-y-5 max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-teal-300 scrollbar-track-gray-100 p-3">
-          {strategySteps.map((step, index) => (
-            <div
-              key={index}
-              className="p-4 bg-gradient-to-br from-teal-50 to-white rounded-lg border-l-4 border-teal-200 shadow-md hover:bg-teal-100 transition-all duration-200"
-            >
-              <h3 className="font-roboto text-lg font-semibold text-gray-900">
-                Step {step.step_number}
-              </h3>
-              <p className="font-roboto text-base text-gray-700 mt-2 leading-relaxed">
-                {step.description}
-              </p>
+        <div className="space-y-8 max-h-[75vh] overflow-y-auto pr-4 prose prose-blue">
+          {strategySteps.map((step, idx) => (
+            <div key={idx} className="p-6 bg-gradient-to-br from-blue-50 to-white rounded-xl border-l-4 border-teal-400 shadow-inner">
+              <h3 className="text-2xl font-semibold text-gray-800 mb-2">Step {step.step_number}</h3>
+              <div
+                className="text-gray-700 leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: step.description }}
+              />
             </div>
           ))}
         </div>
         <button
           onClick={onClose}
-          className="mt-6 w-full bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-all duration-200 shadow-md hover:shadow-lg"
+          className="mt-8 w-full bg-gradient-to-r from-red-500 to-pink-500 text-white p-4 rounded-lg font-semibold hover:shadow-lg transition"
         >
-          Dismiss
+          Close
         </button>
       </div>
     </div>

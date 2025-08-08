@@ -1,258 +1,201 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
-import { supabase } from '@/services/supabase';
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import ReactQuill from 'react-quill'
+import 'react-quill/dist/quill.snow.css'
+import 'highlight.js/styles/github.css'
+import { syntax } from '@/types/quillSyntax'
+import { supabase } from '@/services/supabase'
+import { useAuth } from '@/hooks/useAuth'
+import { useNavigate } from 'react-router-dom'
+import DOMPurify from 'dompurify'
+import debounce from 'lodash/debounce'
 
-// API call to Gemini via Netlify Function
-const enhanceInvestmentContent = async (description: string, strategySteps: string) => {
-  try {
-    const response = await fetch('/.netlify/functions/enhance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description, steps: strategySteps }),
-    });
+// Custom hook for debounced reading stats
+function useReadingStats(text: string) {
+  const [stats, setStats] = useState({ words: 0, minutes: 0 })
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Enhancement API error:', response.status, errorText);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
-    }
+  const calculateStats = useCallback(() => {
+    const cleanText = text.replace(/<[^>]+>/g, '').trim()
+    const words = cleanText.split(/\s+/).length
+    const minutes = Math.max(1, Math.round(words / 200))
+    setStats({ words, minutes })
+  }, [text])
 
-    let data;
-    try {
-      data = await response.json(); // Attempt to parse JSON
-    } catch (parseError) {
-      console.error('Failed to parse response as JSON:', parseError);
-      throw new Error('Invalid server response: Data is not valid JSON');
-    }
-
-    // Ensure enhanced_steps is always an array
-    const enhancedStepsArray = Array.isArray(data.enhanced_steps) ? data.enhanced_steps : [];
-    return {
-      enhancedDescription: typeof data.enhanced_description === 'string' ? data.enhanced_description : `Enhanced Overview: ${description}. This strategy provides a structured approach to maximize returns while managing risks.`,
-      enhancedSteps: JSON.stringify({
-        steps: enhancedStepsArray.length > 0 ? enhancedStepsArray : strategySteps.split('\n').filter(line => line.trim().length > 0).map((step, index) => ({
-          step_number: index + 1,
-          description: step.trim(),
-        })),
-      }),
-    };
-  } catch (err) {
-    console.error('Enhancement failed:', err);
-    throw err instanceof Error ? err : new Error('Unknown enhancement error');
-  }
-};
-
-const UploadInvestments = () => {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    title: '',
-    category: '📈 Stocks & ETFs',
-    description: '',
-    affiliate_link: '',
-    risk_level: '',
-    expected_returns: '',
-    strategy_steps: '',
-    is_active: true,
-  });
+  const debouncedCalculateStats = useCallback(debounce(calculateStats, 300), [calculateStats])
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      console.log('Auth check:', user ? 'Authenticated' : 'Not authenticated');
-      if (!user) navigate('/auth');
-    };
-    checkAuth().catch(err => console.error('Auth check failed:', err));
-  }, [navigate]);
+    debouncedCalculateStats()
+  }, [text, debouncedCalculateStats])
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  return stats
+}
+
+export default function UploadStrategyPage() {
+  const { user } = useAuth()
+  const nav = useNavigate()
+  const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('Mixed Assets')
+  const [content, setContent] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [enhancing, setEnhancing] = useState(false)
+  const [previewMode, setPreviewMode] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const quillRef = useRef<ReactQuill>(null)
+  const { words, minutes } = useReadingStats(content)
+
+  const modules = {
+    syntax,
+    toolbar: [
+      [{ header: [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ color: [] }, { background: [] }],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      [{ align: [] }],
+      ['blockquote', 'code-block'],
+      ['link', 'image', 'video'],
+      ['clean']
+    ]
+  }
+
+  const formats = [
+    'header', 'bold', 'italic', 'underline', 'strike',
+    'color', 'background',
+    'list', 'bullet', 'align',
+    'blockquote', 'code-block',
+    'link', 'image', 'video'
+  ]
+
+  const handleEnhance = async () => {
+    setEnhancing(true)
+    setError(null)
+    try {
+      const r = await fetch('/.netlify/functions/enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: title, steps: content })
+      })
+      if (!r.ok) throw new Error('Enhancement failed')
+      const { enhanced_description, enhanced_steps } = await r.json()
+      setTitle(enhanced_description)
+      setContent(enhanced_steps.map((s: any) => s.description).join('\n'))
+    } catch (err) {
+      console.error(err)
+      setError('Enhancement failed. Please try again.')
+    } finally {
+      setEnhancing(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setError('Please log in to upload.');
-      setLoading(false);
-      return;
+    e.preventDefault()
+    if (!user) return nav('/auth?mode=signIn')
+    if (!title.trim()) {
+      setError('Title is required')
+      return
     }
-
+    if (!content.trim()) {
+      setError('Content is required')
+      return
+    }
+    setLoading(true)
+    setError(null)
     try {
-      console.log('Form data:', formData);
-      const { enhancedDescription, enhancedSteps } = await enhanceInvestmentContent(formData.description, formData.strategy_steps);
-
-      const data = {
+      const { error } = await supabase.from('inv_investment_strategies').insert([{
         id: crypto.randomUUID(),
-        title: formData.title,
-        category: formData.category,
-        description: enhancedDescription,
-        affiliate_link: formData.affiliate_link || null,
-        views: 0,
-        likes: 0,
-        risk_level: formData.risk_level || null,
-        expected_returns: formData.expected_returns || null,
-        strategy_steps: JSON.stringify({ steps: enhancedSteps }),
-        is_active: formData.is_active,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        user_id: user.id,
-      };
-
-      console.log('Data to insert:', data);
-      const { error: insertError } = await supabase
-        .from('inv_investment_strategies')
-        .insert(data);
-
-      if (insertError) {
-        console.error('Supabase insert error:', insertError.message);
-        setError(`Failed to upload: ${insertError.message}`);
-      } else {
-        setFormData({
-          title: '',
-          category: '📈 Stocks & ETFs',
-          description: '',
-          affiliate_link: '',
-          risk_level: '',
-          expected_returns: '',
-          strategy_steps: '',
-          is_active: true,
-        });
-        alert('Investment strategy uploaded successfully!');
-        navigate('/profile');
-      }
+        title: title.trim(),
+        category,
+        description: content.slice(0, 200),
+        strategy_steps: content,
+        user_id: user.id
+      }])
+      if (error) throw error
+      alert('Uploaded successfully!')
+      nav('/dashboard')
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Submission error:', err);
-      setError(`AI enhancement or upload failed: ${errorMessage}`);
+      console.error(err)
+      setError('Upload failed. Please try again.')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <main className="flex-1 container mx-auto px-4 py-8">
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="font-montserrat text-2xl text-foreground">Upload Investment Strategy</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            {error && <p className="text-destructive mb-4">{error}</p>}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="title" className="block text-sm font-roboto text-muted-foreground mb-1">Title</label>
-                <input
-                  type="text"
-                  id="title"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="category" className="block text-sm font-roboto text-muted-foreground mb-1">Category</label>
-                <select
-                  id="category"
-                  name="category"
-                  value={formData.category}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md"
-                >
-                  <option value="📈 Stocks & ETFs">📈 Stocks & ETFs</option>
-                  <option value="🏘 Real Estate">🏘 Real Estate</option>
-                  <option value="💰 Crypto & Blockchain">💰 Crypto & Blockchain</option>
-                  <option value="🧾 Bonds & Fixed Income">🧾 Bonds & Fixed Income</option>
-                  <option value="🏦 Cash & Safe Instruments">🏦 Cash & Safe Instruments</option>
-                  <option value="⚖️ Commodities & Metals">⚖️ Commodities & Metals</option>
-                  <option value="🧪 Alternatives (VC, Art, etc.)">🧪 Alternatives (VC, Art, etc.)</option>
-                  <option value="👵 Retirement & Long-Term">👵 Retirement & Long-Term</option>
-                  <option value="🐣 Beginner’s Corner">🐣 Beginner’s Corner</option>
-                  <option value="📰 Market News & Trends">📰 Market News & Trends</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="description" className="block text-sm font-roboto text-muted-foreground mb-1">Description</label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md h-32"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="affiliate_link" className="block text-sm font-roboto text-muted-foreground mb-1">Affiliate Link (optional)</label>
-                <input
-                  type="text"
-                  id="affiliate_link"
-                  name="affiliate_link"
-                  value={formData.affiliate_link}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="risk_level" className="block text-sm font-roboto text-muted-foreground mb-1">Risk Level (optional)</label>
-                <input
-                  type="text"
-                  id="risk_level"
-                  name="risk_level"
-                  value={formData.risk_level}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="expected_returns" className="block text-sm font-roboto text-muted-foreground mb-1">Expected Returns (optional)</label>
-                <input
-                  type="text"
-                  id="expected_returns"
-                  name="expected_returns"
-                  value={formData.expected_returns}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="strategy_steps" className="block text-sm font-roboto text-muted-foreground mb-1">Strategy Steps (one per line)</label>
-                <textarea
-                  id="strategy_steps"
-                  name="strategy_steps"
-                  value={formData.strategy_steps}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md h-32"
-                  required
-                />
-              </div>
-              <Button
-                type="submit"
-                className="font-roboto bg-foreground hover:bg-foreground/90 text-white"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : 'Upload'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </main>
-    </div>
-  );
-};
+    <div className="mx-auto max-w-4xl p-6">
+      <h1 className="text-3xl font-bold mb-4">Upload Investment Strategy</h1>
 
-export default UploadInvestments;
+      {error && <div className="text-red-500 mb-4">{error}</div>}
+
+      <div className="flex gap-4 mb-2 text-sm text-gray-600">
+        <span>{words} words</span>
+        <span>~{minutes} min read</span>
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={handleEnhance}
+          disabled={enhancing}
+          className={`px-3 py-1 rounded text-white ${enhancing ? 'bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+        >
+          {enhancing ? 'Enhancing…' : '✨ AI Enhance'}
+        </button>
+        <button
+          onClick={() => setPreviewMode(!previewMode)}
+          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          {previewMode ? 'Edit' : 'Preview'}
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <label htmlFor="title" className="block text-sm font-medium text-gray-700">Title</label>
+        <input
+          id="title"
+          type="text"
+          placeholder="Strategy title"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded"
+          required
+        />
+
+        <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category</label>
+        <select
+          id="category"
+          value={category}
+          onChange={e => setCategory(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded"
+        >
+          <option>Mixed Assets</option>
+          <option>Real Estate</option>
+          <option>Cryptocurrency</option>
+          <option>Stocks</option>
+          <option>Private Equity</option>
+        </select>
+
+        {previewMode ? (
+          <div className="prose" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }} />
+        ) : (
+          <>
+            <label htmlFor="content" className="block text-sm font-medium text-gray-700">Content</label>
+            <ReactQuill
+              ref={quillRef}
+              value={content}
+              onChange={setContent}
+              modules={modules}
+              formats={formats}
+              theme="snow"
+              className="h-80 bg-white"
+            />
+          </>
+        )}
+
+        <button
+          onClick={handleSubmit}
+          className={`px-6 py-2 rounded text-white ${loading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}
+          disabled={loading}
+        >
+          {loading ? 'Uploading…' : 'Upload'}
+        </button>
+      </div>
+    </div>
+  )
+}

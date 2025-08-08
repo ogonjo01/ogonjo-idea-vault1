@@ -1,0 +1,21 @@
+/* src/pages/UploadStrategyPage.css */
+.ql-container {
+  font-family: 'Arial', sans-serif;
+  font-size: 16px;
+}
+.ql-editor {
+  min-height: 300px;
+  padding: 12px;
+}
+.ql-toolbar {
+  background-color: #f8f9fa;
+  border: 1px solid #ddd;
+  border-bottom: none;
+}
+.ql-picker-label {
+  color: #333;
+}
+.preview-container {
+  border-left: 2px solid var(--theme-color-accent);
+  padding-left: 1rem;
+}

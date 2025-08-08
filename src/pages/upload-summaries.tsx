@@ -4,10 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
+import { v4 as uuidv4 } from 'uuid';
+
+
 
 // Simulate AI API (replace with actual API call if available)
 const enhanceBookSummaryContent = async (summaryContent: string, shortDescription: string) => {
-  // Mock AI enhancement (replace with real API call, e.g., xAI API)
   const enhancedSummaryContent = JSON.stringify({
     overview: `Overview: ${summaryContent.split('\n')[0] || 'A compelling narrative exploring key concepts.'} This book offers profound insights into its subject matter.`,
     key_themes: ['Theme 1: Core idea of the book', 'Theme 2: Supporting concept'],
@@ -66,7 +70,7 @@ const UploadSummaries = () => {
     const { enhancedSummaryContent, enhancedShortDescription } = await enhanceBookSummaryContent(formData.summary_content, formData.short_description);
 
     const data = {
-      id: crypto.randomUUID(),
+      id: uuidv4,
       title: formData.title,
       author: formData.author,
       category: formData.category,
@@ -75,10 +79,9 @@ const UploadSummaries = () => {
       created_at: new Date().toISOString(),
       youtube_link: formData.youtube_link || null,
       full_book_link: formData.full_book_link || null,
-      affiliate_links: formData.affiliate_links.length ? formData.affiliate_links : null,
+      affiliate_links: Array.isArray(formData.affiliate_links) ? formData.affiliate_links : null,
       summary_content: enhancedSummaryContent,
       short_description: enhancedShortDescription,
-      // Assuming user_id will be added to the table
       user_id: user.id,
     };
 
@@ -186,14 +189,31 @@ const UploadSummaries = () => {
                 />
               </div>
               <div>
-                <label htmlFor="summary_content" className="block text-sm font-roboto text-muted-foreground mb-1">Summary Content (one point per line)</label>
-                <textarea
-                  id="summary_content"
-                  name="summary_content"
+                <label htmlFor="summary_content" className="block text-sm font-roboto text-muted-foreground mb-1">Summary Content</label>
+                <ReactQuill
+                  theme="snow"
                   value={formData.summary_content}
-                  onChange={handleChange}
-                  className="w-full p-2 border border-input bg-background rounded-md h-32"
-                  required
+                  onChange={(value) =>
+                    setFormData((prev) => ({ ...prev, summary_content: value }))
+                  }
+                  modules={{
+                    toolbar: [
+                      [{ 'header': [1, 2, 3, false] }],
+                      ['bold', 'italic', 'underline', 'strike'],
+                      [{ 'color': [] }, { 'background': [] }],
+                      [{ 'script': 'sub' }, { 'script': 'super' }],
+                      ['blockquote', 'code-block'],
+                      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                      [{ 'align': [] }],
+                      ['link', 'image'],
+                      ['clean'],
+                    ],
+                  }}
+                  formats={[
+                    'header', 'bold', 'italic', 'underline', 'strike', 'color', 'background',
+                    'script', 'blockquote', 'code-block', 'list', 'bullet', 'align', 'link', 'image'
+                  ]}
+                  className="bg-background border border-input rounded-md min-h-[200px]"
                 />
               </div>
               <div>

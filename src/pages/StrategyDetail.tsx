@@ -2,222 +2,118 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, useAuth } from '@/services/supabase';
-import StrategyStepsModal from '../components/StrategyStepsModal';
-import './StrategyDetail.css';
-
-interface StrategyStep {
-  step_number: number;
-  description: string;
-}
-
-interface InvestmentStrategyDetail {
-  id: string;
-  title: string;
-  category: string;
-  description: string;
-  affiliate_link: string | null;
-  views: number;
-  likes: number;
-  risk_level: string | null;
-  expected_returns: string | null;
-  strategy_steps: StrategyStep[] | string | null;
-  investment_synopsis?: { what_is_it?: string; who_offers_it?: string; goal?: string; fit_check?: string };
-  returns_projections?: { expected_returns?: string; guaranteed?: string; time_horizon?: string; examples_check?: string };
-  risk_assessment?: { potential_issues?: string[]; capital_risk?: string; risk_types?: string[]; legal_risks?: string[]; affordability_check?: string };
-  historical_performance?: { past_performance?: string; verifiable_data?: string; downturn_performance?: string; disclaimer_check?: string };
-  liquidity_profile?: { ease_of_withdrawal?: string; lock_in_period?: string; penalties?: string; exit_check?: string };
-  cost_structure?: { management_fees?: string; hidden_costs?: string; impact_check?: string };
-  management_team?: { key_personnel?: string; track_record?: string; credentials?: string; conflicts?: string; trust_check?: string };
-  legal_compliance?: { regulatory_body?: string; documentation?: string; legal_history?: string; scam_check?: string };
-  operational_mechanics?: { return_generation?: string; investment_allocation?: string; contingency_plan?: string; simplicity_check?: string };
-  personal_alignment?: { risk_tolerance?: string; income_needs?: string; tax_strategy?: string; diversification?: string; suitability_check?: string };
-  exit_strategy?: { exit_process?: string; transferability?: string; buyer_availability?: string; plan_check?: string };
-  key_metrics?: { roi?: string; npv?: string; irr?: string; payback_period?: string; cash_flow?: string; analysis_check?: string };
-  red_flags?: { pressure_tactics?: string; clarity_issues?: string; risk_hype?: string; instinct_check?: string };
-}
-
+import StrategyStepsModal from '@/components/StrategyStepsModal';
 
 function StrategyDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [strategy, setStrategy] = useState<InvestmentStrategyDetail | null>(null);
+  const [strategy, setStrategy] = useState<any>(null);
   const [likes, setLikes] = useState(0);
   const [views, setViews] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string|null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const fetchStrategyDetails = useCallback(async () => {
-    if (!id) return;
+  const fetchDetails = useCallback(async () => {
     setLoading(true);
-    setError(null);
-
     try {
-      const { data, error: supabaseError } = await supabase
+      const { data, error } = await supabase
         .from('inv_investment_strategies')
-        .select(`
-          id, title, category, description, affiliate_link, views, likes,
-          risk_level, expected_returns, strategy_steps, investment_synopsis,
-          returns_projections, risk_assessment
-        `)
+        .select('*, strategy_steps')
         .eq('id', id)
         .single();
-
-      if (supabaseError) throw supabaseError;
-
-      if (data) {
-        const parsed: any = { ...data };
-        // Parse nested JSON fields safely with double parsing for strategy_steps
-        const parseField = (field: string | null | undefined) => {
-          if (typeof field === 'string') {
-            try {
-              const outer = JSON.parse(field);
-              if (outer && typeof outer.steps === 'string') {
-                return JSON.parse(outer.steps); // Double parse to get the array
-              }
-              return outer || null; // Handle cases where steps is not nested
-            } catch (e) {
-              console.warn(`Failed to parse ${field}:`, e);
-              return null;
-            }
-          }
-          return field;
-        };
-
-        parsed.strategy_steps = (parseField(parsed.strategy_steps) as StrategyStep[]) || [];
-        parsed.investment_synopsis = parseField(parsed.investment_synopsis) || {};
-        parsed.returns_projections = parseField(parsed.returns_projections) || {};
-        parsed.risk_assessment = parseField(parsed.risk_assessment) || {};
-
-        setStrategy(parsed as InvestmentStrategyDetail);
-        setLikes(data.likes || 0);
-        setViews(data.views || 0);
-
-        await supabase.rpc('increment_views', { strategy_id: id });
-        setViews((prev) => prev + 1);
-
-        if (user) {
-          const { data: likeData, error: likeError } = await supabase
-            .from('user_likes')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('strategy_id', id)
-            .single();
-          if (!likeError) setIsLiked(!!likeData);
-        }
-      } else {
-        setError('Investment strategy not found.');
+      if (error) throw error;
+      setStrategy(data);
+      setLikes(data.likes);
+      setViews(data.views + 1);
+      await supabase.rpc('increment_views', { strategy_id: id });
+      if (user) {
+        const { data: likeData } = await supabase
+          .from('user_likes')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('strategy_id', id)
+          .single();
+        setIsLiked(!!likeData);
       }
     } catch (err: any) {
-      setError(`Failed to retrieve strategy details: ${err.message}`);
+      setError(err.message || 'Error loading strategy');
     } finally {
       setLoading(false);
     }
   }, [id, user]);
 
-  useEffect(() => { fetchStrategyDetails(); }, [fetchStrategyDetails]);
+  useEffect(() => { fetchDetails(); }, [fetchDetails]);
 
-  const handleLikePress = async () => {
-    if (!user) {
-      alert('Please authenticate to endorse this strategy.');
-      navigate('/auth?auth=true');
-      return;
-    }
-
+  const handleLike = async () => {
+    if (!user) return navigate('/auth?auth=true');
     try {
       if (isLiked) {
         await supabase.from('user_likes').delete().eq('user_id', user.id).eq('strategy_id', id);
         await supabase.rpc('decrement_likes', { strategy_id: id });
-        setLikes((prev) => Math.max(0, prev - 1));
-        setIsLiked(false);
+        setLikes(l => Math.max(0, l - 1));
       } else {
         await supabase.from('user_likes').insert({ user_id: user.id, strategy_id: id });
         await supabase.rpc('increment_likes', { strategy_id: id });
-        setLikes((prev) => prev + 1);
-        setIsLiked(true);
+        setLikes(l => l + 1);
       }
-    } catch (err: any) {
-      alert('Unable to update endorsement status.');
-      console.error('Error updating endorsement:', err.message);
+      setIsLiked(!isLiked);
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  const handleInvestClick = (affiliateLink: string | null) => {
-    if (affiliateLink) window.open(affiliateLink, '_blank');
-    else alert('Investment opportunity link unavailable.');
-  };
+  if (loading) return <div className="flex justify-center items-center h-screen"><div className="loader" /></div>;
+  if (error || !strategy) return <div className="text-red-600 text-center p-6">{error || 'Strategy not found'}</div>;
 
-  if (loading) return (
-    <div className="flex justify-center items-center h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-600"></div>
-    </div>
-  );
-  if (error || !strategy) return (
-    <div className="text-center py-10">
-      <p className="text-red-600">{error || 'Investment strategy not found.'}</p>
-      <button className="mt-4 px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700" onClick={fetchStrategyDetails}>
-        Retry
-      </button>
-    </div>
-  );
-
-  const {
-    title, category, description,
-    risk_level, expected_returns,
-    investment_synopsis, returns_projections,
-    risk_assessment, strategy_steps,
-  } = strategy;
+  // Extract steps array
+  const stepsArray = Array.isArray(strategy.strategy_steps?.steps)
+    ? strategy.strategy_steps.steps
+    : [];
 
   return (
-    <div className="strategy-detail container mx-auto p-6 max-w-4xl">
-      <div className="bg-white overflow-hidden shadow-2xl rounded-xl border-0">
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-6">
-          <h1 className="text-4xl font-extrabold tracking-tight">{title || 'Untitled Strategy'}</h1>
-          <p className="text-lg font-medium mt-1">{category || 'Uncategorized'}</p>
+    <div className="max-w-4xl mx-auto p-6 space-y-8">
+      <header className="bg-gradient-to-r from-blue-600 to-teal-500 text-white p-6 rounded-xl shadow-lg">
+        <h1 className="text-4xl font-bold">{strategy.title}</h1>
+        <p className="mt-2 text-lg opacity-90">{strategy.category}</p>
+      </header>
+
+      <section className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+        <h2 className="text-2xl font-semibold text-gray-800">Overview</h2>
+        <p className="mt-3 text-gray-700 leading-relaxed">{strategy.description}</p>
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500">
+          <span className="block text-xl font-semibold text-gray-800">{likes} ❤️</span>
+          <span className="text-gray-500">Endorsements</span>
         </div>
-        <div className="p-6 space-y-8">
-          <section className="bg-gray-50 p-5 rounded-xl border border-gray-200">
-            <h2 className="text-2xl font-semibold text-teal-800">Summary</h2>
-            <p className="text-gray-700 mt-3 leading-relaxed">{description || 'No description available.'}</p>
-          </section>
-          <section className="flex justify-between items-center gap-4 bg-gray-50 p-4 rounded-xl">
-            <div className="text-center md:text-left">
-              <p className="text-lg font-medium text-gray-900">Endorsements: {likes} ❤️</p>
-              <p className="text-lg font-medium text-gray-900">Views: {views} 👁️</p>
-            </div>
-            <div className="flex gap-4">
-              <button
-                className={`px-4 py-2 rounded-lg text-white ${isLiked ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'}`}
-                onClick={handleLikePress}
-              >
-                {isLiked ? 'Endorsed' : 'Endorse'}
-              </button>
-              {strategy.affiliate_link && (
-                <button
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-                  onClick={() => handleInvestClick(strategy.affiliate_link)}
-                >
-                  Invest Now
-                </button>
-              )}
-            </div>
-          </section>
-          <button
-            className="w-full bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-all duration-200 shadow-md"
-            onClick={() => setIsModalOpen(true)}
-          >
-            Read More
-          </button>
+        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-green-500">
+          <span className="block text-xl font-semibold text-gray-800">{views}</span>
+          <span className="text-gray-500">Views</span>
         </div>
-      </div>
+        <button
+          onClick={handleLike}
+          className={`${isLiked ? 'bg-red-500' : 'bg-gray-700'} text-white p-4 rounded-lg shadow-lg hover:scale-105 transform transition`}
+        >
+          {isLiked ? 'Endorsed' : 'Endorse'}
+        </button>
+      </section>
+
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="w-full bg-gradient-to-r from-teal-500 to-blue-500 text-white p-4 rounded-lg font-semibold hover:shadow-xl transition"
+      >
+        Read Full Strategy
+      </button>
+
       <StrategyStepsModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        strategySteps={Array.isArray(strategy_steps) ? strategy_steps : []}
-        strategyTitle={title || 'Untitled Strategy'}
-        investmentData={strategy}
+        strategySteps={stepsArray}
+        strategyTitle={strategy.title}
       />
     </div>
   );

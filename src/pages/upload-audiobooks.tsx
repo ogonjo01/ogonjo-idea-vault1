@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react';
+// src/pages/UploadAudiobooks.tsx
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/services/supabase';
 
-// Simulate AI API (replace with actual API call if available)
+// Mock AI enhancer
 const enhanceAudiobookContent = async (shortDescription: string) => {
-  // Mock AI enhancement (replace with real API call, e.g., xAI API)
   const enhancedShortDescription = `Enhanced Summary: ${shortDescription.trim() || 'An engaging audiobook offering a captivating narrative.'} This title provides an enriching listening experience, ideal for audiophiles seeking quality content.`;
   return { enhancedShortDescription };
 };
 
-const UploadAudiobooks = () => {
+const UploadAudiobooks: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,12 +23,13 @@ const UploadAudiobooks = () => {
     image_url: '',
     audible_affiliate_link: '',
     category: '',
+    audio_preview_url: '',
   });
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) navigate('/login');
+      const { data } = await supabase.auth.getUser();
+      if (!data?.user) navigate('/login');
     };
     checkAuth();
   }, [navigate]);
@@ -43,49 +44,63 @@ const UploadAudiobooks = () => {
     setLoading(true);
     setError(null);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // Basic client-side validation
+    if (!formData.title.trim() || !formData.author.trim() || !formData.audible_affiliate_link.trim()) {
+      setError('Please provide title, author and audible affiliate link.');
+      setLoading(false);
+      return;
+    }
+
+    // Ensure user is authenticated (we require login to upload but we will NOT insert user_id)
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData?.user) {
       setError('User not authenticated.');
       setLoading(false);
       return;
     }
 
-    const { enhancedShortDescription } = await enhanceAudiobookContent(formData.short_description);
+    try {
+      const { enhancedShortDescription } = await enhanceAudiobookContent(formData.short_description);
 
-    const data = {
-      id: crypto.randomUUID(),
-      created_at: new Date().toISOString(),
-      title: formData.title,
-      author: formData.author,
-      short_description: enhancedShortDescription,
-      image_url: formData.image_url || null,
-      audible_affiliate_link: formData.audible_affiliate_link,
-      category: formData.category || null,
-      views: 0,
-      // Assuming user_id will be added to the table
-      user_id: user.id,
-    };
+      // Build payload using only columns that exist in audible_books table
+      const payload: any = {
+  title: formData.title.trim(),
+  author: formData.author.trim(),
+  short_description: enhancedShortDescription || null,
+  image_url: formData.image_url || null,
+  audible_affiliate_link: formData.audible_affiliate_link.trim(),
+  category: formData.category || null,
+  audio_preview_url: formData.audio_preview_url || null,
+  user_id: authData.user.id, // ✅ important for RLS
+};
 
-    const { error: insertError } = await supabase
-      .from('audible_books')
-      .insert(data);
 
-    if (insertError) {
-      console.error('Error uploading audiobook:', insertError.message);
-      setError(`Failed to upload: ${insertError.message}`);
-    } else {
-      setFormData({
-        title: '',
-        author: '',
-        short_description: '',
-        image_url: '',
-        audible_affiliate_link: '',
-        category: '',
-      });
-      alert('Audiobook uploaded successfully!');
-      navigate('/profile');
+      const { error: insertError } = await supabase
+        .from('audible_books')
+        .insert(payload);
+
+      if (insertError) {
+        console.error('Error uploading audiobook:', insertError);
+        setError(`Failed to upload: ${insertError.message || insertError.code || JSON.stringify(insertError)}`);
+      } else {
+        setFormData({
+          title: '',
+          author: '',
+          short_description: '',
+          image_url: '',
+          audible_affiliate_link: '',
+          category: '',
+          audio_preview_url: '',
+        });
+        alert('Audiobook uploaded successfully!');
+        navigate('/profile');
+      }
+    } catch (err: any) {
+      console.error('Unexpected error uploading audiobook:', err);
+      setError(err?.message || 'Unexpected error');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -110,6 +125,7 @@ const UploadAudiobooks = () => {
                   required
                 />
               </div>
+
               <div>
                 <label htmlFor="author" className="block text-sm font-roboto text-muted-foreground mb-1">Author</label>
                 <input
@@ -122,6 +138,7 @@ const UploadAudiobooks = () => {
                   required
                 />
               </div>
+
               <div>
                 <label htmlFor="short_description" className="block text-sm font-roboto text-muted-foreground mb-1">Short Description</label>
                 <textarea
@@ -132,6 +149,7 @@ const UploadAudiobooks = () => {
                   className="w-full p-2 border border-input bg-background rounded-md h-16"
                 />
               </div>
+
               <div>
                 <label htmlFor="image_url" className="block text-sm font-roboto text-muted-foreground mb-1">Image URL</label>
                 <input
@@ -143,6 +161,7 @@ const UploadAudiobooks = () => {
                   className="w-full p-2 border border-input bg-background rounded-md"
                 />
               </div>
+
               <div>
                 <label htmlFor="audible_affiliate_link" className="block text-sm font-roboto text-muted-foreground mb-1">Audible Affiliate Link</label>
                 <input
@@ -155,6 +174,7 @@ const UploadAudiobooks = () => {
                   required
                 />
               </div>
+
               <div>
                 <label htmlFor="category" className="block text-sm font-roboto text-muted-foreground mb-1">Category</label>
                 <input
@@ -166,6 +186,19 @@ const UploadAudiobooks = () => {
                   className="w-full p-2 border border-input bg-background rounded-md"
                 />
               </div>
+
+              <div>
+                <label htmlFor="audio_preview_url" className="block text-sm font-roboto text-muted-foreground mb-1">Audio Preview URL (optional)</label>
+                <input
+                  type="text"
+                  id="audio_preview_url"
+                  name="audio_preview_url"
+                  value={formData.audio_preview_url}
+                  onChange={handleChange}
+                  className="w-full p-2 border border-input bg-background rounded-md"
+                />
+              </div>
+
               <Button
                 type="submit"
                 className="font-roboto bg-foreground hover:bg-foreground/90 text-white"
