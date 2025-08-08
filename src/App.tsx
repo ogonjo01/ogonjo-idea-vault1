@@ -85,10 +85,21 @@ const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
       })
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+      setUnreadCount(0); // Reset unread count on cleanup
+    };
   }, [user, loading]);
 
-  if (loading) {
+  const handleSignOut = async () => {
+    const { error } = await signOut();
+    if (error) console.error('Logout error:', error.message);
+    // Ensure loading state is cleared after logout
+    setIsProfileOpen(false);
+    setIsMobileMenuOpen(false);
+  };
+
+  if (loading && !user) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
@@ -99,22 +110,22 @@ const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
           <div className="flex items-center space-x-4">
             <h1 className="text-xl sm:text-2xl font-bold text-teal-700">OGONJO</h1>
             <nav className="hidden md:flex space-x-4">
-              <NavLink to="/dashboard" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'} hover:bg-blue-200 hover:text-blue-900 transition-all duration-300`} end>
+              <NavLink to="/dashboard" className={({ isActive }) => `nav-link px-3 py-1 rounded-md ${isActive ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'} hover:bg-blue-200 hover:text-blue-900 transition-all duration-300`} end>
                 <span role="img" aria-label="dashboard" className="mr-1">📊</span> Investments
               </NavLink>
-              <NavLink to="/ideas" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'} hover:bg-green-200 hover:text-green-900 transition-all duration-300`} end>
+              <NavLink to="/ideas" className={({ isActive }) => `nav-link px-3 py-1 rounded-md ${isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'} hover:bg-green-200 hover:text-green-900 transition-all duration-300`} end>
                 <span role="img" aria-label="innovations" className="mr-1">💡</span> Innovations
               </NavLink>
-              <NavLink to="/courses" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'} hover:bg-purple-200 hover:text-purple-900 transition-all duration-300`} end>
+              <NavLink to="/courses" className={({ isActive }) => `nav-link px-3 py-1 rounded-md ${isActive ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'} hover:bg-purple-200 hover:text-purple-900 transition-all duration-300`} end>
                 <span role="img" aria-label="learning" className="mr-1">🏫</span> Learning
               </NavLink>
-              <NavLink to="/book-summaries" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700'} hover:bg-yellow-200 hover:text-yellow-900 transition-all duration-300`} end>
+              <NavLink to="/book-summaries" className={({ isActive }) => `nav-link px-3 py-1 rounded-md ${isActive ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-700'} hover:bg-yellow-200 hover:text-yellow-900 transition-all duration-300`} end>
                 <span role="img" aria-label="summaries" className="mr-1">📚</span> Summaries
               </NavLink>
-              <NavLink to="/quotes" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'} hover:bg-red-200 hover:text-red-900 transition-all duration-300`} end>
+              <NavLink to="/quotes" className={({ isActive }) => `nav-link px-3 py-1 rounded-md ${isActive ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'} hover:bg-red-200 hover:text-red-900 transition-all duration-300`} end>
                 <span role="img" aria-label="wisdom" className="mr-1">💬</span> Wisdom
               </NavLink>
-              <NavLink to="/insights" className={({ isActive }) => `nav-link px-4 py-2 rounded-md ${isActive ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-700'} hover:bg-teal-200 hover:text-teal-900 transition-all duration-300`} end>
+              <NavLink to="/insights" className={({ isActive }) => `nav-link px-3 py-1 rounded-md ${isActive ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-700'} hover:bg-teal-200 hover:text-teal-900 transition-all duration-300`} end>
                 <span role="img" aria-label="audio books" className="mr-1">🎧</span> Audio Books
                 {unreadCount > 0 && <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-semibold text-white bg-red-500 rounded-full">{unreadCount > 9 ? '9+' : unreadCount}</span>}
               </NavLink>
@@ -232,7 +243,7 @@ const MainLayout = ({ isAuthRoute }: { isAuthRoute?: boolean }) => {
         {isProfileOpen && user && (
           <div className="absolute top-14 right-4 w-48 bg-white shadow-lg rounded-lg p-2 z-50 md:top-12">
             <NavLink to="/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md" onClick={toggleProfileMenu}>Profile</NavLink>
-            <button onClick={() => { signOut(); toggleProfileMenu(); }} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md">Logout</button>
+            <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md">Logout</button>
           </div>
         )}
       </header>
