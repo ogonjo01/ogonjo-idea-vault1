@@ -35,84 +35,80 @@
 .search-input { flex: 1; border: none; outline: none; font-size: 16px; color: #1a365d; }
 .clear-search-button { background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 18px; }
 
-/* ===== HORIZONTAL, SWIPEABLE CATEGORY CHIPS (replace old rules) ===== */
+/* ===== HORIZONTAL SCROLLABLE CATEGORY CHIPS (copy from working Quotes pattern) ===== */
 
 .category-filter-container {
   display: flex;
-  gap: 0.75rem;
+  gap: 8px;
   align-items: center;
-  /* IMPORTANT: prevent wrapping so chips stay in a single row */
-  flex-wrap: nowrap !important;
 
-  /* horizontal scrolling */
+  /* Force single-row on small screens so chips scroll horizontally */
+  flex-wrap: nowrap !important;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
-
-  /* nice touch: snap to center on swipe (optional) */
-  scroll-snap-type: x mandatory;
-
-  /* spacing & visual */
-  padding: 10px 8px;
+  white-space: nowrap;
+  padding: 8px;
   margin-bottom: 16px;
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   position: relative;
+
+  /* smooth swipe feel */
+  scroll-behavior: smooth;
+  scroll-snap-type: x proximity;
 }
 
-/* small visual buffer so first/last chips don't hug the edge */
+/* tiny buffers so first/last chip don't touch screen edge */
 .category-filter-container::before,
 .category-filter-container::after {
   content: "";
-  flex: 0 0 0.5rem;
+  flex: 0 0 8px;
 }
 
-/* Pills keep intrinsic width and don't stretch */
+/* pills: intrinsic width and no stretching */
 .category-filter-pill {
-  flex: 0 0 auto;         /* crucial: do not grow or shrink */
+  flex: 0 0 auto;              /* do not grow / shrink */
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.36rem 0.9rem;
+  padding: 6px 12px;
   border-radius: 999px;
   background: #edf2f7;
   color: #334155;
   border: 0;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 14px;
   cursor: pointer;
   white-space: nowrap;
-  transition: transform .12s ease, box-shadow .12s ease, background .12s;
-
-  /* align with scroll snapping */
-  scroll-snap-align: center;
+  scroll-snap-align: center;   /* snap while swiping */
+  transition: transform .12s, box-shadow .12s, background .12s;
 }
 
-/* active pill style */
+/* active pill */
 .category-filter-pill.category-filter-pill-active {
   background: #1a365d;
   color: #fff;
-  box-shadow: 0 8px 20px rgba(26,54,93,0.12);
   transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(26,54,93,0.12);
 }
 
-/* nice webkit scrollbar (optional) */
+/* Optional: small webkit scrollbar look */
 .category-filter-container::-webkit-scrollbar { height: 8px; }
 .category-filter-container::-webkit-scrollbar-thumb {
   background: rgba(0,0,0,0.12);
   border-radius: 999px;
 }
 
-/* Desktop: allow wrapping so chips can display across rows */
+/* DESKTOP: allow wrapping on larger screens so you don't get one long row */
 @media (min-width: 1024px) {
   .category-filter-container {
     overflow-x: visible;
     flex-wrap: wrap; /* allow wrap on large screens */
-    padding: 12px;
+    padding: 10px;
   }
   .category-filter-container::before,
-  .category-filter-container::after { flex: 0 0 0.25rem; }
+  .category-filter-container::after { flex: 0 0 6px; }
 }
 
 
