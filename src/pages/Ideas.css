@@ -55,6 +55,8 @@
   box-shadow: var(--shadow);
   overflow-x: auto;
   scrollbar-width: thin;
+  scroll-snap-type: x mandatory; /* Enhanced scrolling */
+  width: 100%; /* Full-width */
 }
 
 .category-filter-pill {
@@ -66,6 +68,8 @@
   cursor: pointer;
   transition: background 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
   font-size: 0.9rem;
+  flex-shrink: 0;
+  scroll-snap-align: start; /* Snap to each pill */
 }
 
 .category-filter-pill:hover {
@@ -339,22 +343,49 @@
   to { opacity: 1; }
 }
 
-@media (max-width: 768px) {
+/* Mobile Fixes: Full-width, no side spacing */
+@media (max-width: 640px) {
   .ideas-page {
-    padding: 1rem;
+    padding: 0; /* Remove side spacing */
   }
-  .section-header {
-    font-size: 1.5rem;
-  }
-  .ideas-grid {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  .content-wrapper {
+    max-width: 100%; /* Full screen coverage */
+    padding: 0;
   }
   .category-filter-container {
-    flex-wrap: wrap;
-    padding: 0.5rem;
+    padding: 1rem 0; /* No side padding */
+    border-radius: 0; /* Edge-to-edge */
+    width: 100vw; /* Full viewport width */
+    left: 0;
+    position: sticky;
+    top: 0;
   }
   .category-filter-pill {
-    padding: 0.3rem 0.8rem;
-    font-size: 0.85rem;
+    padding: 0.5rem 1.2rem; /* Larger for touch */
+    font-size: 1rem;
+  }
+  .ideas-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); /* Wider cards on mobile */
+    gap: 1rem;
+    padding: 0 1rem; /* Minimal internal padding */
+  }
+  .section-container {
+    padding: 0 1rem;
+  }
+  .carousel-wrapper {
+    padding: 0;
+    border-radius: 0;
+  }
+}
+
+@media (min-width: 641px) {
+  .ideas-page {
+    padding: 2rem; /* Restore padding for larger screens */
+  }
+  .content-wrapper {
+    max-width: 1200px;
+  }
+  .category-filter-container {
+    padding: 1rem;
   }
 }
