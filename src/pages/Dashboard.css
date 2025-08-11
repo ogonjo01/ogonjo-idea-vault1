@@ -35,17 +35,24 @@
 .search-input { flex: 1; border: none; outline: none; font-size: 16px; color: #1a365d; }
 .clear-search-button { background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 18px; }
 
-/* CATEGORY CHIP BAR
-   - small screens: horizontal scroll (swipeable)
-   - desktop: wrap and show all chips
-*/
+/* ===== HORIZONTAL, SWIPEABLE CATEGORY CHIPS (replace old rules) ===== */
+
 .category-filter-container {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  /* IMPORTANT: prevent wrapping so chips stay in a single row */
+  flex-wrap: nowrap !important;
+
+  /* horizontal scrolling */
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  white-space: nowrap;
+  scroll-behavior: smooth;
+
+  /* nice touch: snap to center on swipe (optional) */
+  scroll-snap-type: x mandatory;
+
+  /* spacing & visual */
   padding: 10px 8px;
   margin-bottom: 16px;
   border-radius: 8px;
@@ -54,16 +61,16 @@
   position: relative;
 }
 
-/* Small visual buffer so first/last chips aren't glued to edges */
+/* small visual buffer so first/last chips don't hug the edge */
 .category-filter-container::before,
 .category-filter-container::after {
   content: "";
   flex: 0 0 0.5rem;
 }
 
-/* Pill style */
+/* Pills keep intrinsic width and don't stretch */
 .category-filter-pill {
-  flex: 0 0 auto;
+  flex: 0 0 auto;         /* crucial: do not grow or shrink */
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -77,9 +84,12 @@
   cursor: pointer;
   white-space: nowrap;
   transition: transform .12s ease, box-shadow .12s ease, background .12s;
+
+  /* align with scroll snapping */
+  scroll-snap-align: center;
 }
 
-/* Active pill */
+/* active pill style */
 .category-filter-pill.category-filter-pill-active {
   background: #1a365d;
   color: #fff;
@@ -87,23 +97,24 @@
   transform: translateY(-2px);
 }
 
-/* Hover/focus */
-.category-filter-pill:hover,
-.category-filter-pill:focus {
-  transform: translateY(-1px);
-  outline: none;
+/* nice webkit scrollbar (optional) */
+.category-filter-container::-webkit-scrollbar { height: 8px; }
+.category-filter-container::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.12);
+  border-radius: 999px;
 }
 
-/* Adjust for larger screens: allow wrap */
+/* Desktop: allow wrapping so chips can display across rows */
 @media (min-width: 1024px) {
   .category-filter-container {
     overflow-x: visible;
-    flex-wrap: wrap;
+    flex-wrap: wrap; /* allow wrap on large screens */
     padding: 12px;
   }
   .category-filter-container::before,
   .category-filter-container::after { flex: 0 0 0.25rem; }
 }
+
 
 /* Section header */
 .section-container { margin-bottom: 20px; }
