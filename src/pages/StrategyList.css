@@ -1,0 +1,67 @@
+.strategy-list-container {
+  padding: 20px;
+  background: linear-gradient(to bottom, #f0f9f9, #ffffff);
+  min-height: 100vh;
+}
+
+.strategy-list-title {
+  font-size: 2rem;
+  color: #2E7D7D;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+.empty-state-container {
+  text-align: center;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.empty-state-text {
+  color: #2E7D7D;
+  margin: 0;
+}
+
+.loading-container,
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  background: #f0f9f9;
+}
+
+.loading-text,
+.error-text {
+  color: #2E7D7D;
+  margin-top: 10px;
+}
+
+.retry-button {
+  background: #2E7D7D;
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.retry-button:hover {
+  background: #1a5c5c;
+}
+
+.spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

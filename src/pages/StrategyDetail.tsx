@@ -1,8 +1,8 @@
-// src/pages/StrategyDetail.tsx
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, useAuth } from '@/services/supabase';
 import StrategyStepsModal from '@/components/StrategyStepsModal';
+import { Heart, Bookmark, Share2 } from 'lucide-react';
 
 function StrategyDetail() {
   const { id } = useParams();
@@ -12,9 +12,17 @@ function StrategyDetail() {
   const [likes, setLikes] = useState(0);
   const [views, setViews] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string|null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Toast helper
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const fetchDetails = useCallback(async () => {
     setLoading(true);
@@ -26,8 +34,8 @@ function StrategyDetail() {
         .single();
       if (error) throw error;
       setStrategy(data);
-      setLikes(data.likes);
-      setViews(data.views + 1);
+      setLikes(data.likes || 0);
+      setViews((data.views || 0) + 1);
       await supabase.rpc('increment_views', { strategy_id: id });
       if (user) {
         const { data: likeData } = await supabase
@@ -60,55 +68,112 @@ function StrategyDetail() {
         setLikes(l => l + 1);
       }
       setIsLiked(!isLiked);
+      showToast(isLiked ? 'Unliked!' : 'Liked!');
     } catch (err) {
       console.error(err);
+      showToast('Failed to update like.');
     }
   };
 
-  if (loading) return <div className="flex justify-center items-center h-screen"><div className="loader" /></div>;
-  if (error || !strategy) return <div className="text-red-600 text-center p-6">{error || 'Strategy not found'}</div>;
+  const handleSaveToggle = async () => {
+    if (!user) return navigate('/auth?auth=true');
+    setIsSaved((prev) => !prev);
+    showToast(isSaved ? 'Unsaved!' : 'Saved!');
+  };
 
-  // Extract steps array
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-gray-600 text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error || !strategy) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-red-500 text-lg p-6 rounded-lg bg-white shadow-md">
+          {error || 'Strategy not found.'}
+        </div>
+      </div>
+    );
+  }
+
   const stepsArray = Array.isArray(strategy.strategy_steps?.steps)
     ? strategy.strategy_steps.steps
     : [];
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-8">
-      <header className="bg-gradient-to-r from-blue-600 to-teal-500 text-white p-6 rounded-xl shadow-lg">
-        <h1 className="text-4xl font-bold">{strategy.title}</h1>
-        <p className="mt-2 text-lg opacity-90">{strategy.category}</p>
-      </header>
-
-      <section className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-        <h2 className="text-2xl font-semibold text-gray-800">Overview</h2>
-        <p className="mt-3 text-gray-700 leading-relaxed">{strategy.description}</p>
-      </section>
-
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500">
-          <span className="block text-xl font-semibold text-gray-800">{likes} ❤️</span>
-          <span className="text-gray-500">Endorsements</span>
+    <div className="bg-gray-50 text-gray-800 min-h-screen p-4 sm:p-8">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-4 right-4 z-50 p-4 bg-gray-900 text-white rounded-lg shadow-xl animate-fade-in-out">
+          {toastMessage}
         </div>
-        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-green-500">
-          <span className="block text-xl font-semibold text-gray-800">{views}</span>
-          <span className="text-gray-500">Views</span>
+      )}
+
+      <div className="max-w-4xl mx-auto space-y-8">
+        {/* Idea Header */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200">
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 mb-2">{strategy.title}</h1>
+          <p className="text-sm font-semibold text-gray-500 mb-4">{strategy.category || 'Uncategorized'}</p>
+          <div className="flex items-center space-x-6 text-gray-400 text-sm">
+            <span className="flex items-center">
+              <span className="mr-1">👀</span> {views}
+            </span>
+            <span className="flex items-center">
+              <span className="mr-1">❤️</span> {likes}
+            </span>
+          </div>
         </div>
-        <button
-          onClick={handleLike}
-          className={`${isLiked ? 'bg-red-500' : 'bg-gray-700'} text-white p-4 rounded-lg shadow-lg hover:scale-105 transform transition`}
-        >
-          {isLiked ? 'Endorsed' : 'Endorse'}
-        </button>
-      </section>
 
-      <button
-        onClick={() => setIsModalOpen(true)}
-        className="w-full bg-gradient-to-r from-teal-500 to-blue-500 text-white p-4 rounded-lg font-semibold hover:shadow-xl transition"
-      >
-        Read Full Strategy
-      </button>
+        {/* Overview */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">Overview</h2>
+          <p className="text-gray-700 leading-relaxed">{strategy.description || 'No description available.'}</p>
+        </div>
 
+        {/* Action Hub */}
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 p-4 bg-white rounded-3xl shadow-lg border border-gray-200">
+          <button
+            className={`flex items-center justify-center p-3 rounded-full transition-colors duration-200 ease-in-out ${
+              isLiked ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-500 hover:bg-red-50'
+            }`}
+            onClick={(e) => { e.stopPropagation(); handleLike(); }}
+          >
+            <Heart className={`${isLiked ? 'fill-current' : ''}`} size={20} />
+          </button>
+          <button
+            className={`flex items-center justify-center p-3 rounded-full transition-colors duration-200 ease-in-out ${
+              isSaved ? 'bg-indigo-100 text-indigo-500' : 'bg-gray-100 text-gray-500 hover:bg-indigo-50'
+            }`}
+            onClick={(e) => { e.stopPropagation(); handleSaveToggle(); }}
+          >
+            <Bookmark className={`${isSaved ? 'fill-current' : ''}`} size={20} />
+          </button>
+          <button
+            className="flex items-center justify-center p-3 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 transition-colors duration-200 ease-in-out"
+            onClick={() => showToast('Share this strategy!')}
+          >
+            <Share2 size={20} />
+          </button>
+        </div>
+
+        {/* Gamification Bar */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200 flex flex-col sm:flex-row items-center justify-between text-gray-700">
+          <span className="font-medium text-lg text-center sm:text-left mb-4 sm:mb-0">
+            Progress: 50% - Unlock Full Strategy!
+          </span>
+          <button
+            className="w-full sm:w-auto px-6 py-3 bg-green-500 text-white font-bold rounded-full shadow-md hover:bg-green-600 transition-colors duration-200 ease-in-out transform hover:scale-105"
+            onClick={() => setIsModalOpen(true)}
+          >
+            Read Full Strategy
+          </button>
+        </div>
+      </div>
+
+      {/* Modal for Strategy Steps */}
       <StrategyStepsModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

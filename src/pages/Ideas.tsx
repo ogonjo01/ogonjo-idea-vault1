@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/services/supabase';
 import { Link } from 'react-router-dom';
-import IdeaCarousel from './IdeaCarousel'; // New import
+import IdeaCarousel from './IdeaCarousel';
 import './Ideas.css';
 
 const Ideas = () => {
@@ -13,6 +13,8 @@ const Ideas = () => {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const fetchDataForSection = async (
     orderByColumn: 'created_at' | 'likes' | 'views',
@@ -43,7 +45,7 @@ const Ideas = () => {
     }
   };
 
-  const fetchAllIdeasData = async () => {
+  const fetchAllIdeasData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -73,14 +75,27 @@ const Ideas = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAllIdeasData();
+  }, [fetchAllIdeasData]);
+
+  useEffect(() => {
+    localStorage.setItem('darkMode', isDarkMode.toString());
+    document.body.classList.toggle('dark-mode', isDarkMode);
+  }, [isDarkMode]);
+
+  const handleCategoryFilterPress = useCallback((category: string) => {
+    setSelectedCategoryFilter(category);
   }, []);
 
-  const handleCategoryFilterPress = (category: string) => {
-    setSelectedCategoryFilter(category);
+  const calculatePopularityScore = (views: number, likes: number) => {
+    return Math.min(Math.round((views * 0.4 + likes * 0.6) / 10), 100);
+  };
+
+  const calculatePoints = (views: number, likes: number) => {
+    return Math.round(views * 0.5 + likes * 1.5); // Gamification points
   };
 
   const renderSection = (title: string, data: any[], filterType: string, categoryName?: string) => {
@@ -93,9 +108,11 @@ const Ideas = () => {
         <div className="section-container">
           <div className="section-header-row">
             <h2 className="section-header">{title}</h2>
-            <Link to={`/idea-list?title=All ${title}&filterType=${filterType}${categoryName ? `&categoryName=${categoryName}` : ''}`} className="see-all-button">
-              See All
-              <span role="img" aria-label="arrow" className="arrow-icon">➡️</span>
+            <Link
+              to={`/idea-list?title=All ${title}&filterType=${filterType}${categoryName ? `&categoryName=${categoryName}` : ''}`}
+              className="see-all-button"
+            >
+              See All <span className="arrow">➡️</span>
             </Link>
           </div>
           <div className="empty-state-container">
@@ -109,9 +126,11 @@ const Ideas = () => {
       <div className="section-container">
         <div className="section-header-row">
           <h2 className="section-header">{title}</h2>
-          <Link to={`/idea-list?title=All ${title}&filterType=${filterType}${categoryName ? `&categoryName=${categoryName}` : ''}`} className="see-all-button">
-            See All
-            <span role="img" aria-label="arrow" className="arrow-icon">➡️</span>
+          <Link
+            to={`/idea-list?title=All ${title}&filterType=${filterType}${categoryName ? `&categoryName=${categoryName}` : ''}`}
+            className="see-all-button"
+          >
+            See All <span className="arrow">➡️</span>
           </Link>
         </div>
         <div className="ideas-grid">
@@ -123,14 +142,28 @@ const Ideas = () => {
               className="idea-card-link"
             >
               <div className="idea-card">
-                <h3 className="idea-title">{idea.title}</h3>
-                <p className="idea-category">{idea.category}</p>
-                <p className="idea-description">{idea.short_description}</p>
+                {idea.likes > 50 && <span className="badge">Hot Pick</span>}
+                <h3 className="idea-title">{idea.title || 'Untitled'}</h3>
+                <p className="idea-category">{idea.category || 'Uncategorized'}</p>
+                <p className="idea-description">{idea.short_description || 'No description'}</p>
                 <div className="idea-stats">
-                  <span>Views: {idea.views}</span>
-                  <span>Likes: {idea.likes}</span>
+                  <span title="Views" aria-label={`Views: ${idea.views || 0}`}>
+                    👁️ {idea.views || 0}
+                  </span>
+                  <span title="Likes" aria-label={`Likes: ${idea.likes || 0}`}>
+                    ❤️ {idea.likes || 0}
+                  </span>
+                  <span title="Points" aria-label={`Points: ${calculatePoints(idea.views || 0, idea.likes || 0)}`}>
+                    🎯 {calculatePoints(idea.views || 0, idea.likes || 0)}
+                  </span>
                 </div>
-                <p className="view-details">View Details</p>
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${calculatePopularityScore(idea.views || 0, idea.likes || 0)}%` }}
+                  ></div>
+                </div>
+                <p className="view-details">View Details <span className="arrow">➡️</span></p>
               </div>
             </Link>
           ))}
@@ -141,11 +174,15 @@ const Ideas = () => {
 
   const renderExploreCard = (icon: string, text: string, path: string) => (
     <Link to={path} className="explore-more-card">
-      <span role="img" aria-label="icon" className="explore-icon">{icon}</span>
+      <span className="explore-icon">{icon}</span>
       <p className="explore-more-text">{text}</p>
-      <span role="img" aria-label="arrow" className="arrow-icon">➡️</span>
+      <span className="arrow">➡️</span>
     </Link>
   );
+
+  const scrollToTop = () => {
+    containerRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   if (loading) {
     return (
@@ -166,27 +203,36 @@ const Ideas = () => {
   }
 
   return (
-    <div className="ideas-page">
-      <div className="carousel-wrapper" style={{ zIndex: 5 }}>
+    <div className={`ideas-page ${isDarkMode ? 'dark' : ''}`} ref={containerRef}>
+      <div className="carousel-wrapper">
         <IdeaCarousel ideas={latestIdeas} />
       </div>
-      <div className="content-wrapper" style={{ zIndex: 10, position: 'relative' }}>
+      <div className="content-wrapper">
         <div className="category-filter-container">
           <button
-            className={`category-filter-pill ${selectedCategoryFilter === 'All' ? 'category-filter-pill-active' : ''}`}
+            className={`category-filter-pill ${selectedCategoryFilter === 'All' ? 'active' : ''}`}
             onClick={() => handleCategoryFilterPress('All')}
+            aria-label="Show all categories"
           >
-            <span className="category-filter-text">All</span>
+            All
           </button>
           {['Technology', 'Finance', 'Health', 'Education', 'Retail'].map((cat) => (
             <button
               key={cat}
-              className={`category-filter-pill ${selectedCategoryFilter === cat ? 'category-filter-pill-active' : ''}`}
+              className={`category-filter-pill ${selectedCategoryFilter === cat ? 'active' : ''}`}
               onClick={() => handleCategoryFilterPress(cat)}
+              aria-label={`Show ${cat} category`}
             >
-              <span className="category-filter-text">{cat}</span>
+              {cat}
             </button>
           ))}
+          <button
+            className="dark-mode-toggle"
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDarkMode ? '☀️' : '🌙'}
+          </button>
         </div>
         {renderSection('Latest Ideas', latestIdeas, 'latest')}
         {renderSection('Most Popular Ideas', mostPopularIdeas, 'mostPopular')}
@@ -196,8 +242,13 @@ const Ideas = () => {
           renderSection(`Most Popular in ${section.category}`, section.ideas, 'category', section.category)
         )}
         <h2 className="section-title">Explore More</h2>
-        {renderExploreCard('🔍', 'Discover New Categories', '/category-explore')}
-        {renderExploreCard('📈', 'Trending Ideas', '/idea-list?title=Trending Ideas&filterType=trending')}
+        <div className="explore-grid">
+          {renderExploreCard('🔍', 'Discover New Categories', '/category-explore')}
+          {renderExploreCard('📈', 'Trending Ideas', '/idea-list?title=Trending Ideas&filterType=trending')}
+        </div>
+        <button className="back-to-top" onClick={scrollToTop} aria-label="Back to top">
+          ↑
+        </button>
       </div>
     </div>
   );

@@ -4,9 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/services/supabase';
 import StrategyCard from '@/components/StrategyCard';
 import { INVESTMENT_CATEGORIES } from '@/constants/investmentCategories';
-import StrategyCarousel from './StrategyCarousel'; // Added import
+import StrategyCarousel from './StrategyCarousel';
 import './Dashboard.css';
-
 import { AlertTriangle } from 'lucide-react';
 
 interface InvestmentStrategy {
@@ -113,7 +112,13 @@ const Dashboard = () => {
       <div className="section-container">
         <div className="section-header-row">
           <h2 className="section-header">{title}</h2>
-          <button className="see-all-button" onClick={() => alert(`Navigate to a full list of ${title}`)}>
+          <button
+            className="see-all-button"
+            onClick={() => {
+              const filterType = title.toLowerCase().replace(' strategies', '').replace('top in ', '');
+              navigate(`/strategy-list?title=${encodeURIComponent(title)}&filter=${filterType}`);
+            }}
+          >
             See All <span className="chevron-icon">›</span>
           </button>
         </div>
@@ -144,7 +149,7 @@ const Dashboard = () => {
 
   const handleInvestClick = (affiliateLink: string | null) => {
     if (affiliateLink) {
-      window.open(affiliate_link, '_blank');
+      window.open(affiliateLink, '_blank'); // Fixed typo: affiliate_link -> affiliateLink
     } else {
       alert('Investment link not available for this strategy.');
     }

@@ -42,6 +42,8 @@ import UploadAudiobooks from "./pages/upload-audiobooks";
 import Terms from './pages/Terms';
 import PrivacyPolicy from './pages/Privacy';
 import FAQ from './pages/FAQ';
+import SeeAllPage from "./pages/SeeAllPage";
+import StrategyList from './pages/StrategyList';
 
 const queryClient = new QueryClient();
 
@@ -265,8 +267,12 @@ const App = () => {
             <Routes>
               <Route element={<MainLayout isAuthRoute={false} />}>
                 <Route path="/" element={<Dashboard />} />
-                <Route path="/dashboard" element={<Dashboard />} /> 
+                <Route path="/dashboard" element={<Dashboard />} />
+                
+                <Route path="/strategy-list" element={<StrategyList />} /> 
+                <Route path="/category/:title" element={<SeeAllPage />} />
                 <Route path="/ideas" element={<Ideas />} />
+                <Route path="/login" element={<Auth />} />
                 <Route path="/idea-list" element={<IdeaList />} />
                 <Route path="/idea/:id" element={<IdeaDetail />} />
                 <Route path="/idea-content/:id" element={<IdeaContent />} />

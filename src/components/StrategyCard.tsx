@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface StrategyCardProps {
   id: string;
@@ -13,6 +13,8 @@ interface StrategyCardProps {
 }
 
 const StrategyCard = ({ id, title, category, description, views, likes, isLiked, onClick, onInvest }: StrategyCardProps) => {
+  const navigate = useNavigate();
+
   return (
     <div className="bg-card p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer" onClick={onClick}>
       <h3 className="font-montserrat text-lg font-semibold text-foreground mb-2">{title}</h3>
@@ -24,10 +26,13 @@ const StrategyCard = ({ id, title, category, description, views, likes, isLiked,
           <span>❤️ {likes}</span>
         </div>
         <button
-          onClick={(e) => { e.stopPropagation(); onInvest(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/strategy-detail/${id}`);
+          }}
           className="bg-green-600 text-white px-3 py-1 rounded-md text-sm hover:bg-green-700 transition-colors"
         >
-          Invest Now
+          View Details
         </button>
       </div>
     </div>

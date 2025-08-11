@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 
 interface InvestmentStrategy {
@@ -21,6 +22,7 @@ const StrategyCarousel: React.FC<StrategyCarouselProps> = ({ strategies }) => {
   const [windowItems, setWindowItems] = useState<InvestmentStrategy[]>([]);
   const trackRef = useRef<HTMLDivElement>(null);
   const isAnimating = useRef(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (strategies.length < 3) return;
@@ -96,10 +98,10 @@ const StrategyCarousel: React.FC<StrategyCarouselProps> = ({ strategies }) => {
                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
                 onClick={(e) => {
                   e.stopPropagation();
-                  strategy.affiliate_link && window.open(strategy.affiliate_link, '_blank');
+                  navigate(`/strategy-detail/${strategy.id}`);
                 }}
               >
-                Invest Now
+                View Details
               </button>
             </div>
           </div>

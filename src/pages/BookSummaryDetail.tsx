@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, useAuth } from '@/services/supabase';
 import BookSummaryReaderModal from '@/components/BookSummaryReaderModal';
+import { Heart, Bookmark, Share2 } from 'lucide-react';
 
 interface RichSummaryContent {
   overview: string;
-  // We’ll keep the interface minimal here since modal just shows overview html continuously
   [key: string]: any;
 }
 
@@ -21,9 +21,17 @@ function BookSummaryDetail() {
   const [likes, setLikes] = useState(0);
   const [views, setViews] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isReaderModalOpen, setIsReaderModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Toast helper
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const fetchSummaryDetails = useCallback(async () => {
     if (!id) return;
@@ -66,7 +74,6 @@ function BookSummaryDetail() {
         if (data.short_description) {
           setDisplayShortDescription(data.short_description);
         } else if (parsedContent?.overview) {
-          // fallback: strip html tags and truncate to 300 chars
           const plainText = parsedContent.overview.replace(/<[^>]+>/g, '');
           setDisplayShortDescription(plainText.slice(0, 300) + '...');
         }
@@ -83,7 +90,6 @@ function BookSummaryDetail() {
             .eq('user_id', user.id)
             .eq('summary_id', id)
             .single();
-
           setIsLiked(!!likeData);
         }
       } else {
@@ -102,7 +108,7 @@ function BookSummaryDetail() {
 
   const handleLikePress = async () => {
     if (!user) {
-      alert('Please log in to like this summary.');
+      showToast('Please log in to like this summary.');
       navigate('/auth?auth=true');
       return;
     }
@@ -119,58 +125,112 @@ function BookSummaryDetail() {
         setLikes((l) => l + 1);
         setIsLiked(true);
       }
+      showToast(isLiked ? 'Unliked!' : 'Liked!');
     } catch {
-      alert('Failed to update like status. Please try again.');
+      showToast('Failed to update like status. Please try again.');
     }
   };
 
-  if (loading) return (
-    <div style={styles.loadingContainer}>
-      <div style={styles.spinner}></div>
-      <p style={styles.loadingText}>Loading summary...</p>
-    </div>
-  );
+  const handleSaveToggle = async () => {
+    if (!user) {
+      showToast('Please log in to save this summary.');
+      navigate('/auth?auth=true');
+      return;
+    }
+    setIsSaved((prev) => !prev);
+    showToast(isSaved ? 'Unsaved!' : 'Saved!');
+  };
 
-  if (error || !displayShortDescription) return (
-    <div style={styles.errorContainer}>
-      <p style={styles.errorText}>{error || 'Summary content unavailable.'}</p>
-      <button style={styles.retryButton} onClick={fetchSummaryDetails}>Retry</button>
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-gray-600 text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error || !displayShortDescription) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-red-500 text-lg p-6 rounded-lg bg-white shadow-md">
+          {error || 'Summary content unavailable.'}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={styles.pageContainer}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>{summaryTitle}</h1>
-        <p style={styles.author}>by {bookAuthor}</p>
-        <div style={styles.statsRow}>
-          <div style={styles.statItem}>
-            <span role="img" aria-label="likes" style={styles.statEmoji}>❤️</span> {likes}
+    <div className="bg-gray-50 text-gray-800 min-h-screen p-4 sm:p-8">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-4 right-4 z-50 p-4 bg-gray-900 text-white rounded-lg shadow-xl animate-fade-in-out">
+          {toastMessage}
+        </div>
+      )}
+
+      <div className="max-w-4xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200">
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-900 mb-2">{summaryTitle}</h1>
+          <p className="text-sm font-semibold text-gray-500 mb-4">by {bookAuthor}</p>
+          <div className="flex items-center space-x-6 text-gray-400 text-sm">
+            <span className="flex items-center">
+              <span className="mr-1">👀</span> {views}
+            </span>
+            <span className="flex items-center">
+              <span className="mr-1">❤️</span> {likes}
+            </span>
           </div>
-          <div style={styles.statItem}>
-            <span role="img" aria-label="views" style={styles.statEmoji}>👁️</span> {views}
-          </div>
+        </div>
+
+        {/* Overview */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">Overview</h2>
+          <p className="text-gray-700 leading-relaxed">{displayShortDescription}</p>
+        </div>
+
+        {/* Action Hub */}
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 p-4 bg-white rounded-3xl shadow-lg border border-gray-200">
           <button
-            style={{...styles.likeButton, ...(isLiked ? styles.likedButton : {})}}
-            onClick={handleLikePress}
+            className={`flex items-center justify-center p-3 rounded-full transition-colors duration-200 ease-in-out ${
+              isLiked ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-500 hover:bg-red-50'
+            }`}
+            onClick={(e) => { e.stopPropagation(); handleLikePress(); }}
           >
-            {isLiked ? '♥ Liked' : '♡ Like'}
+            <Heart className={`${isLiked ? 'fill-current' : ''}`} size={20} />
+          </button>
+          <button
+            className={`flex items-center justify-center p-3 rounded-full transition-colors duration-200 ease-in-out ${
+              isSaved ? 'bg-indigo-100 text-indigo-500' : 'bg-gray-100 text-gray-500 hover:bg-indigo-50'
+            }`}
+            onClick={(e) => { e.stopPropagation(); handleSaveToggle(); }}
+          >
+            <Bookmark className={`${isSaved ? 'fill-current' : ''}`} size={20} />
+          </button>
+          <button
+            className="flex items-center justify-center p-3 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 transition-colors duration-200 ease-in-out"
+            onClick={() => showToast('Share this summary!')}
+          >
+            <Share2 size={20} />
           </button>
         </div>
-      </header>
 
-      <section style={styles.previewSection}>
-        <p style={styles.shortDescription}>{displayShortDescription}</p>
-        <button
-          style={styles.readMoreButton}
-          onClick={() => setIsReaderModalOpen(true)}
-          aria-label="Read full summary"
-        >
-          Read More
-        </button>
-      </section>
+        {/* Gamification Bar */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border border-gray-200 flex flex-col sm:flex-row items-center justify-between text-gray-700">
+          <span className="font-medium text-lg text-center sm:text-left mb-4 sm:mb-0">
+            Progress: 50% - Unlock Full Summary!
+          </span>
+          <button
+            className="w-full sm:w-auto px-6 py-3 bg-green-500 text-white font-bold rounded-full shadow-md hover:bg-green-600 transition-colors duration-200 ease-in-out transform hover:scale-105"
+            onClick={() => setIsReaderModalOpen(true)}
+          >
+            Read More
+          </button>
+        </div>
+      </div>
 
-      {isReaderModalOpen && fullStructuredContent && (
+      {/* Modal for Full Summary */}
+      {fullStructuredContent && (
         <BookSummaryReaderModal
           isOpen={isReaderModalOpen}
           onClose={() => setIsReaderModalOpen(false)}
@@ -182,134 +242,5 @@ function BookSummaryDetail() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  pageContainer: {
-    maxWidth: 900,
-    margin: '2rem auto',
-    padding: '0 1rem',
-    fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-    color: '#1e293b', // dark slate
-    background: 'linear-gradient(135deg, #f0f4f8, #d9e2ec)',
-    borderRadius: 12,
-    boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-  },
-  header: {
-    borderBottom: '2px solid #3b82f6',
-    paddingBottom: '1rem',
-    marginBottom: '1.5rem',
-  },
-  title: {
-    fontSize: '2.5rem',
-    fontWeight: 700,
-    marginBottom: 4,
-    color: '#1e40af', // blue-900
-  },
-  author: {
-    fontSize: '1.125rem',
-    color: '#475569', // slate-600
-    marginBottom: 8,
-  },
-  statsRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '1.25rem',
-    fontSize: '1rem',
-  },
-  statItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    color: '#334155', // slate-700
-  },
-  statEmoji: {
-    fontSize: 20,
-  },
-  likeButton: {
-    background: '#e0e7ff', // blue-100
-    border: 'none',
-    borderRadius: 24,
-    padding: '6px 16px',
-    cursor: 'pointer',
-    fontWeight: 600,
-    color: '#1e40af', // blue-900
-    transition: 'background-color 0.3s ease',
-  },
-  likedButton: {
-    background: '#3b82f6', // blue-500
-    color: 'white',
-  },
-  previewSection: {
-    textAlign: 'center',
-  },
-  shortDescription: {
-    fontSize: '1.125rem',
-    color: '#334155',
-    marginBottom: '1.5rem',
-    lineHeight: 1.5,
-  },
-  readMoreButton: {
-    background: '#2563eb', // blue-600
-    color: 'white',
-    border: 'none',
-    borderRadius: 30,
-    padding: '0.75rem 2.5rem',
-    fontSize: '1.125rem',
-    fontWeight: 700,
-    cursor: 'pointer',
-    boxShadow: '0 6px 12px rgba(37, 99, 235, 0.4)',
-    transition: 'background-color 0.3s ease',
-  },
-  loadingContainer: {
-    minHeight: '50vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  spinner: {
-    width: 48,
-    height: 48,
-    border: '6px solid #3b82f6',
-    borderTop: '6px solid transparent',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: '1.125rem',
-    color: '#64748b',
-  },
-  errorContainer: {
-    minHeight: '50vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    justifyContent: 'center',
-    alignItems: 'center',
-    color: '#dc2626',
-  },
-  errorText: {
-    marginBottom: 20,
-    fontSize: '1.25rem',
-    fontWeight: 700,
-  },
-  retryButton: {
-    background: '#2563eb',
-    color: 'white',
-    border: 'none',
-    borderRadius: 20,
-    padding: '0.5rem 1.5rem',
-    cursor: 'pointer',
-    fontWeight: 600,
-  },
-};
-
-// Spinner animation keyframes
-const styleSheet = document.styleSheets[0];
-styleSheet.insertRule(`
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-`, styleSheet.cssRules.length);
 
 export default BookSummaryDetail;
