@@ -1,91 +1,24 @@
-// src/components/StrategyStepsModal.tsx
-import React, { useEffect, useMemo, useRef } from 'react';
-import DOMPurify from 'dompurify';
-
-export interface StrategyStep {
-  step_number: number;
-  description: string; // HTML allowed
-}
+import React, { useEffect, useRef } from 'react';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  strategySteps: StrategyStep[];
-  strategyTitle: string;
-  rewriteStoragePaths?: boolean;
-  storageBaseUrl?: string;
+  summaryTitle: string;
+  bookAuthor: string;
+  fullHtmlContent: string; // The full continuous HTML content to display
 }
 
-/* Helpers */
-function tryParseJson(raw: any) {
-  if (!raw) return null;
-  if (typeof raw === 'object') return raw;
-  try {
-    return JSON.parse(String(raw));
-  } catch {
-    return null;
-  }
-}
-
-function normalizeDoc(doc: Document, storageBaseUrl?: string) {
-  if (storageBaseUrl) {
-    const imgs = Array.from(doc.querySelectorAll('img[src]'));
-    imgs.forEach((img) => {
-      const src = img.getAttribute('src') || '';
-      if (src && !/^https?:\/\//i.test(src) && !src.startsWith('data:')) {
-        img.setAttribute('src', storageBaseUrl.replace(/\/$/, '') + '/' + src.replace(/^\/+/, ''));
-      }
-    });
-    const anchors = Array.from(doc.querySelectorAll('a[href]'));
-    anchors.forEach((a) => {
-      const href = a.getAttribute('href') || '';
-      if (href && !/^https?:\/\//i.test(href) && !href.startsWith('mailto:') && !href.startsWith('#')) {
-        a.setAttribute('href', storageBaseUrl.replace(/\/$/, '') + '/' + href.replace(/^\/+/, ''));
-      }
-    });
-  }
-
-  Array.from(doc.querySelectorAll('a')).forEach((a) => {
-    if (!a.getAttribute('target')) a.setAttribute('target', '_blank');
-    const rel = (a.getAttribute('rel') || '').split(/\s+/).filter(Boolean);
-    ['noopener', 'noreferrer'].forEach((r) => {
-      if (!rel.includes(r)) rel.push(r);
-    });
-    a.setAttribute('rel', rel.join(' '));
-  });
-
-  Array.from(doc.querySelectorAll('img')).forEach((img) => {
-    if (!img.getAttribute('loading')) img.setAttribute('loading', 'lazy');
-    if (!img.getAttribute('alt')) img.setAttribute('alt', '');
-    img.style.maxWidth = '100%';
-    img.style.height = 'auto';
-    img.style.display = 'block';
-  });
-}
-
-/* Component */
-const StrategyStepsModal: React.FC<Props> = ({
+const BookSummaryReaderModal: React.FC<Props> = ({
   isOpen,
   onClose,
-  strategySteps,
-  strategyTitle,
-  rewriteStoragePaths = false,
-  storageBaseUrl,
+  summaryTitle,
+  bookAuthor,
+  fullHtmlContent,
 }) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  // Prevent background scroll while open
-  useEffect(() => {
-    if (isOpen) {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = prev; };
-    }
-    return;
-  }, [isOpen]);
-
-  // Accessibility: focus trap + ESC to close
+  // Accessibility: focus trap and ESC to close
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -93,9 +26,7 @@ const StrategyStepsModal: React.FC<Props> = ({
       if (e.key === 'Tab') {
         const el = dialogRef.current;
         if (!el) return;
-        const focusable = Array.from(el.querySelectorAll<HTMLElement>(
-          'button,a,textarea,input,select,[tabindex]:not([tabindex="-1"])'
-        )).filter(Boolean);
+        const focusable = Array.from(el.querySelectorAll<HTMLElement>('button,a,textarea,input,select,[tabindex]:not([tabindex="-1"])')).filter(Boolean);
         if (focusable.length === 0) return;
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -108,37 +39,14 @@ const StrategyStepsModal: React.FC<Props> = ({
         }
       }
     };
-    const timer = setTimeout(() => firstBtnRef.current?.focus(), 50);
+    setTimeout(() => firstBtnRef.current?.focus(), 50);
     window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
     return () => {
-      clearTimeout(timer);
       window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
     };
   }, [isOpen, onClose]);
-
-  // Sanitize and normalize each step description
-  const sanitizedSteps = useMemo(() => {
-    return (strategySteps || []).map((s) => {
-      const raw = s.description ?? '';
-      try {
-        const parsed = tryParseJson(raw) ?? raw;
-        const htmlString = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(String(htmlString), 'text/html');
-        normalizeDoc(doc, rewriteStoragePaths && storageBaseUrl ? storageBaseUrl : undefined);
-        const serialized = doc.body.innerHTML;
-        return {
-          step_number: s.step_number,
-          html: DOMPurify.sanitize(serialized, {
-            ADD_TAGS: ['img', 'figure', 'figcaption'],
-            ADD_ATTR: ['target', 'rel', 'src', 'loading', 'alt', 'style', 'width', 'height'],
-          }),
-        };
-      } catch {
-        return { step_number: s.step_number, html: DOMPurify.sanitize(String(raw)) };
-      }
-    });
-  }, [strategySteps, rewriteStoragePaths, storageBaseUrl]);
 
   if (!isOpen) return null;
 
@@ -153,20 +61,17 @@ const StrategyStepsModal: React.FC<Props> = ({
         ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[980px] max-h-[86vh] bg-white rounded-lg shadow-xl overflow-hidden flex flex-col"
-        aria-label={`${strategyTitle} — steps`}
+        aria-label={`${summaryTitle} — full summary`}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="w-16 h-16 rounded-lg bg-gray-200 flex items-center justify-center text-lg font-bold text-gray-700">
-              S
-            </div>
+            <div className="w-16 h-16 rounded-lg bg-gray-200" />
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{strategyTitle}</h3>
-              <p className="text-xs text-gray-500">Execution steps</p>
+              <h3 className="text-lg font-semibold text-gray-900">{summaryTitle}</h3>
+              <p className="text-xs text-gray-500">Full summary reader by {bookAuthor}</p>
             </div>
           </div>
-
           <button
             ref={firstBtnRef}
             onClick={onClose}
@@ -179,24 +84,10 @@ const StrategyStepsModal: React.FC<Props> = ({
 
         {/* Body */}
         <div className="p-5 overflow-y-auto flex-1">
-          {sanitizedSteps.length === 0 ? (
-            <div className="p-4 rounded-md bg-amber-50 border border-amber-100 text-amber-800">
-              No steps available for this strategy.
-            </div>
-          ) : (
-            sanitizedSteps.map((s) => (
-              <article
-                key={s.step_number}
-                className="mb-6 p-4 rounded-md bg-white border-l-4 border-sky-300"
-                aria-labelledby={`step-${s.step_number}`}
-              >
-                <h4 id={`step-${s.step_number}`} className="text-sm font-semibold text-gray-800 mb-2">
-                  Step {s.step_number}
-                </h4>
-                <div className="prose max-w-none text-gray-700" dangerouslySetInnerHTML={{ __html: s.html }} />
-              </article>
-            ))
-          )}
+          <article
+            className="prose"
+            dangerouslySetInnerHTML={{ __html: fullHtmlContent }}
+          />
         </div>
 
         {/* Footer */}
@@ -213,4 +104,4 @@ const StrategyStepsModal: React.FC<Props> = ({
   );
 };
 
-export default StrategyStepsModal;
+export default BookSummaryReaderModal;
