@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/services/supabase';
 import { Link } from 'react-router-dom';
 import IdeaCarousel from './IdeaCarousel';
-import { motion, AnimatePresence } from 'framer-motion';
 import './Ideas.css';
 
 const Ideas = () => {
@@ -15,8 +14,6 @@ const Ideas = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
-  const [dailyStreak, setDailyStreak] = useState(0); // Gamification: Daily streak
-  const [leaderboardTease, setLeaderboardTease] = useState<any[]>([]); // Teaser for top users
   const containerRef = useRef<HTMLDivElement>(null);
 
   const fetchDataForSection = async (
@@ -73,14 +70,6 @@ const Ideas = () => {
         }
       }
       setPopularIdeasByCategory(popularByCat);
-
-      // Gamification: Fetch leaderboard tease (top 3 users by likes)
-      const { data: leaderboardData } = await supabase
-        .from('business_ideas')
-        .select('user_id, likes')
-        .order('likes', { ascending: false })
-        .limit(3);
-      setLeaderboardTease(leaderboardData || []);
     } catch (err: any) {
       setError('Failed to load ideas. Please check your network and try again.');
     } finally {
@@ -90,17 +79,6 @@ const Ideas = () => {
 
   useEffect(() => {
     fetchAllIdeasData();
-    // Gamification: Update daily streak
-    const lastVisit = localStorage.getItem('lastVisit');
-    const today = new Date().toDateString();
-    if (lastVisit === today) {
-      setDailyStreak(parseInt(localStorage.getItem('dailyStreak') || '0'));
-    } else {
-      const newStreak = (parseInt(localStorage.getItem('dailyStreak') || '0') + 1);
-      setDailyStreak(newStreak);
-      localStorage.setItem('dailyStreak', newStreak.toString());
-      localStorage.setItem('lastVisit', today);
-    }
   }, [fetchAllIdeasData]);
 
   useEffect(() => {
@@ -127,7 +105,7 @@ const Ideas = () => {
 
     if (displayData.length === 0) {
       return (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} className="section-container">
+        <div className="section-container">
           <div className="section-header-row">
             <h2 className="section-header">{title}</h2>
             <Link
@@ -140,12 +118,12 @@ const Ideas = () => {
           <div className="empty-state-container">
             <p className="empty-state-text">No ideas found for this section.</p>
           </div>
-        </motion.div>
+        </div>
       );
     }
 
     return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} className="section-container">
+      <div className="section-container">
         <div className="section-header-row">
           <h2 className="section-header">{title}</h2>
           <Link
@@ -157,59 +135,49 @@ const Ideas = () => {
         </div>
         <div className="ideas-grid">
           {displayData.map((idea) => (
-            <motion.div
+            <Link
               key={idea.id}
-              whileHover={{ scale: 1.05, boxShadow: "var(--hover-glow)" }}
-              transition={{ duration: 0.3 }}
+              to={`/idea-content/${idea.id}`}
+              state={{ idea }}
+              className="idea-card-link"
             >
-              <Link
-                to={`/idea-content/${idea.id}`}
-                state={{ idea }}
-                className="idea-card-link"
-              >
-                <div className="idea-card">
-                  {idea.likes > 50 && <span className="badge">Hot Pick 🔥</span>}
-                  {idea.likes > 100 && <span className="badge">Legendary 🏆</span>} {/* Enhanced badge */}
-                  <h3 className="idea-title">{idea.title || 'Untitled'}</h3>
-                  <p className="idea-category">{idea.category || 'Uncategorized'}</p>
-                  <p className="idea-description">{idea.short_description || 'No description'}</p>
-                  <div className="idea-stats">
-                    <span title="Views" aria-label={`Views: ${idea.views || 0}`}>
-                      👁️ {idea.views || 0}
-                    </span>
-                    <span title="Likes" aria-label={`Likes: ${idea.likes || 0}`}>
-                      ❤️ {idea.likes || 0}
-                    </span>
-                    <span title="Points" aria-label={`Points: ${calculatePoints(idea.views || 0, idea.likes || 0)}`}>
-                      🎯 {calculatePoints(idea.views || 0, idea.likes || 0)}
-                    </span>
-                  </div>
-                  <div className="progress-bar">
-                    <motion.div
-                      className="progress-fill"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${calculatePopularityScore(idea.views || 0, idea.likes || 0)}%` }}
-                      transition={{ duration: 0.5 }}
-                    ></motion.div>
-                  </div>
-                  <p className="view-details">View Details <span className="arrow">➡️</span></p>
+              <div className="idea-card">
+                {idea.likes > 50 && <span className="badge">Hot Pick</span>}
+                <h3 className="idea-title">{idea.title || 'Untitled'}</h3>
+                <p className="idea-category">{idea.category || 'Uncategorized'}</p>
+                <p className="idea-description">{idea.short_description || 'No description'}</p>
+                <div className="idea-stats">
+                  <span title="Views" aria-label={`Views: ${idea.views || 0}`}>
+                    👁️ {idea.views || 0}
+                  </span>
+                  <span title="Likes" aria-label={`Likes: ${idea.likes || 0}`}>
+                    ❤️ {idea.likes || 0}
+                  </span>
+                  <span title="Points" aria-label={`Points: ${calculatePoints(idea.views || 0, idea.likes || 0)}`}>
+                    🎯 {calculatePoints(idea.views || 0, idea.likes || 0)}
+                  </span>
                 </div>
-              </Link>
-            </motion.div>
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${calculatePopularityScore(idea.views || 0, idea.likes || 0)}%` }}
+                  ></div>
+                </div>
+                <p className="view-details">View Details <span className="arrow">➡️</span></p>
+              </div>
+            </Link>
           ))}
         </div>
-      </motion.div>
+      </div>
     );
   };
 
   const renderExploreCard = (icon: string, text: string, path: string) => (
-    <motion.div whileHover={{ scale: 1.05 }} transition={{ duration: 0.3 }}>
-      <Link to={path} className="explore-more-card">
-        <span className="explore-icon">{icon}</span>
-        <p className="explore-more-text">{text}</p>
-        <span className="arrow">➡️</span>
-      </Link>
-    </motion.div>
+    <Link to={path} className="explore-more-card">
+      <span className="explore-icon">{icon}</span>
+      <p className="explore-more-text">{text}</p>
+      <span className="arrow">➡️</span>
+    </Link>
   );
 
   const scrollToTop = () => {
@@ -241,41 +209,31 @@ const Ideas = () => {
       </div>
       <div className="content-wrapper">
         <div className="category-filter-container">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+          <button
             className={`category-filter-pill ${selectedCategoryFilter === 'All' ? 'active' : ''}`}
             onClick={() => handleCategoryFilterPress('All')}
             aria-label="Show all categories"
           >
             All
-          </motion.button>
+          </button>
           {['Technology', 'Finance', 'Health', 'Education', 'Retail'].map((cat) => (
-            <motion.button
+            <button
               key={cat}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
               className={`category-filter-pill ${selectedCategoryFilter === cat ? 'active' : ''}`}
               onClick={() => handleCategoryFilterPress(cat)}
               aria-label={`Show ${cat} category`}
             >
               {cat}
-            </motion.button>
+            </button>
           ))}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+          <button
             className="dark-mode-toggle"
             onClick={() => setIsDarkMode(!isDarkMode)}
             aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {isDarkMode ? '☀️' : '🌙'}
-          </motion.button>
+          </button>
         </div>
-        {/* Gamification: Daily Streak Display */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="gamification-streak">
-          <p>Daily Streak: {dailyStreak} 🔥 | Unlock badges by exploring more!</p>
-        </motion.div>
         {renderSection('Latest Ideas', latestIdeas, 'latest')}
         {renderSection('Most Popular Ideas', mostPopularIdeas, 'mostPopular')}
         {renderSection('Most Liked Ideas', mostLikedIdeas, 'mostLiked')}
@@ -283,16 +241,6 @@ const Ideas = () => {
         {popularIdeasByCategory.map((section) =>
           renderSection(`Most Popular in ${section.category}`, section.ideas, 'category', section.category)
         )}
-        {/* Gamification: Leaderboard Tease */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="leaderboard-tease">
-          <h2 className="section-title">Top Contributors</h2>
-          <ul>
-            {leaderboardTease.map((user, index) => (
-              <li key={index}>User {user.user_id}: {user.likes} Likes 🎉</li>
-            ))}
-          </ul>
-          <Link to="/leaderboard">View Full Leaderboard</Link>
-        </motion.div>
         <h2 className="section-title">Explore More</h2>
         <div className="explore-grid">
           {renderExploreCard('🔍', 'Discover New Categories', '/category-explore')}

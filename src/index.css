@@ -116,3 +116,93 @@ input:focus {
 .marquee-container:hover .marquee-content {
   animation-play-state: paused;
 }
+
+
+/* ===== GLOBAL FULL-WIDTH LAYOUT FIXES (append to the end of src/index.css) ===== */
+
+/* Prevent using viewport width which causes horizontal scrollbars
+   (do NOT set body or #root to 100vw anywhere) */
+html, body, #root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* okay to keep, avoids accidental horizontal scroll */
+  box-sizing: border-box;
+}
+
+/* Make Tailwind/other .container classes fluid across the app,
+   remove default centering gutters so components control padding instead. */
+.container {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  box-sizing: border-box;
+}
+
+/* App-level inner wrapper to provide consistent horizontal padding
+   and optional max width for very large screens. Use this to wrap page content. */
+.app-inner {
+  padding-left: 1rem;   /* 16px */
+  padding-right: 1rem;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 1400px;    /* optional: adjust to taste */
+  box-sizing: border-box;
+}
+
+/* If you prefer full-bleed section backgrounds, use .full-bleed-section inside .app-inner
+   so content still aligns with the page flow: */
+.full-bleed-section {
+  width: 100%;
+  margin-left: calc(-1 * 1rem);  /* cancels app-inner padding for full-bleed sections */
+  margin-right: calc(-1 * 1rem);
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* ===== Category pills: horizontal scroll on small screens ===== */
+.category-filter-container {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;
+  padding: 0.5rem 0; /* vertical padding only; horizontal space from .app-inner */
+  scrollbar-width: thin;
+}
+
+/* keep each pill intrinsic and not stretched */
+.category-filter-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Optional: slightly nicer mobile behaviour — show some left/right spacing */
+@media (max-width: 768px) {
+  .category-filter-container {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+}
+
+/* Small helper to avoid unwanted outlines while keeping accessibility */
+.category-filter-container:focus {
+  outline: none;
+}
+
+/* Keep grids from overflowing when children use large min-width */
+.ideas-grid, .courses-grid, .horizontal-list, .grid {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Minor: ensure main content doesn't hug edges on very small screens */
+.safe-area, .content-wrapper, .ideas-page, .courses-container, .idea-content-page {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* ===== End of global layout fixes ===== */
