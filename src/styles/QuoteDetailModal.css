@@ -166,3 +166,23 @@
     width: 48%;
   }
 }
+/* QuoteDetailModal.css (append) */
+.affiliate-btn {
+  background: linear-gradient(45deg, #48bb78, #2f855a); /* green */
+  color: #ffffff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.affiliate-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(47, 133, 90, 0.22);
+}

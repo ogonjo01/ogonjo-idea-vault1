@@ -12,7 +12,8 @@ const confetti = () => {
   script.async = true;
   document.body.appendChild(script);
   script.onload = () => {
-    if (window.confetti) window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    // @ts-ignore
+    if ((window as any).confetti) (window as any).confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
   };
 };
 
@@ -38,20 +39,20 @@ const Courses: React.FC = () => {
         .from('courses')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(50);
       if (courseError) throw courseError;
-      const courses = courseData || [];
+      const courses = (courseData || []) as Course[];
       setAllCourses(courses);
-      setTopCourses(courses.slice(0, 4) || []); // Ensure at least 4 items
+      setTopCourses(courses.slice(0, 4));
 
       const { data: reviewData, error: reviewError } = await supabase
         .from('reviews')
         .select('*')
-        .limit(5);
+        .limit(10);
       if (reviewError) throw reviewError;
       setReviews(reviewData || []);
     } catch (err: any) {
-      setError(`Error fetching data: ${err.message}`);
+      setError(`Error fetching data: ${err?.message || String(err)}`);
       console.error('Fetch error:', err);
     } finally {
       setIsLoading(false);
@@ -80,13 +81,14 @@ const Courses: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const uniqueCategories = ['All', ...new Set(allCourses.map(course => course.category || 'Uncategorized'))];
+    const uniqueCategories = ['All', ...Array.from(new Set(allCourses.map(course => course.category || 'Uncategorized')))];
     setCategoriesData(uniqueCategories);
 
     const lowercasedSearchTerm = searchTerm.toLowerCase();
     const categoryFiltered = allCourses.filter((course) => {
       const matchesCategory = selectedCategory === 'All' || (course.category || 'Uncategorized') === selectedCategory;
       const matchesSearch =
+        (!lowercasedSearchTerm) ||
         (course.title && course.title.toLowerCase().includes(lowercasedSearchTerm)) ||
         (course.shortDescription && course.shortDescription.toLowerCase().includes(lowercasedSearchTerm)) ||
         (course.longDescription && course.longDescription.toLowerCase().includes(lowercasedSearchTerm)) ||
@@ -97,74 +99,125 @@ const Courses: React.FC = () => {
   }, [searchTerm, selectedCategory, allCourses]);
 
   useEffect(() => {
+    if (!topCourses || topCourses.length === 0) return;
     const interval = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % topCourses.length);
     }, 5000);
     return () => clearInterval(interval);
   }, [topCourses.length]);
 
-  const getMostViewedCourses = useCallback(() => [...allCourses].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5), [allCourses]);
-  const getMostLikedCourses = useCallback(() => [...allCourses].sort((a, b) => (b.likes || 0) - (a.likes || 0)).slice(0, 5), [allCourses]);
+  const getMostViewedCourses = useCallback(() => [...allCourses].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 6), [allCourses]);
+  const getMostLikedCourses = useCallback(() => [...allCourses].sort((a, b) => (b.likes || 0) - (a.likes || 0)).slice(0, 6), [allCourses]);
   const getLatestCourses = useCallback(() => {
     return [...allCourses].sort((a, b) => {
       const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
       const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bDate - aDate;
-    }).slice(0, 5);
+    }).slice(0, 6);
   }, [allCourses]);
 
   const handleCoursePress = useCallback((courseId: string) => navigate(`/course/${courseId}`), [navigate]);
   const handleLoginPress = useCallback(() => navigate('/login'), [navigate]);
-  const handleEnroll = useCallback((courseId: string) => {
-    if (user) {
-      confetti();
-      console.log(`Enrolled in course ${courseId}`);
-    } else {
-      handleLoginPress();
-    }
-  }, [user, navigate]);
+ 
+  // NEW: navigate to course detail (same target as View).
+const handleEnroll = useCallback((courseId: string) => {
+  if (user) {
+    confetti();
+    // navigate to course detail and pass state so detail page knows user clicked Enroll
+    navigate(`/course/${courseId}`, { state: { enrolledViaButton: true } });
+  } else {
+    // not logged in => go to login
+    handleLoginPress();
+  }
+}, [user, navigate, handleLoginPress]);
 
-  const renderCourseCard = useCallback(({ item }: { item: Course }) => {
-    const review = reviews.find(r => r.courseId === item.id);
+
+  const renderCourseCard = useCallback((course: Course) => {
+    const review = reviews.find(r => r.courseId === course.id);
     return (
-      <div className="course-card" onClick={() => handleCoursePress(item.id)} style={{ cursor: 'pointer' }}>
+      <article
+        key={course.id}
+        className="course-card"
+        aria-labelledby={`course-${course.id}-title`}
+        role="group"
+      >
         <div className="course-image-container">
-          {item.imageUrl ? (
-            <video src={item.imageUrl.replace('jpg', 'mp4') || 'https://via.placeholder.com/300'} className="course-image" muted loop playsInline />
+          {course.imageUrl ? (
+            String(course.imageUrl).endsWith('.mp4') ? (
+              <video src={course.imageUrl} className="course-image" muted loop playsInline />
+            ) : (
+              <img src={course.imageUrl} className="course-image" alt={course.title || 'Course image'} />
+            )
           ) : (
-            <div className="course-text-preview" style={{ background: `linear-gradient(135deg, #4a90e2, #9013fe)` }}>
-              <h3>{item.title || 'Untitled Course'}</h3>
+            <div className="course-text-preview" aria-hidden>
+              <div className="course-thumb-gradient" />
             </div>
           )}
         </div>
+
         <div className="card-content">
-          <h3 className="course-title">{item.title || 'Untitled Course'}</h3>
-          <span className="course-category">{item.category || 'Uncategorized'}</span>
-          <p className="course-description">{item.shortDescription || item.longDescription || 'No description available'}</p>
-          <div className="course-info-row">
-            <span className="course-info-text">{item.duration || 'N/A'}</span>
-            <span className="course-price">{item.price || 'Free'}</span>
+          {/* Title: clickable control only (not the whole card) */}
+          <h3 id={`course-${course.id}-title`} className="course-title" title={course.title}>
+            <button
+              className="title-link"
+              onClick={(e) => { e.stopPropagation(); handleCoursePress(course.id); }}
+              aria-label={`Open course ${course.title}`}
+            >
+              {course.title || 'Untitled Course'}
+            </button>
+          </h3>
+
+          <div className="meta-row">
+            <span className="course-category">{course.category || 'Uncategorized'}</span>
+            <span className="course-duration">{course.duration || '—'}</span>
           </div>
-          <div className="stats-grid">
-            <div className="stat-item"><span className="stat-label">Views</span><span className="stat-value">{item.views || 0}</span></div>
-            <div className="stat-item"><span className="stat-label">Likes</span><span className="stat-value">{item.likes || 0}</span></div>
-            <div className="stat-item"><span className="stat-label">Enrolled</span><span className="stat-value">{item.enrollment_count || 0}</span></div>
+
+          <p className="course-description" title={course.shortDescription || course.longDescription}>
+            {course.shortDescription || course.longDescription || 'No description available.'}
+          </p>
+
+          <div className="card-bottom">
+            <div className="stats-grid" aria-hidden>
+              <div className="stat-item"><span className="stat-label">Views</span><span className="stat-value">{course.views || 0}</span></div>
+              <div className="stat-item"><span className="stat-label">Likes</span><span className="stat-value">{course.likes || 0}</span></div>
+              <div className="stat-item"><span className="stat-label">Enrolled</span><span className="stat-value">{course.enrollment_count || 0}</span></div>
+            </div>
+
+            <div className="card-actions" role="group" aria-label="Course actions">
+              <button
+                className="enroll-button"
+                onClick={(e) => { e.stopPropagation(); handleEnroll(course.id); }}
+                aria-label={`Enroll in ${course.title}`}
+                title="Enroll"
+              >
+                Enroll
+              </button>
+
+              <button
+                className="view-details-btn-secondary"
+                onClick={(e) => { e.stopPropagation(); handleCoursePress(course.id); }}
+                aria-label={`View details for ${course.title}`}
+                title="View details"
+              >
+                View
+              </button>
+            </div>
           </div>
-          <button className="enroll-button" onClick={(e) => { e.stopPropagation(); handleEnroll(item.id); }}>Enroll</button>
         </div>
+
         {review && (
-          <div className="review-popup">
+          <div className="review-popup" aria-hidden>
             <p className="review-text">{review.text}</p>
           </div>
         )}
-      </div>
+      </article>
     );
   }, [handleCoursePress, handleEnroll, reviews]);
 
   if (isLoading && allCourses.length === 0) {
     return (
       <div className="loading-container">
-        <div className="spinner"></div>
+        <div className="spinner" />
         <p className="loading-text">Loading courses...</p>
       </div>
     );
@@ -189,101 +242,96 @@ const Courses: React.FC = () => {
     );
   }
 
-  console.log('Top Courses:', topCourses); // Debug log
   return (
     <div className="courses-container">
-      <div className="carousel-wrapper" style={{ zIndex: 5 }}>
-        <CourseCarousel courses={topCourses} />
-      </div>
-      <div className="content-wrapper" style={{ zIndex: 10, position: 'relative' }}>
-        <header className="header">
-          <h1 className="header-title">Courses</h1>
-          <button className="info-button" onClick={() => alert('Info: Explore a variety of courses to enhance your skills!')}>
-            <span className="info-button-text">Info</span>
-          </button>
-        </header>
-        <div className="search-container">
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search courses..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          {searchTerm.length > 0 && (
-            <button className="clear-search-button" onClick={() => setSearchTerm('')}>
-              ✕
-            </button>
-          )}
-        </div>
+  <div className="content-wrapper" style={{ zIndex: 10, position: "relative" }}>
+    {/* Header now above carousel */}
+    <header className="header">
+      <h1 className="header-title">Courses</h1>
+      <button
+        className="info-button"
+        onClick={() => alert("Info: Explore a variety of courses to enhance your skills!")}
+        aria-label="Courses information"
+      >
+        <span className="info-button-text">Info</span>
+      </button>
+    </header>
+
+    {/* Carousel placed under header + search */}
+    <div className="carousel-wrapper" style={{ zIndex: 5, marginTop: 12 }}>
+      <CourseCarousel courses={topCourses} />
+    </div>
+    
+    {/* Search sits directly under header */}
+    <div className="search-container" role="search" aria-label="Search courses">
+      <input
+        type="text"
+        className="search-input"
+        placeholder="Search courses..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        aria-label="Search courses"
+      />
+      {searchTerm.length > 0 && (
+        <button className="clear-search-button" onClick={() => setSearchTerm("")} aria-label="Clear search">
+          ✕
+        </button>
+      )}
+    </div>
+
+    
+
         <AdBanner adUnitId="courses_top_banner" advertiserName="Online Learning Platforms" callToAction="Start Learning Now" />
-        {searchTerm.length > 0 || selectedCategory !== 'All' ? (
-          filteredCourses.length === 0 ? (
-            <div className="empty-state-container">
-              <h2 className="empty-state-text">No courses found for your search or filter.</h2>
-              <p className="empty-state-sub-text">Try adjusting your search or selecting a different category.</p>
-            </div>
-          ) : (
-            <section className="section">
-              <h2 className="section-header">Search & Filter Results</h2>
-              <div className="courses-grid">
-                {filteredCourses.map((course) => renderCourseCard({ item: course }))}
+
+        <section className="section">
+          <h2 className="section-header">Most Viewed Courses</h2>
+          <div className="courses-grid">
+            {getMostViewedCourses().length === 0 ? (<p className="no-courses-text">No most viewed courses available.</p>) : getMostViewedCourses().map(renderCourseCard)}
+          </div>
+        </section>
+
+        <section className="section">
+          <h2 className="section-header">Most Liked Courses</h2>
+          <div className="courses-grid">
+            {getMostLikedCourses().length === 0 ? (<p className="no-courses-text">No most liked courses available.</p>) : getMostLikedCourses().map(renderCourseCard)}
+          </div>
+        </section>
+
+        <AdBanner adUnitId="courses_mid_banner" advertiserName="Business Skill Workshops" callToAction="Join a Workshop" />
+
+        <section className="section">
+          <h2 className="section-header">Latest Courses</h2>
+          <div className="courses-grid">
+            {getLatestCourses().length === 0 ? (<p className="no-courses-text">No latest courses available.</p>) : getLatestCourses().map(renderCourseCard)}
+          </div>
+        </section>
+
+        <section className="section">
+          <h2 className="section-header">Courses by Category</h2>
+          <div className="category-scroll-view" style={{ display: 'flex', gap: 8, marginBottom: 12, overflowX: 'auto', paddingBottom: 6 }}>
+            {categoriesData.map((category) => (
+              <button
+                key={category}
+                className={`category-chip ${selectedCategory === category ? 'selected-category-chip' : ''}`}
+                onClick={() => setSelectedCategory(category)}
+              >
+                <span className={`category-chip-text ${selectedCategory === category ? 'selected-category-chip-text' : ''}`}>
+                  {category}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="courses-grid">
+            {filteredCourses.length === 0 ? (
+              <div className="empty-state-container">
+                <h2 className="empty-state-text">No courses found for this category.</h2>
               </div>
-            </section>
-          )
-        ) : (
-          <>
-            <section className="section">
-              <h2 className="section-header">Most Viewed Courses</h2>
-              <div className="courses-grid">
-                {getMostViewedCourses().length === 0 ? (
-                  <p className="no-courses-text">No most viewed courses available.</p>
-                ) : getMostViewedCourses().map((course) => renderCourseCard({ item: course }))}
-              </div>
-            </section>
-            <section className="section">
-              <h2 className="section-header">Most Liked Courses</h2>
-              <div className="courses-grid">
-                {getMostLikedCourses().length === 0 ? (
-                  <p className="no-courses-text">No most liked courses available.</p>
-                ) : getMostLikedCourses().map((course) => renderCourseCard({ item: course }))}
-              </div>
-            </section>
-            <AdBanner adUnitId="courses_mid_banner" advertiserName="Business Skill Workshops" callToAction="Join a Workshop" />
-            <section className="section">
-              <h2 className="section-header">Latest Courses</h2>
-              <div className="courses-grid">
-                {getLatestCourses().length === 0 ? (
-                  <p className="no-courses-text">No latest courses available.</p>
-                ) : getLatestCourses().map((course) => renderCourseCard({ item: course }))}
-              </div>
-            </section>
-            <section className="section">
-              <h2 className="section-header">Courses by Category</h2>
-              <div className="category-scroll-view">
-                {categoriesData.map((category) => (
-                  <button
-                    key={category}
-                    className={`category-chip ${selectedCategory === category ? 'selected-category-chip' : ''}`}
-                    onClick={() => setSelectedCategory(category)}
-                  >
-                    <span className={`category-chip-text ${selectedCategory === category ? 'selected-category-chip-text' : ''}`}>
-                      {category}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="courses-grid">
-                {filteredCourses.length === 0 ? (
-                  <div className="empty-state-container">
-                    <h2 className="empty-state-text">No courses found for this category.</h2>
-                  </div>
-                ) : filteredCourses.map((course) => renderCourseCard({ item: course }))}
-              </div>
-            </section>
-            <AdBanner adUnitId="courses_bottom_banner" advertiserName="Career Advancement Programs" callToAction="Enroll Today" />
-          </>
-        )}
+            ) : filteredCourses.map(renderCourseCard)}
+          </div>
+        </section>
+
+        <AdBanner adUnitId="courses_bottom_banner" advertiserName="Career Advancement Programs" callToAction="Enroll Today" />
       </div>
     </div>
   );

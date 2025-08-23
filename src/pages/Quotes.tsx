@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/services/supabase';
 import { useNavigate } from 'react-router-dom';
 import AdBanner from '../components/AdBanner';
 import { useAuth } from '@/services/supabase';
 import QuoteDetailModal from '../components/QuoteDetailModal';
-import QuoteCarousel from './QuoteCarousel'; // New import
+import QuoteCarousel from './QuoteCarousel';
 import './Quotes.css';
 
 interface Quote {
@@ -31,6 +31,8 @@ const QUOTE_CATEGORIES = [
   { name: 'Teamwork & Culture', description: 'Collaboration, trust, workplace values' },
 ];
 
+const truncate = (s: string, n = 120) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
 const Quotes: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -49,11 +51,11 @@ const Quotes: React.FC = () => {
         .from('business_quotes')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(200);
 
       if (fetchError) throw fetchError;
 
-      const quotesWithLikeStatus: Quote[] = await Promise.all((data || []).map(async (quote) => {
+      const quotesWithLikeStatus: Quote[] = await Promise.all((data || []).map(async (quote: any) => {
         let isLikedByCurrentUser = false;
         if (user?.id) {
           const { data: likeData, error: likeError } = await supabase
@@ -64,21 +66,19 @@ const Quotes: React.FC = () => {
           if (likeError && likeError.code !== 'PGRST116') console.error('Error checking like:', likeError.message);
           else isLikedByCurrentUser = likeData && likeData.length > 0;
         }
-        return { ...quote, isLiked: isLikedByCurrentUser };
+        return { ...quote, isLiked: isLikedByCurrentUser } as Quote;
       }));
 
       setAllQuotes(quotesWithLikeStatus);
     } catch (err: any) {
-      console.error('Error fetching quotes:', err.message);
+      console.error('Error fetching quotes:', err?.message ?? err);
       setError('Failed to load quotes. Please try again.');
     } finally {
       setLoading(false);
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    fetchQuotes();
-  }, [fetchQuotes]);
+  useEffect(() => { fetchQuotes(); }, [fetchQuotes]);
 
   const handleLikeToggle = useCallback(async (quoteId: string, currentIsLiked: boolean) => {
     if (!user) {
@@ -100,8 +100,8 @@ const Quotes: React.FC = () => {
         setSelectedQuoteForModal(prev => prev?.id === quoteId ? { ...prev, likes: (prev.likes || 0) + 1, isLiked: true } : prev);
       }
     } catch (err: any) {
-      alert(`Failed to toggle like: ${err.message}`);
-      console.error('Error toggling like:', err.message);
+      alert(`Failed to toggle like: ${err?.message ?? err}`);
+      console.error('Error toggling like:', err?.message ?? err);
     }
   }, [user, navigate]);
 
@@ -113,7 +113,7 @@ const Quotes: React.FC = () => {
         setAllQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, views: (q.views || 0) + 1 } : q));
         setSelectedQuoteForModal(prev => prev?.id === quoteId ? { ...prev, views: (prev.views || 0) + 1 } : prev);
       } catch (err: any) {
-        console.error('Error incrementing view:', err.message);
+        console.error('Error incrementing view:', err?.message ?? err);
       }
     }
   }, []);
@@ -123,8 +123,8 @@ const Quotes: React.FC = () => {
     navigator.clipboard.writeText(message).then(() => {
       alert('Quote copied to clipboard!');
     }).catch((err) => {
-      alert(`Failed to share: ${err.message}`);
-      console.error('Error sharing quote:', err.message);
+      alert(`Failed to share: ${err?.message ?? err}`);
+      console.error('Error sharing quote:', err?.message ?? err);
     });
   }, []);
 
@@ -139,6 +139,57 @@ const Quotes: React.FC = () => {
     setSelectedQuoteForModal(null);
   }, []);
 
+  // >>> NEW: reusable card renderer that matches Dashboard style
+  const renderQuoteCard = (quote: Quote) => (
+    <div
+      className="horizontal-item"
+      key={quote.id}
+      role="listitem"
+      aria-label={`Quote by ${quote.author}`}
+    >
+      <div
+        className="quote-card"
+        onClick={() => openQuoteModal(quote)}
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter') openQuoteModal(quote); }}
+      >
+        <div className="quote-card-body">
+          <p className="quote-text-brief">"{truncate(quote.quote_text, 160)}"</p>
+          <p className="quote-author">— {quote.author}</p>
+          {quote.category && <span className="quote-pill">{quote.category}</span>}
+        </div>
+
+        <div className="quote-card-footer">
+          <div className="quote-stats-row">
+            <span className="stat"><span className="stat-emoji">❤️</span> {quote.likes || 0}</span>
+            <span className="stat"><span className="stat-emoji">👁️</span> {quote.views || 0}</span>
+          </div>
+
+          <div className="quote-ctas">
+            <button
+              className="btn-view"
+              onClick={(e) => {
+                e.stopPropagation();
+                openQuoteModal(quote);
+              }}
+              aria-label={`View quote by ${quote.author}`}
+            >
+              View
+            </button>
+
+            <button
+              className="btn-share"
+              onClick={(e) => { e.stopPropagation(); handleShareQuote(quote); }}
+              aria-label="Share quote"
+            >
+              Share
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderQuoteSection = (title: string, quotesToDisplay: Quote[], filterType: 'mostLiked' | 'mostViewed' | 'category' | 'latest', categoryName?: string) => {
     if (!quotesToDisplay.length) return null;
     return (
@@ -152,18 +203,9 @@ const Quotes: React.FC = () => {
             See All <i className="ion-arrow-forward" />
           </button>
         </div>
-        <div className="quotes-grid">
-          {quotesToDisplay.map((quote) => (
-            <div key={quote.id} className="quote-card" onClick={() => openQuoteModal(quote)}>
-              <p className="quote-text">"{quote.quote_text}"</p>
-              <p className="quote-author">- {quote.author}</p>
-              {quote.category && <p className="quote-category">{quote.category}</p>}
-              <div className="quote-stats">
-                <span>Likes: <span className="quote-stat-text">{quote.likes || 0}</span></span>
-                <span style={{ marginLeft: '10px' }}>Views: <span className="quote-stat-text">{quote.views || 0}</span></span>
-              </div>
-            </div>
-          ))}
+
+        <div className="horizontal-list" role="list" aria-label={`${title} quotes`}>
+          {quotesToDisplay.map((q) => renderQuoteCard(q))}
         </div>
       </section>
     );
@@ -172,7 +214,7 @@ const Quotes: React.FC = () => {
   if (loading) {
     return (
       <div className="loading-container">
-        <div className="spinner"></div>
+        <div className="spinner" />
         <p className="loading-text">Loading quotes...</p>
       </div>
     );
@@ -187,50 +229,71 @@ const Quotes: React.FC = () => {
     );
   }
 
-  const latestQuotes = [...allQuotes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 10);
-  const mostLikedQuotes = [...allQuotes].sort((a, b) => b.likes - a.likes).slice(0, 10);
-  const mostViewedQuotes = [...allQuotes].sort((a, b) => b.views - a.views).slice(0, 10);
+  const latestQuotes = [...allQuotes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 12);
+  const mostLikedQuotes = [...allQuotes].sort((a, b) => b.likes - a.likes).slice(0, 12);
+  const mostViewedQuotes = [...allQuotes].sort((a, b) => b.views - a.views).slice(0, 12);
 
   return (
     <div className="quotes-container">
       <div className="carousel-wrapper" style={{ zIndex: 5 }}>
-        <QuoteCarousel quotes={latestQuotes} />
+        <QuoteCarousel
+  quotes={latestQuotes}
+  onViewQuote={openQuoteModal} // 🔹 pass the modal handler
+/>
       </div>
+
       <div className="content-wrapper" style={{ zIndex: 10, position: 'relative' }}>
         <header className="header">
           <h1 className="header-title">Business Wise Quotes</h1>
-          <button className="profile-button" onClick={() => navigate('/user-profile')}>
-            <span>Profile</span>
-          </button>
+          <button className="profile-button" onClick={() => navigate('/user-profile')}>Profile</button>
         </header>
+
         <AdBanner adUnitId="quotes_top_banner" advertiserName="Mindset Boosters" callToAction="Get Inspired" />
+
         <div className="browse-by-category-container">
           <h2 className="browse-by-category-title">Browse by Category</h2>
-          <div className="category-browse-scroll-view">
+
+          {/* horizontal scrollable category row */}
+          <div className="category-browse-scroll-view" role="tablist" aria-label="Browse categories">
+            <button
+              className="browse-category-button"
+              onClick={() => navigate('/quote-list', { state: { title: `All Quotes`, filterType: 'latest' } })}
+              aria-label="All categories"
+              style={{ flex: '0 0 auto' }}
+            >
+              All
+            </button>
+
             {QUOTE_CATEGORIES.map((cat) => (
               <button
                 key={cat.name}
                 className="browse-category-button"
                 onClick={() => navigate('/quote-list', { state: { title: `${cat.name} Quotes`, filterType: 'category', categoryName: cat.name } })}
+                style={{ flex: '0 0 auto' }}
               >
                 {cat.name}
               </button>
             ))}
           </div>
         </div>
+
         {renderQuoteSection('Latest Quotes', latestQuotes, 'latest')}
         <AdBanner adUnitId="quotes_mid_banner" advertiserName="Success Coaching" callToAction="Learn More" />
         {renderQuoteSection('Most Liked Quotes', mostLikedQuotes, 'mostLiked')}
         {renderQuoteSection('Most Viewed Quotes', mostViewedQuotes, 'mostViewed')}
+
         {QUOTE_CATEGORIES.map((cat) => {
           const categorizedQuotes = allQuotes.filter(q => q.category === cat.name)
             .sort((a, b) => b.likes - a.likes).slice(0, 10);
-          return categorizedQuotes.length > 0 ? renderQuoteSection(`Most Popular in ${cat.name}`, categorizedQuotes, 'category', cat.name) : null;
+          return (categorizedQuotes.length > 0) ? renderQuoteSection(`Most Popular in ${cat.name}`, categorizedQuotes, 'category', cat.name) : null;
         })}
+
         <button className="explore-more-button" onClick={() => navigate('/quote-list', { state: { title: 'All Quotes', filterType: 'latest' } })}>
           <span>Explore All Quotes</span>
         </button>
+
         <AdBanner adUnitId="quotes_bottom_banner" advertiserName="Productivity Tools" callToAction="Boost Your Day" />
+
         {selectedQuoteForModal && (
           <QuoteDetailModal
             isVisible={isModalVisible}

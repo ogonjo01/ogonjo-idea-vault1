@@ -1,392 +1,350 @@
-.safe-area {
-  min-height: 100vh;
-  padding: 20px;
+/* AudibleBooks.css - modern, minimal styling for the single-card carousel */
+
+.carousel-root {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 18px;
+  box-sizing: border-box;
+  user-select: none;
 }
 
-.carousel-wrapper {
-  margin-bottom: 20px;
-  background-color: var(--theme-color-dark);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.carousel-container {
+.carousel-viewport {
   position: relative;
   overflow: hidden;
-  width: 100%;
-  max-width: 1200px;
-  height: 300px;
-  margin: 0 auto;
-}
-
-.carousel-track {
-  display: flex;
-  transition: transform 0.5s ease;
-}
-
-.carousel-panel {
-  flex: 0 0 33.3333%;
-  box-sizing: border-box;
-  padding: 1rem;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+  min-height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.carousel-content {
+/* Card (single) */
+.carousel-card {
   width: 100%;
-  background: rgba(26, 54, 93, 0.9); /* Slightly transparent dark blue */
-  color: var(--theme-color-light-text);
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  box-sizing: border-box;
+}
+
+/* Image area */
+.carousel-image {
+  width: 140px;
+  height: 192px;
   border-radius: 8px;
-  padding: 1.5rem;
-  text-align: center;
+  overflow: hidden;
+  background: linear-gradient(180deg,#6363b3,#dadaeb);
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.carousel-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.carousel-image-placeholder {
+  color: #888;
+  font-size: 13px;
 }
 
-.carousel-content h2 {
-  font-size: 1.5rem;
+/* Meta area */
+.carousel-meta {
+  padding-right: 8px;
+}
+.carousel-title {
+  margin: 0;
+  font-size: 18px;
   font-weight: 700;
-  color: var(--theme-color-accent);
-  margin: 0;
-  line-height: 1.2;
+  color: #111827;
+}
+.carousel-author {
+  margin: 6px 0 12px 0;
+  color: #6b7280;
+  font-size: 13px;
 }
 
-.carousel-content p {
-  margin: 0;
-  font-size: 1rem;
-  color: #d1d5db;
+/* Centered buttons */
+.carousel-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 6px;
 }
-
+.btn {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
 .listen-btn {
-  background: var(--theme-color-primary);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  color: #ffffff;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.3s, transform 0.2s;
+  background: linear-gradient(90deg,#0ea5a4,#06b6d4);
+  color: white;
 }
-
-.listen-btn:hover {
-  background: #e03e3e;
-  transform: translateY(-2px);
-}
-
+.listen-btn:hover { transform: translateY(-2px); }
 .share-btn {
-  background: var(--theme-color-secondary);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  color: #ffffff;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.3s, transform 0.2s;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  color: #111827;
 }
+.share-btn:hover { transform: translateY(-2px); }
 
-.share-btn:hover {
-  background: #00b385;
-  transform: translateY(-2px);
-}
-
+/* Controls */
 .carousel-control {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  color: #ffffff;
-  border: none;
-  padding: 0.75rem;
-  font-size: 1.75rem;
-  cursor: pointer;
-  z-index: 10;
-  border-radius: 50%;
-  transition: opacity 0.3s;
-}
-
-.carousel-control:hover {
-  opacity: 0.9;
-}
-
-.carousel-control.prev { left: 1rem; }
-.carousel-control.next { right: 1rem; }
-
-.content-wrapper {
-  position: relative;
-  z-index: 10;
-}
-
-.search-container {
+  background: rgba(169, 225, 253, 0.9);
+  border: 1px solid #cbd6f8;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
-  background: #ffffff;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  font-size: 20px;
+  color: #111827;
+}
+.carousel-control.prev { left: 8px; }
+.carousel-control.next { right: 8px; }
+
+/* Dots */
+.carousel-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 12px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #d1d5db;
+  border: none;
+  cursor: pointer;
+}
+.dot.active { background: #0ea5a4; }
+
+/* Animations: slide left/right using transform + opacity */
+.carousel-card {
+  transition: transform 420ms cubic-bezier(.22,.9,.3,1), opacity 420ms ease;
+  will-change: transform, opacity;
+}
+.animate-right {
+  transform: translateX(20px);
+  opacity: 0;
+  animation: enterFromRight 420ms forwards;
+}
+.animate-left {
+  transform: translateX(-20px);
+  opacity: 0;
+  animation: enterFromLeft 420ms forwards;
+}
+@keyframes enterFromRight {
+  0% { transform: translateX(20px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes enterFromLeft {
+  0% { transform: translateX(-20px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+/* Empty state */
+.carousel-empty {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 18px;
+  text-align: center;
+  color: #6b7280;
+  background: #fff;
   border-radius: 8px;
-  padding: 10px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.03);
 }
+/* AudibleBooks.css - Uniform card sizing, centered buttons and view button */
 
-.search-icon {
-  margin-right: 10px;
-  color: var(--theme-color-dark);
-}
-
-.search-input {
-  flex: 1;
-  border: none;
-  outline: none;
-  font-size: 1rem;
-  color: var(--theme-color-dark-text);
-}
-
-.search-input::placeholder {
-  color: #9ca3af;
-}
-
-.clear-search-button {
-  background: none;
-  border: none;
-  color: var(--theme-color-primary);
-  font-size: 1.25rem;
-  cursor: pointer;
-}
-
-.category-filter-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 20px;
-  background: #ffffff;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.category-filter-pill {
-  padding: 8px 16px;
-  border-radius: 20px;
-  background: #edf2f7;
-  border: none;
-  cursor: pointer;
-  font-size: 1rem;
-  color: var(--theme-color-dark-text);
-  transition: background 0.3s;
-}
-
-.category-filter-pill-active {
-  background: var(--theme-color-accent);
-  color: #ffffff;
-}
-
-.category-filter-pill:hover {
-  background: #e2e8f0;
-}
-
-.section-container {
-  margin-bottom: 30px;
-}
-
-.section-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.section-header {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: var(--theme-color-accent);
-}
-
-.see-all-button {
-  background: none;
-  border: none;
-  color: var(--theme-color-dark);
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  text-decoration: underline;
-}
-
-.chevron-icon {
-  margin-left: 5px;
-}
-
-.horizontal-list {
-  display: flex;
-  overflow-x: auto;
-  gap: 20px;
-  padding-bottom: 15px;
-}
-
+/* reusable card sizing */
 .audible-book-card-horizontal {
-  background: #ffffff;
-  padding: 15px;
-  border-radius: 10px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s, box-shadow 0.3s;
-  width: 250px;
-  flex-shrink: 0;
-  cursor: pointer;
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  overflow: hidden;
+  padding: 12px;
+  box-sizing: border-box;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 
 .audible-book-card-horizontal:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-6px);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.09);
 }
 
+/* image wrapper fixed height so all images look the same */
 .card-image-wrapper {
-  margin-bottom: 10px;
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(180deg,#f7fafc,#eef2ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-
 .audible-book-image-horizontal {
   width: 100%;
-  height: 150px;
+  height: 100%;
   object-fit: cover;
-  border-radius: 5px;
+  display: block;
 }
-
 .audible-book-image-placeholder {
-  width: 100%;
-  height: 150px;
-  background: #e2e8f0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  color: var(--theme-color-dark-text);
-  font-size: 1rem;
+  font-size: 13px;
+  color: #8892a6;
 }
 
+/* text area - consistent spacing and clamping */
 .audible-book-text-container-horizontal {
-  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  flex: 1 1 auto;
+  min-height: 0; /* for webkit overflow clamp */
 }
-
 .audible-book-title-horizontal {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--theme-color-dark);
-  margin-bottom: 5px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #0f172a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-
 .audible-book-author-horizontal {
-  font-size: 1rem;
-  color: #718096;
-  margin-bottom: 5px;
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
 }
-
 .audible-book-category-horizontal {
-  font-size: 0.9rem;
-  color: #9ca3af;
-  margin-bottom: 10px;
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
-.audible-book-stats-horizontal {
+/* action buttons (centered) */
+.audible-book-actions {
   display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.audible-book-stat-icon {
-  font-size: 1rem;
-  color: var(--theme-color-dark);
-}
-
-.audible-book-stat-text-horizontal {
-  font-size: 0.9rem;
-  color: var(--theme-color-dark-text);
-}
-
-.filtered-results-container,
-.grid-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
-}
-
-.ad-banner {
-  background: var(--theme-color-dark);
-  color: var(--theme-color-light-text);
-  padding: 15px;
-  text-align: center;
-  margin: 20px 0;
-  border-radius: 8px;
-  font-size: 1.1rem;
-}
-
-.loading-overlay {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  gap: 8px;
   justify-content: center;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid var(--theme-color-accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.loading-text {
-  margin-top: 15px;
-  color: var(--theme-color-dark-text);
-  font-size: 1.2rem;
-}
-
-.error-container {
-  display: flex;
-  flex-direction: column;
+  margin-top: auto; /* push actions to bottom */
   align-items: center;
-  justify-content: center;
-  height: 100vh;
-  background: #fef2f2;
 }
-
-.error-text {
-  color: var(--theme-color-primary);
-  font-size: 1.2rem;
-  margin-bottom: 15px;
-}
-
-.retry-button {
-  background: var(--theme-color-accent);
-  color: #ffffff;
-  padding: 10px 20px;
+.listen-btn-card, .share-btn-card, .view-btn-card {
   border: none;
   border-radius: 8px;
-  font-size: 1rem;
+  padding: 8px 10px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.3s;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
 }
 
-.retry-button:hover {
-  background: #2a5cff;
+/* Listen button is primary */
+.listen-btn-card {
+  background: linear-gradient(90deg, #0ea5a4, #06b6d4);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(14,165,164,0.12);
 }
 
-.empty-state-container {
-  text-align: center;
-  padding: 20px;
+/* Share is neutral */
+.share-btn-card {
+  background: #fff;
+  border: 1px solid #e6eef3;
+  color: #0f172a;
 }
 
-.empty-state-text {
-  color: var(--theme-color-dark-text);
-  font-size: 1.2rem;
+/* View is subtle secondary */
+.view-btn-card {
+  background: #111827;
+  color: #fff;
+  opacity: 0.95;
+}
+
+/* stats row */
+.audible-book-stats-horizontal {
+  display:flex;
+  gap:6px;
+  align-items:center;
+  justify-content:center;
+  margin-top:8px;
+  color:#94a3b8;
+  font-size:12px;
+}
+
+/* Horizontal list container (scrollable) */
+.horizontal-list {
+  padding: 12px 0;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ensure grid list uses the same cards */
+.grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* modal styles (if you don't yet have them) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2,6,23,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+}
+.modal-container {
+  width: min(920px, 96%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 20px 60px rgba(2,6,23,0.45);
+}
+
+/* small responsive adjustments */
+@media (max-width: 640px) {
+  .audible-book-card-horizontal {
+    width: 180px;
+    min-width: 180px;
+    max-width: 180px;
+    height: 340px;
+  }
+  .card-image-wrapper { height: 180px; }
 }

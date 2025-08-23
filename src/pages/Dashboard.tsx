@@ -34,15 +34,12 @@ const Dashboard: React.FC = () => {
 
   const fetchControllerRef = useRef<AbortController | null>(null);
 
-  // fixed category order from constants with 'All' prepended
   const allCategories = useMemo(() => ['All', ...INVESTMENT_CATEGORIES], []);
 
-  // Fetch strategies from Supabase
   const fetchStrategies = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // cancel previous fetch if any
       fetchControllerRef.current?.abort();
       fetchControllerRef.current = new AbortController();
 
@@ -55,7 +52,6 @@ const Dashboard: React.FC = () => {
       if (supabaseError) throw supabaseError;
 
       if (data) {
-        // For each strategy, check if the current user liked it
         const strategiesWithLikes: InvestmentStrategy[] = await Promise.all(
           data.map(async (strategy: any) => {
             let isLiked = false;
@@ -91,7 +87,6 @@ const Dashboard: React.FC = () => {
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        // ignore
       } else {
         console.error('Failed to load strategies:', err);
         setError(`Failed to load strategies: ${err?.message || String(err)}`);
@@ -108,7 +103,6 @@ const Dashboard: React.FC = () => {
     };
   }, [fetchStrategies]);
 
-  // Debounce search/filter
   useEffect(() => {
     const t = setTimeout(() => {
       let current = [...strategies];
@@ -135,14 +129,12 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      // if unauthenticated, navigate to landing
       navigate('/');
     }
   }, [authLoading, user, navigate]);
 
   const handleCategoryFilterPress = useCallback((category: string) => {
     setSelectedCategory(category);
-    // clear search when a category is picked
     setSearchQuery('');
   }, []);
 
@@ -158,11 +150,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const calculatePopularityScore = (views = 0, likes = 0) => {
-    return Math.min(Math.round((views * 0.4 + likes * 0.6) / 10), 100);
-  };
-
-  // Render a horizontal section (carousel like)
   const renderStrategySection = useCallback((title: string, data: InvestmentStrategy[]) => {
     if (!data || data.length === 0) return null;
     return (
@@ -223,11 +210,9 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  // Prepare section data (examples: latest, popular)
   const latest = [...strategies].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)).slice(0, 8);
   const popular = [...strategies].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 8);
 
-  // group by category for "Top in X"
   const groupedByCategory = Object.entries(
     strategies.reduce((acc: Record<string, InvestmentStrategy[]>, s) => {
       const key = s.category || 'Uncategorized';
@@ -237,6 +222,7 @@ const Dashboard: React.FC = () => {
     }, {})
   );
 
+  // === REPLACED CATEGORY FILTER WITH INLINE STYLE TO FORCE NO STACKING ===
   return (
     <div className="safe-area">
       <div className="carousel-wrapper" style={{ zIndex: 5 }}>
@@ -260,11 +246,19 @@ const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* Category filter: horizontal scroll on mobile, wrap on desktop */}
+        {/* INLINE STYLE CATEGORY FILTER - NO CSS DEPENDENCY */}
         <div
-          className="category-filter-container"
           role="tablist"
           aria-label="Investment categories"
+          style={{
+            display: 'flex',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            gap: 12,
+            padding: '8px 0',
+            whiteSpace: 'nowrap',
+          }}
         >
           {allCategories.map((cat) => (
             <button
@@ -272,15 +266,34 @@ const Dashboard: React.FC = () => {
               role="tab"
               aria-pressed={selectedCategory === cat}
               onClick={() => handleCategoryFilterPress(cat)}
-              className={`category-filter-pill ${selectedCategory === cat ? 'category-filter-pill-active' : ''}`}
               tabIndex={0}
+              style={{
+                flex: '0 0 auto',
+                display: 'inline-flex',
+                whiteSpace: 'nowrap',
+                padding: '6px 12px',
+                borderRadius: 999,
+                backgroundColor: selectedCategory === cat ? '#1a365d' : '#edf2f7',
+                color: selectedCategory === cat ? '#fff' : '#334155',
+                fontWeight: 600,
+                cursor: 'pointer',
+                border: 'none',
+                gap: '0.5rem',
+                transition: 'transform 0.12s ease, box-shadow 0.12s ease, background 0.12s',
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = selectedCategory === cat ? 'translateY(-2px)' : 'translateY(0)';
+              }}
             >
               {cat}
             </button>
           ))}
         </div>
 
-        {/* Results */}
         {searchQuery.trim() !== '' || selectedCategory !== 'All' ? (
           filteredStrategies.length > 0 ? (
             <div className="filtered-results-container">

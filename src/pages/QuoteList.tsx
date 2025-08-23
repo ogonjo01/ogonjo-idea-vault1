@@ -222,7 +222,7 @@ function QuoteList() {
                   handleLikeToggle(quote.id, quote.isLiked || false);
                 }}
               >
-                <span className="material-icons">{quote.isLiked ? 'favorite' : 'favorite_border'}</span>
+                <span className="material-icons">{quote.isLiked ? 'favorite' : 'favorite'}</span>
                 {quote.likes || 0}
               </button>
               <div className="action-button">

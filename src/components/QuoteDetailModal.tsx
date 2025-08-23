@@ -1,6 +1,5 @@
-
-// ogonjo-web-app/src/components/QuoteDetailModal.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// src/components/QuoteDetailModal.tsx
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Theme } from '../constants/Theme';
 import { supabase, useAuth } from '../services/supabase';
 import '../styles/QuoteDetailModal.css';
@@ -14,6 +13,9 @@ interface Quote {
   likes: number;
   views: number;
   isLiked?: boolean;
+  book_title?: string | null;
+  affiliate_link?: string | null;
+  affiliate_clicks?: number;
 }
 
 interface QuoteDetailModalProps {
@@ -40,10 +42,9 @@ const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
   const [currentQuote, setCurrentQuote] = useState<Quote | null>(null);
   const viewedIdsInModalSession = useRef(new Set<string>());
 
-  // Effect 1: Set initial quote and index when modal becomes visible or initialQuote changes
   useEffect(() => {
     if (isVisible && initialQuote) {
-      const index = allQuotes.findIndex(q => q.id === initialQuote.id);
+      const index = allQuotes.findIndex((q) => q.id === initialQuote.id);
       if (index !== -1) {
         setCurrentQuoteIndex(index);
         setCurrentQuote(allQuotes[index]);
@@ -65,24 +66,25 @@ const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
       setCurrentQuote(null);
       setCurrentQuoteIndex(-1);
     }
-  }, [isVisible, initialQuote, onViewed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVisible, initialQuote, allQuotes]);
 
-  // Effect 2: Update currentQuote if its data changes in allQuotes
   useEffect(() => {
     if (isVisible && currentQuote && allQuotes.length > 0) {
-      const updatedQuote = allQuotes.find(q => q.id === currentQuote.id);
+      const updated = allQuotes.find((q) => q.id === currentQuote.id);
       if (
-        updatedQuote &&
-        (updatedQuote.likes !== currentQuote.likes ||
-          updatedQuote.views !== currentQuote.views ||
-          updatedQuote.isLiked !== currentQuote.isLiked)
+        updated &&
+        (updated.likes !== currentQuote.likes ||
+          updated.views !== currentQuote.views ||
+          updated.isLiked !== currentQuote.isLiked ||
+          updated.affiliate_link !== currentQuote.affiliate_link ||
+          updated.affiliate_clicks !== currentQuote.affiliate_clicks)
       ) {
-        setCurrentQuote(updatedQuote);
+        setCurrentQuote(updated);
       }
     }
   }, [isVisible, currentQuote, allQuotes]);
 
-  // Handle navigation between quotes
   const handleNavigation = useCallback(
     (direction: 'next' | 'prev') => {
       if (!currentQuote || allQuotes.length === 0) return;
@@ -106,7 +108,6 @@ const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
     [currentQuoteIndex, allQuotes, currentQuote, onViewed]
   );
 
-  // Handle sharing
   const handleShare = async (quote: Quote) => {
     if (navigator.share) {
       try {
@@ -127,27 +128,72 @@ const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
     }
   };
 
+  // NEW: open affiliate link + increment affiliate_clicks
+  const handleOpenAffiliate = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!currentQuote?.affiliate_link) {
+        alert('No affiliate link available for this quote.');
+        return;
+      }
+
+      let urlStr = String(currentQuote.affiliate_link).trim();
+      try {
+        const url = new URL(urlStr);
+        // Optionally add UTM params:
+        // url.searchParams.set('utm_source', 'ogonjo_app');
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+
+        // increment affiliate_clicks in the DB and update local state
+        try {
+          const newClicks = (currentQuote.affiliate_clicks || 0) + 1;
+          const { data: updated, error: updateError } = await supabase
+            .from('business_quotes')
+            .update({ affiliate_clicks: newClicks })
+            .eq('id', currentQuote.id)
+            .select()
+            .single();
+
+          if (updateError) {
+            console.error('Failed to update affiliate_clicks:', updateError);
+          } else if (updated) {
+            setCurrentQuote((prev) => (prev ? { ...prev, affiliate_clicks: newClicks } : prev));
+          }
+        } catch (err) {
+          console.error('Affiliate click record error:', err);
+        }
+      } catch (err) {
+        console.error('Invalid affiliate URL', err);
+        alert('Affiliate link appears to be invalid.');
+      }
+    },
+    [currentQuote]
+  );
+
   if (!isVisible || !currentQuote) {
     return null;
   }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container" onClick={e => e.stopPropagation()}>
+      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
         <button className="close-button" onClick={onClose}>
           <i className="ion-close-circle" />
         </button>
+
         <div className="scroll-view-content">
           <div className="quote-content">
             <p className="quote-text">"{currentQuote.quote_text}"</p>
             <p className="quote-author">- {currentQuote.author}</p>
-            {currentQuote.category && (
-              <p className="quote-category">Category: {currentQuote.category}</p>
-            )}
+            {currentQuote.category && <p className="quote-category">Category: {currentQuote.category}</p>}
             <div className="quote-metadata">
               <span>Posted: {new Date(currentQuote.created_at).toLocaleDateString()}</span>
             </div>
+            {currentQuote.book_title && (
+              <div style={{ marginTop: 8, fontWeight: 600 }}>Book: {currentQuote.book_title}</div>
+            )}
           </div>
+
           <div className="action-buttons-container">
             <button
               className="action-button"
@@ -159,16 +205,40 @@ const QuoteDetailModal: React.FC<QuoteDetailModalProps> = ({
               />
               <span className="action-button-text">Likes: {currentQuote.likes || 0}</span>
             </button>
-            <button className="action-button">
+
+            <button className="action-button" aria-hidden>
               <i className="ion-eye-outline" style={{ color: Theme.colors.textPrimary }} />
               <span className="action-button-text">Views: {currentQuote.views || 0}</span>
             </button>
+
             <button className="action-button" onClick={() => handleShare(currentQuote)}>
               <i className="ion-share-social-outline" style={{ color: Theme.colors.accent }} />
               <span className="action-button-text">Share</span>
             </button>
+
+            {/* GET BOOK button (only when affiliate_link exists) - no count shown */}
+            {currentQuote.affiliate_link && (
+              <button
+                className="affiliate-btn"
+                onClick={handleOpenAffiliate}
+                aria-label="Get Book (affiliate link)"
+                title="Open affiliate link to get the book"
+                style={{
+                  background: 'linear-gradient(45deg,#48bb78,#2f855a)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  marginLeft: 8,
+                }}
+              >
+                Get Book
+              </button>
+            )}
           </div>
         </div>
+
         <div className="navigation-buttons-container">
           <button className="nav-button" onClick={() => handleNavigation('prev')}>
             <i className="ion-arrow-back-circle-outline" />
