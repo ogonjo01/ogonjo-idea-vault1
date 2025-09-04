@@ -1,167 +1,34 @@
-
-/* src/App.css */
-.min-h-screen {
-  min-height: 100vh;
+:root{
+  --header-height: 56px;
+  --category-height: 48px;
+  --modal-top-offset: calc(var(--header-height) + var(--category-height) + 12px);
+  --modal-width: min(920px, 96%);
 }
 
-.bg-background {
-  background-color: #f4f4f4;
+/* ensure full-height app root */
+html, body, #root { height: 100%; margin: 0; padding: 0; box-sizing: border-box; }
+
+.App { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* main scroller */
+.main-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: 12px;     /* small breathing by default */
+  padding-bottom: 12px;
+  box-sizing: border-box;
 }
 
-.flex-col {
-  display: flex;
-  flex-direction: column;
+/* When homepage, reserve space for fixed header + sticky category */
+body.homepage-fixed .main-content {
+  padding-top: calc(var(--header-height) + var(--category-height) + 12px);
 }
 
-.navbar-container {
-  z-index: 50;
-  transition: all 0.3s ease;
+/* When header/category are hidden globally, remove the extra space */
+body.scroll-hide-global .main-content {
+  padding-top: 12px !important;
 }
 
-.navbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 20px;
-  background-color: #ffffff;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  position: relative;
-  height: 60px;
-}
-
-.navbar-toggle {
-  display: none;
-  font-size: 1.5rem;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #007bff;
-  z-index: 51;
-}
-
-.navbar-nav {
-  position: relative;
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.nav-tabs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transition: all 0.3s ease;
-}
-
-.nav-item {
-  margin: 0 10px;
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 15px;
-  color: #333;
-  text-decoration: none;
-  font-size: 1.1rem;
-  font-family: 'Inter', sans-serif;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  position: relative;
-  border-radius: 5px;
-}
-
-.nav-link:hover {
-  color: #0056b3;
-  transform: scale(1.05);
-  background-color: #f0f0f0;
-}
-
-.nav-link.active {
-  color: #007bff;
-  font-weight: 600;
-}
-
-.badge {
-  background-color: #dc3545;
-  color: white;
-  border-radius: 50%;
-  padding: 2px 6px;
-  font-size: 0.8rem;
-  margin-left: 5px;
-}
-
-.underline {
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 20%;
-  height: 3px;
-  background-color: #007bff;
-  transition: transform 0.4s ease-in-out;
-  border-radius: 2px;
-  box-shadow: 0 2px 5px rgba(0, 123, 255, 0.3);
-}
-
-.flex-1 {
-  flex: 1;
-}
-
-.pt-16 {
-  padding-top: 4rem; /* 64px to clear navbar */
-}
-
-.spotlight-carousel {
-  overflow: hidden;
-}
-
-.carousel-inner {
-  display: flex;
-  width: 300%; /* Three items */
-}
-
-.carousel-item {
-  flex-shrink: 0;
-  text-align: center;
-}
-
-@media (max-width: 768px) {
-  .navbar-toggle {
-    display: block;
-  }
-  .nav-tabs {
-    display: none;
-  }
-  .nav-tabs.flex-col {
-    display: flex;
-  }
-  .navbar-nav .nav-tabs {
-    top: 60px;
-    left: 0;
-    right: 0;
-    background-color: #fff;
-    padding: 10px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  }
-  .nav-item {
-    margin: 5px 0;
-  }
-  .nav-link {
-    padding: 10px;
-    width: 100%;
-    text-align: left;
-  }
-  .pt-16 {
-    padding-top: 60px; /* Adjust for mobile navbar height */
-  }
-  .carousel-inner {
-    width: 100%; /* Single item on mobile */
-  }
-  .carousel-item {
-    width: 100%;
-  }
-}
+/* small misc */
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; background: #f4f4f4; color: #222; margin: 0; }
