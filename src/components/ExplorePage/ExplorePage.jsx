@@ -53,7 +53,10 @@ const ExplorePage = () => {
   const q = useQuery();
   const rawCategory = q.get('category') || '';
   const sortType = (q.get('sort') || 'newest').toLowerCase();
-  const category = decodeURIComponent(rawCategory).trim();
+
+  // URLSearchParams already percent-decodes, so avoid decodeURIComponent.
+  // Normalize: trim and ensure empty string if not provided.
+  const category = (rawCategory || '').trim();
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,10 +79,17 @@ const ExplorePage = () => {
       setLoading(true);
       setError(null);
 
+      // build base query
       let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS, { count: 'exact' });
-      if (category) query = query.ilike('category', `%${category}%`);
+
+      // Use exact (case-insensitive) match for category — avoid substring matches.
+      // If you prefer strict case-sensitive matching, replace ilike with eq.
+      if (category) {
+        query = query.ilike('category', category); // exact-ish, case-insensitive
+      }
 
       try {
+        console.debug('[ExplorePage] fetchItems category=', category, 'offset=', pageOffset, 'sort=', sortType);
         const { data, error } = await query.range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
         if (error) throw error;
 
@@ -115,6 +125,7 @@ const ExplorePage = () => {
     setOffset(0);
     setHasMore(true);
     fetchItems(0, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, sortType, fetchItems]);
 
   useEffect(() => {

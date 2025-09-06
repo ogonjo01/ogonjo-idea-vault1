@@ -73,76 +73,124 @@ const SummaryView = () => {
   const [isRecommending, setIsRecommending] = useState(false);
   const [recError, setRecError] = useState(null);
 
-  // load main summary
+  // --------------------------
+  //  Load only essential summary first (fast perceived load)
+  // --------------------------
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
+
+    const loadMinimalSummary = async () => {
       setIsLoading(true);
       try {
+        // Minimal select: fields required to render the page immediately
         const { data, error } = await supabase
           .from('book_summaries')
-          .select(SELECT_WITH_COUNTS)
+          .select('id, title, author, summary, category, image_url, affiliate_link, created_at')
           .eq('id', id)
           .single();
 
         if (error) throw error;
-
-        const formatted = {
-          ...data,
-          likes_count: Array.isArray(data?.likes_count) ? Number(data?.likes_count?.[0]?.count ?? 0) : Number(data?.likes_count ?? 0),
-          views_count: Array.isArray(data?.views_count) ? Number(data?.views_count?.[0]?.count ?? 0) : Number(data?.views_count ?? 0),
-          comments_count: Array.isArray(data?.comments_count) ? Number(data?.comments_count?.[0]?.count ?? 0) : Number(data?.comments_count ?? 0),
-        };
-
         if (!mounted) return;
 
-        setSummary(formatted);
-        setLikes(formatted.likes_count || 0);
-        setViews(formatted.views_count || 0);
-        setCommentsCount(formatted.comments_count || 0);
+        // set minimal summary immediately so user sees content
+        setSummary({
+          ...data,
+          category: (data?.category == null) ? '' : String(data.category).trim(),
+        });
 
-        // average rating (rpc may not exist)
-        try {
-          const { data: ratingData } = await supabase.rpc('get_average_rating', { p_post_id: id });
-          if (ratingData?.[0] && ratingData[0].average_rating !== null) {
-            setAvgRating(Math.round(Number(ratingData[0].average_rating) * 10) / 10);
-          }
-        } catch (e) {
-          // ignore
-        }
+        // Immediately set skeleton engagement counts to 0 while we fetch them
+        setLikes(0);
+        setViews(0);
+        setCommentsCount(0);
 
-        // user like and rating
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const [likeRows, ratingRow] = await Promise.all([
-              supabase.from('likes').select('id').eq('post_id', id).eq('user_id', user.id),
-              supabase.from('ratings').select('rating').eq('post_id', id).eq('user_id', user.id).single(),
-            ]);
-            if (likeRows?.length) setUserHasLiked(true);
-            if (ratingRow?.rating) setUserRating(ratingRow.rating);
-          }
-        } catch (e) {
-          // ignore
-        }
+        // mark initial load done (UI appears). Background work follows.
+        setIsLoading(false);
 
-        // increment views best-effort
-        try {
-          await supabase.rpc('increment_views', { post_id: id });
-          setViews((v) => (Number(v) || 0) + 1);
-        } catch (e) {
-          // ignore
-        }
+        // kick off background tasks but don't block the UI
+        backgroundFetchFollowups(id).catch((e) => {
+          // log but don't surface to user
+          console.debug('[backgroundFetchFollowups] error', e);
+        });
       } catch (err) {
-        console.error('Error loading summary:', err);
-      } finally {
-        if (mounted) setIsLoading(false);
+        console.error('Error loading minimal summary:', err);
+        if (mounted) {
+          setIsLoading(false);
+          setSummary(null);
+        }
       }
     };
 
-    load();
+    loadMinimalSummary();
     return () => { mounted = false; };
   }, [id]);
+
+  // --------------------------
+  //  Background data fetch: counts, avg rating, user state, increment views, recommended
+  // --------------------------
+  const backgroundFetchFollowups = async (postId) => {
+    try {
+      // 1) fetch counts via the full SELECT_WITH_COUNTS (fast single row)
+      supabase
+        .from('book_summaries')
+        .select(SELECT_WITH_COUNTS)
+        .eq('id', postId)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data) {
+            const formatted = {
+              ...data,
+              likes_count: Array.isArray(data?.likes_count) ? Number(data?.likes_count?.[0]?.count ?? 0) : Number(data?.likes_count ?? 0),
+              views_count: Array.isArray(data?.views_count) ? Number(data?.views_count?.[0]?.count ?? 0) : Number(data?.views_count ?? 0),
+              comments_count: Array.isArray(data?.comments_count) ? Number(data?.comments_count?.[0]?.count ?? 0) : Number(data?.comments_count ?? 0),
+              category: (data?.category == null) ? '' : String(data.category).trim(),
+            };
+            setLikes(formatted.likes_count || 0);
+            setViews(formatted.views_count || 0);
+            setCommentsCount(formatted.comments_count || 0);
+            // merge counts into summary state (non-blocking)
+            setSummary((prev) => prev ? { ...prev, ...formatted } : formatted);
+          } else if (error) {
+            console.debug('counts fetch error', error);
+          }
+        });
+
+      // 2) average rating RPC (don't await)
+      supabase.rpc('get_average_rating', { p_post_id: postId })
+        .then(({ data: ratingData, error: ratingErr }) => {
+          if (!ratingErr && Array.isArray(ratingData) && ratingData[0] && ratingData[0].average_rating !== null) {
+            setAvgRating(Math.round(Number(ratingData[0].average_rating) * 10) / 10);
+          }
+        }).catch(() => { /* ignore */ });
+
+      // 3) user-specific state (like + rating) -- best-effort
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // parallel requests
+          const likesReq = supabase.from('likes').select('id').eq('post_id', postId).eq('user_id', user.id);
+          const ratingReq = supabase.from('ratings').select('rating').eq('post_id', postId).eq('user_id', user.id).single();
+
+          const [likesRes, ratingRes] = await Promise.all([likesReq, ratingReq]);
+          if (likesRes?.data && likesRes.data.length) setUserHasLiked(true);
+          if (ratingRes?.data && ratingRes.data.rating) setUserRating(ratingRes.data.rating);
+        }
+      } catch (e) {
+        // ignore user-specific errors
+      }
+
+      // 4) increment views best-effort (fire-and-forget)
+      supabase.rpc('increment_views', { post_id: postId })
+        .then(() => setViews((v) => (Number(v) || 0) + 1))
+        .catch(() => { /* ignore */ });
+
+      // 5) recommended content (in background) - keep using fetchRecommended
+      if (summary?.category ?? '') {
+        fetchRecommended(summary.category, 10).catch(() => { /* ignore */ });
+      }
+    } catch (err) {
+      console.error('backgroundFetchFollowups error:', err);
+    }
+  };
 
   // like handler
   const handleLike = async () => {
@@ -171,40 +219,43 @@ const SummaryView = () => {
   const saveRating = async (value) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { alert('Please sign in to rate'); return false; }
+      if (!user) {
+        alert('Please sign in to rate');
+        return false;
+      }
+
       setSavingRating(true);
 
-      const { data: existing, error: existingErr } = await supabase
-        .from('ratings')
-        .select('id,rating')
-        .eq('post_id', id)
-        .eq('user_id', user.id)
-        .single();
+      // Call server-side RPC that does the upsert
+      const { data, error } = await supabase.rpc('rate_post', {
+        p_post_id: id,
+        p_user_id: user.id,
+        p_rating: value
+      });
 
-      if (existingErr && existingErr.code !== 'PGRST116') {
-        console.warn('existing rating check error', existingErr);
+      if (error) {
+        console.error('rate_post rpc error', error);
+        alert('Could not save rating. Try again later.');
+        return false;
       }
 
-      if (existing?.id) {
-        const { error } = await supabase.from('ratings').update({ rating: value }).eq('id', existing.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('ratings').insert([{ post_id: id, user_id: user.id, rating: value }]);
-        if (error) throw error;
-      }
-
-      // refresh avg
+      // Refresh average rating (best-effort)
       try {
-        const { data: ratingData } = await supabase.rpc('get_average_rating', { p_post_id: id });
-        if (ratingData?.[0] && ratingData[0].average_rating !== null) {
+        const { data: ratingData, error: ratingErr } = await supabase.rpc('get_average_rating', { p_post_id: id });
+        if (!ratingErr && Array.isArray(ratingData) && ratingData[0] && ratingData[0].average_rating !== null) {
           setAvgRating(Math.round(Number(ratingData[0].average_rating) * 10) / 10);
+        } else if (ratingErr) {
+          console.debug('get_average_rating rpc error', ratingErr);
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        console.debug('get_average_rating threw', e);
+      }
 
       setUserRating(value);
       return true;
     } catch (err) {
       console.error('Save rating error', err);
+      alert('Could not save rating. Try again.');
       return false;
     } finally {
       setSavingRating(false);
@@ -241,7 +292,7 @@ const SummaryView = () => {
     return arr;
   };
 
-  // collapse header logic
+  // collapse header logic (unchanged)
   useEffect(() => {
     const scroller = document.querySelector('.main-content') || window;
     let ticking = false;
@@ -298,47 +349,45 @@ const SummaryView = () => {
     };
   }, [summary]);
 
-  // fetch recommended content (most viewed)
+  // rpc-backed fetchRecommended with safe client fallback (unchanged)
   const fetchRecommended = useCallback(async (category, limit = 10) => {
     setIsRecommending(true);
     setRecError(null);
     try {
-      if (!category || !category.toString().trim()) {
+      const catRaw = category ?? '';
+      const cat = String(catRaw).trim();
+      if (!cat) {
         setRecommendedContent([]);
         return [];
       }
-      const cat = category.toString().trim();
 
-      // fetch a sample (use ilike to be permissive); exclude current id
+      try {
+        const rpcRes = await supabase.rpc('get_top_viewed_by_category', { p_limit: limit, p_category: cat });
+        if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+          const rows = (rpcRes.data || []).map(normalizeRow).filter(r => String(r.id) !== String(id));
+          setRecommendedContent(rows.slice(0, limit));
+          return rows.slice(0, limit);
+        }
+      } catch (rpcErr) {
+        // fallthrough
+      }
+
       const { data, error } = await supabase
         .from('book_summaries')
         .select(SELECT_WITH_COUNTS)
         .neq('id', id)
-        .ilike('category', `%${cat}%`)
-        .limit(200);
+        .eq('category', cat)
+        .limit(500);
 
-      if (error) {
-        console.debug('recommended fetch error', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      const rowsRaw = data || [];
-      console.debug('[fetchRecommended] rowsRaw count', rowsRaw.length, 'category:', cat);
-
-      const rows = rowsRaw.map(normalizeRow).filter((r) => String(r.id) !== String(id));
-
-      if (!rows.length) {
-        setRecommendedContent([]);
-        return [];
-      }
-
-      // sort by views desc, then likes desc, then created_at desc
+      const rows = (data || []).map(normalizeRow).filter(r => String(r.id) !== String(id));
       rows.sort((a, b) => {
-        const vb = (b.views_count || 0);
-        const va = (a.views_count || 0);
+        const vb = Number(b.views_count || 0);
+        const va = Number(a.views_count || 0);
         if (vb !== va) return vb - va;
-        const lb = (b.likes_count || 0);
-        const la = (a.likes_count || 0);
+        const lb = Number(b.likes_count || 0);
+        const la = Number(a.likes_count || 0);
         if (lb !== la) return lb - la;
         const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
         const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -358,10 +407,9 @@ const SummaryView = () => {
     }
   }, [id]);
 
-  // trigger recommended fetch after main summary loads
+  // trigger recommended fetch after main summary loads (kept for when we have summary)
   useEffect(() => {
     if (!summary) return;
-    // try to fetch recommended items for this summary's category
     if (summary.category) {
       fetchRecommended(summary.category, 10);
     } else {
@@ -369,9 +417,23 @@ const SummaryView = () => {
     }
   }, [summary, fetchRecommended]);
 
-  // render
-  if (isLoading) return <div style={{ padding: 28 }}>Loading...</div>;
-  if (!summary) return <div style={{ padding: 28 }}>Summary not found.</div>;
+  // --------------------------
+  //  Render
+  // --------------------------
+  if (isLoading) {
+    return (
+      <div className="centered-loader-viewport" role="status" aria-live="polite">
+        <div className="centered-loader">
+          <div className="spinner" />
+          <div className="loader-text">Loading…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return <div style={{ padding: 28 }}>Summary not found.</div>;
+  }
 
   const affiliateLink = summary.affiliate_link || null;
 
@@ -421,11 +483,6 @@ const SummaryView = () => {
 
       <article className="summary-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(summary.summary || '') }} />
 
-      {/* Recommended Content Section */}
-      {/*
-        show the carousel even if empty while loading (carousel will show skeletons),
-        otherwise show it only when there are items
-      */}
       {(isRecommending || (recommendedContent && recommendedContent.length > 0)) && (
         <HorizontalCarousel
           title={`More from ${summary.category || 'this category'}`}

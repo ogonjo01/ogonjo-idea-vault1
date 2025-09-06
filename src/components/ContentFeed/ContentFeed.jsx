@@ -1,3 +1,4 @@
+
 // src/components/ContentFeed/ContentFeed.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../supabase/supabaseClient';
@@ -7,8 +8,21 @@ import './ContentFeed.css';
 
 const ITEMS_PER_CAROUSEL = 12;
 const CATEGORY_BATCH = 3;
-const MIN_LOAD_MS = 350;
-const LOAD_THROTTLE_MS = 600; // throttle for loadNextCategoryBatch
+const MIN_LOAD_MS = 350; // minimum skeleton display to avoid flashes
+
+const LIGHT_SELECT = `
+  id,
+  created_at,
+  title,
+  author,
+  summary,
+  category,
+  user_id,
+  image_url,
+  affiliate_link,
+  avg_rating
+`;
+
 const SELECT_WITH_COUNTS = `
   id,
   created_at,
@@ -24,11 +38,39 @@ const SELECT_WITH_COUNTS = `
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
+// helpers
 const safeData = (d) => (d?.data ?? d ?? []);
+
+// robust parser for numbers/aggregates
+const parseNumber = (v) => {
+  if (v == null) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (Array.isArray(v) && v.length) {
+    // e.g. [{ avg: '4.2' }] or [{ count: '3' }]
+    const first = v[0];
+    return parseNumber(first.avg ?? first.count ?? first.value ?? first.avg_rating ?? first.rating ?? first);
+  }
+  if (typeof v === 'object') {
+    // e.g. { avg: '4.2' } or { count: '3' }
+    return parseNumber(v.avg ?? v.count ?? v.value ?? v.avg_rating ?? v.rating ?? v.rating_count);
+  }
+  return 0;
+};
+
 const normalizeRow = (r = {}) => {
-  const likes = Array.isArray(r.likes_count) ? Number(r.likes_count?.[0]?.count ?? 0) : Number(r.likes_count ?? 0);
-  const views = Array.isArray(r.views_count) ? Number(r.views_count?.[0]?.count ?? 0) : Number(r.views_count ?? 0);
-  const comments = Array.isArray(r.comments_count) ? Number(r.comments_count?.[0]?.count ?? 0) : Number(r.comments_count ?? 0);
+  const likes = parseNumber(r.likes_count);
+  const views = parseNumber(r.views_count);
+  const comments = parseNumber(r.comments_count);
+
+  // avg_rating may come as avg_rating, avg, rating or as aggregates
+  const avg_rating = parseNumber(r.avg_rating ?? r.avg ?? r.rating ?? r.average_rating);
+  // rating_count may come as rating_count, ratings_count, count, or aggregate
+  const rating_count = parseNumber(r.rating_count ?? r.ratings_count ?? r.rating_count_aggregate ?? r.count ?? r.rating_count_value);
+
   return {
     id: r.id,
     title: r.title,
@@ -37,52 +79,61 @@ const normalizeRow = (r = {}) => {
     category: r.category,
     image_url: r.image_url,
     affiliate_link: r.affiliate_link,
-    likes_count: likes || 0,
-    views_count: views || 0,
-    comments_count: comments || 0,
-    avg_rating: Number(r.avg_rating ?? 0),
+    likes_count: Number(likes || 0),
+    views_count: Number(views || 0),
+    comments_count: Number(comments || 0),
+    avg_rating: Number(avg_rating || 0),
+    rating_count: Number(rating_count || 0),
+    created_at: r.created_at ?? null,
   };
 };
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-/* -- fetch helpers unchanged but kept safe */
+/* heavy RPC/fallback (mostly unchanged) */
 const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, category = null } = {}) => {
   try {
     const args = { p_limit: limit };
     if (category) args.p_category = category;
     const rpcRes = await supabase.rpc(rpcName, args);
-    if (!rpcRes.error && rpcRes.data) return safeData(rpcRes.data).map(normalizeRow);
+    if (!rpcRes.error && rpcRes.data) {
+      return safeData(rpcRes.data).map(normalizeRow);
+    }
+    if (rpcRes.error) {
+      // continue to fallback
+      console.warn(`[rpc] ${rpcName} error:`, rpcRes.error);
+    }
   } catch (e) {
-    // ignore rpc errors and fallback
+    // fallback below
+    console.warn(`[rpc] ${rpcName} threw`, e?.message || e);
   }
+
+  // fallback client-side (heavier)
   try {
     let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS);
     if (category) q = q.eq('category', category);
     q = q.limit(500);
     const { data, error } = await q;
     if (error) throw error;
-    const rows = (data || []).map((r) => {
-      const likes = Number(r?.likes_count?.[0]?.count ?? r.likes_count ?? 0) || 0;
-      const views = Number(r?.views_count?.[0]?.count ?? r.views_count ?? 0) || 0;
-      const comments = Number(r?.comments_count?.[0]?.count ?? r.comments_count ?? 0) || 0;
-      return { ...r, likes_count: likes, views_count: views, comments_count: comments, avg_rating: Number(r.avg_rating ?? 0) };
-    });
+
+    // normalize early
+    const rows = (data || []).map(normalizeRow);
+
     let sorted = rows.slice();
     if (rpcName.includes('new')) sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     else if (rpcName.includes('liked')) sorted.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
     else if (rpcName.includes('rated')) sorted.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0));
     else if (rpcName.includes('view')) sorted.sort((a, b) => (b.views_count || 0) - (a.views_count || 0));
-    return sorted.slice(0, limit).map(normalizeRow);
+
+    return sorted.slice(0, limit);
   } catch (err) {
-    console.error('fetchRpcOrFallback fallback error', err);
+    console.error('[fallback] fetch error', err);
     return [];
   }
 };
 
-const fetchTopCategories = async (limit = 100) => {
+const fetchTopCategories = async (limit = 50) => {
   try {
-    // reduced limit to avoid huge payloads
     const { data, error } = await supabase
       .from('book_summaries')
       .select('category')
@@ -102,57 +153,16 @@ const fetchTopCategories = async (limit = 100) => {
   }
 };
 
-/* ------------------ lightweight in-view hook ------------------ */
-const useInView = (ref, options = {}) => {
-  const [inView, setInView] = useState(false);
-  const observerRef = useRef(null);
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    observerRef.current = new IntersectionObserver((entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting) {
-          setInView(true);
-          // once in view we can disconnect
-          if (observerRef.current) observerRef.current.disconnect();
-        }
-      });
-    }, options);
-    observerRef.current.observe(node);
-    return () => {
-      if (observerRef.current) observerRef.current.disconnect();
-    };
-  }, [ref, options]);
-  return inView;
-};
-
-/* ------------------ LazyLoadCarousel ------------------
-   Renders skeleton HorizontalCarousel until it enters viewport,
-   then renders the real HorizontalCarousel (children).
------------------------------------------------------------------*/
-const LazyLoadCarousel = ({ title, items, children, viewAllLink, loading, skeletonCount = 6, ...rest }) => {
-  const wrapperRef = useRef(null);
-  const isVisible = useInView(wrapperRef, { rootMargin: '600px', threshold: 0.05 });
-
-  // show the real carousel only once visible, otherwise show skeleton placeholder
-  return (
-    <div ref={wrapperRef}>
-      {isVisible ? (
-        <HorizontalCarousel title={title} items={items} loading={loading} skeletonCount={skeletonCount} viewAllLink={viewAllLink} {...rest}>
-          {children}
-        </HorizontalCarousel>
-      ) : (
-        // Render skeleton carousel placeholder (lighter DOM)
-        <HorizontalCarousel title={title} items={[]} loading={true} skeletonCount={skeletonCount} viewAllLink={viewAllLink} {...rest} />
-      )}
-    </div>
-  );
-};
-
-/* ---------------- ContentFeed ---------------- */
 const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQuery = '' }) => {
-  const [globalLoading, setGlobalLoading] = useState(true);
-  const [globalContent, setGlobalContent] = useState({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
+  const [loadingGlobal, setLoadingGlobal] = useState(true);
+
+  // globalContent will first contain fast placeholders, then replaced by heavy results
+  const [globalContent, setGlobalContent] = useState({
+    newest: [],
+    mostLiked: [],
+    highestRated: [],
+    mostViewed: [],
+  });
 
   const [categoryQueue, setCategoryQueue] = useState([]);
   const [loadedCategoryBlocks, setLoadedCategoryBlocks] = useState([]);
@@ -161,13 +171,43 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   const sentinelRef = useRef(null);
   const mountedRef = useRef(true);
-  const lastLoadRef = useRef(0);
+
+  // cache for fast placeholders per-category to avoid refetching
+  const fastCacheRef = useRef(new Map());
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  const fetchContentBlock = useCallback(async (category = null) => {
-    const start = Date.now();
+  // FAST lightweight fetch for immediate UI (by category or global)
+  const fastFetchList = useCallback(async (limit = 6, category = null) => {
+    // check cache
+    const cacheKey = category ? `cat:${category}` : `global`;
+    const cache = fastCacheRef.current.get(cacheKey);
+    if (cache) return cache;
+
     try {
+      let q = supabase
+        .from('book_summaries')
+        .select(LIGHT_SELECT)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (category) q = q.eq('category', category);
+
+      const { data, error } = await q;
+      if (error) throw error;
+      const normalized = (data || []).map((r) => normalizeRow(r));
+      fastCacheRef.current.set(cacheKey, normalized);
+      return normalized;
+    } catch (err) {
+      console.warn('fastFetchList failed', err);
+      return [];
+    }
+  }, []);
+
+  // heavy fetch (keeps original behavior)
+  const fetchContentBlock = useCallback(async (category = null) => {
+    try {
+      const start = Date.now();
       const [newest, mostLiked, highestRated, mostViewed] = await Promise.all([
         fetchRpcOrFallback('get_newest', { category }),
         fetchRpcOrFallback('get_top_liked', { category }),
@@ -175,68 +215,97 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         fetchRpcOrFallback('get_top_viewed', { category }),
       ]);
       const elapsed = Date.now() - start;
-      if (elapsed < 60) await sleep(60);
-      return { category, newest, mostLiked, highestRated, mostViewed, loading: false };
+      if (elapsed < 50) await sleep(50);
+      return {
+        category,
+        newest: newest || [],
+        mostLiked: mostLiked || [],
+        highestRated: highestRated || [],
+        mostViewed: mostViewed || [],
+      };
     } catch (err) {
       console.error('fetchContentBlock error for', category, err);
-      return { category, newest: [], mostLiked: [], highestRated: [], mostViewed: [], loading: false };
+      return { category, newest: [], mostLiked: [], highestRated: [], mostViewed: [] };
     }
   }, []);
 
-  const loadNextCategoryBatch = useCallback(async () => {
-    // throttle calls triggered by the sentinel
-    const now = Date.now();
-    if (now - lastLoadRef.current < LOAD_THROTTLE_MS) return;
-    lastLoadRef.current = now;
+  // helper to replace a block in loadedCategoryBlocks by category (used after background heavy fetch)
+  const replaceCategoryBlock = useCallback((newBlock) => {
+    setLoadedCategoryBlocks((prev) => {
+      const idx = prev.findIndex((b) => String(b.category) === String(newBlock.category));
+      if (idx === -1) {
+        return [...prev, newBlock];
+      }
+      const copy = prev.slice();
+      copy[idx] = newBlock;
+      return copy;
+    });
+  }, []);
 
+  // loadNextCategoryBatch now: quickly add placeholders then background-replace with heavy results
+  const loadNextCategoryBatch = useCallback(async () => {
     if (loadingCategories) return;
     if (!categoryQueue || categoryQueue.length === 0) {
       setHasMoreCategories(false);
       return;
     }
-
     setLoadingCategories(true);
     const batch = categoryQueue.slice(0, CATEGORY_BATCH);
     const rest = categoryQueue.slice(batch.length);
-
-    // optimistic placeholders
-    setLoadedCategoryBlocks((prev) => [
-      ...prev,
-      ...batch.map((c) => ({ category: c, newest: [], mostLiked: [], highestRated: [], mostViewed: [], loading: true })),
-    ]);
+    // optimistic queue update
     setCategoryQueue(rest);
 
     try {
-      const blocks = await Promise.all(batch.map((c) => fetchContentBlock(c)));
+      // 1) fast placeholders for batch (immediate)
+      const placeholderPromises = batch.map((c) => fastFetchList(4, c).then((items) => ({
+        category: c,
+        newest: items,
+        mostLiked: items,
+        highestRated: items,
+        mostViewed: items,
+      })));
+      const placeholders = await Promise.all(placeholderPromises);
       if (!mountedRef.current) return;
-      setLoadedCategoryBlocks((prev) => {
-        // remove placeholders for these categories
-        const remaining = prev.filter(p => !batch.includes(p.category));
-        // keep only non-empty blocks to avoid clutter; keep placeholders filled with empty arrays out if empty
-        const nonEmpty = blocks.filter(b => (b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length));
-        return [...remaining, ...nonEmpty];
-      });
+      // append placeholders quickly
+      setLoadedCategoryBlocks((prev) => [...prev, ...placeholders]);
+
+      // 2) start background heavy fetch to replace placeholders
+      (async () => {
+        try {
+          const blocks = await Promise.all(batch.map((c) => fetchContentBlock(c)));
+          if (!mountedRef.current) return;
+          const nonEmpty = blocks.filter(b => (b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length));
+          nonEmpty.forEach((blk) => replaceCategoryBlock(blk));
+        } catch (err) {
+          console.error('background load batch error', err);
+        }
+      })();
+
       setHasMoreCategories(rest.length > 0);
     } catch (err) {
       console.error('loadNextCategoryBatch err', err);
-      setLoadedCategoryBlocks((prev) => prev.filter(p => !batch.includes(p.category)));
     } finally {
       if (mountedRef.current) setLoadingCategories(false);
     }
-  }, [categoryQueue, loadingCategories, fetchContentBlock]);
+  }, [categoryQueue, loadingCategories, fetchContentBlock, fastFetchList, replaceCategoryBlock]);
 
+  // MAIN orchestration: similar to your previous flow but initial category loads use placeholders + background replacement
   useEffect(() => {
     (async () => {
-      setGlobalLoading(true);
+      setLoadingGlobal(true);
       setLoadedCategoryBlocks([]);
       setCategoryQueue([]);
       setHasMoreCategories(false);
       setGlobalContent({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
 
-      // SEARCH MODE
+      // SEARCH mode
       if (searchQuery && searchQuery.trim()) {
         const start = Date.now();
         try {
+          const fast = await fastFetchList(6);
+          if (mountedRef.current) {
+            setGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
+          }
           const { data, error } = await supabase.rpc('book_summaries_search_prefix', { q: searchQuery, lim: 500 });
           if (error) throw error;
           const rows = safeData(data).map(normalizeRow);
@@ -246,67 +315,102 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         } finally {
           const elapsed = Date.now() - start;
           if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-          if (mountedRef.current) setGlobalLoading(false);
+          if (mountedRef.current) setLoadingGlobal(false);
         }
         return;
       }
 
-      // SPECIFIC CATEGORY (single)
+      // SPECIFIC CATEGORY (shows placeholder then heavy replace — already fast)
       const specific = selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All';
       if (specific) {
         const start = Date.now();
         try {
-          setLoadedCategoryBlocks([{ category: selectedCategory, newest: [], mostLiked: [], highestRated: [], mostViewed: [], loading: true }]);
-          const block = await fetchContentBlock(selectedCategory);
+          const placeholder = await fastFetchList(6, selectedCategory);
           if (mountedRef.current) {
-            const hasAny = (block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length);
-            setLoadedCategoryBlocks(hasAny ? [block] : []);
+            setLoadedCategoryBlocks([{ category: selectedCategory, newest: placeholder, mostLiked: placeholder, highestRated: placeholder, mostViewed: placeholder }]);
           }
+          // background heavy fetch & replace
+          (async () => {
+            try {
+              const block = await fetchContentBlock(selectedCategory);
+              if (!mountedRef.current) return;
+              setLoadedCategoryBlocks((block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length) ? [block] : []);
+            } catch (err) {
+              console.error('specific category background fetch error', err);
+            }
+          })();
         } catch (err) {
           console.error('specific category fetch error', err);
         } finally {
           const elapsed = Date.now() - start;
           if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-          if (mountedRef.current) setGlobalLoading(false);
+          if (mountedRef.current) setLoadingGlobal(false);
         }
         return;
       }
 
-      // DEFAULT "For You" / "All"
+      // DEFAULT For You flow
       const start = Date.now();
       try {
-        setGlobalContent({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
-        // fetch global block + top categories (top 200 reduced for performance)
-        const [globalBlock, cats] = await Promise.all([fetchContentBlock(), fetchTopCategories(200)]);
+        // 1) FAST placeholder global content (single cheap request) -> immediate paint
+        const fast = await fastFetchList(6);
         if (!mountedRef.current) return;
-        setGlobalContent(globalBlock);
-        setCategoryQueue(cats);
-        setHasMoreCategories(cats.length > 0);
+        setGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
 
-        // initial category batch load (optimistic placeholders -> real blocks)
-        const initial = cats.slice(0, CATEGORY_BATCH);
-        const rest = cats.slice(initial.length);
-        if (initial.length) {
-          setLoadedCategoryBlocks(initial.map((c) => ({ category: c, newest: [], mostLiked: [], highestRated: [], mostViewed: [], loading: true })));
-          const blocks = await Promise.all(initial.map((c) => fetchContentBlock(c)));
-          if (!mountedRef.current) return;
-          const nonEmpty = blocks.filter(b => (b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length));
-          setLoadedCategoryBlocks(nonEmpty);
-          setCategoryQueue(rest);
-          setHasMoreCategories(rest.length > 0);
-        }
+        // 2) background: load heavy global block + categories + initial category placeholders -> then replace with heavy blocks
+        (async () => {
+          try {
+            const [globalBlock, cats] = await Promise.all([fetchContentBlock(), fetchTopCategories(200)]);
+            if (!mountedRef.current) return;
+            setGlobalContent(globalBlock);
+            setCategoryQueue(cats);
+            setHasMoreCategories(cats.length > 0);
+
+            // initial category placeholders (fast)
+            const initialBatch = cats.slice(0, CATEGORY_BATCH);
+            const rest = cats.slice(initialBatch.length);
+            if (initialBatch.length) {
+              const placeholderPromises = initialBatch.map((c) => fastFetchList(4, c).then((items) => ({
+                category: c,
+                newest: items,
+                mostLiked: items,
+                highestRated: items,
+                mostViewed: items,
+              })));
+              const placeholders = await Promise.all(placeholderPromises);
+              if (!mountedRef.current) return;
+              setLoadedCategoryBlocks(placeholders);
+              setCategoryQueue(rest);
+              setHasMoreCategories(rest.length > 0);
+
+              // background: fetch full blocks & replace placeholders
+              (async () => {
+                try {
+                  const blocks = await Promise.all(initialBatch.map((c) => fetchContentBlock(c)));
+                  if (!mountedRef.current) return;
+                  const nonEmpty = blocks.filter(b => (b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length));
+                  nonEmpty.forEach((blk) => replaceCategoryBlock(blk));
+                } catch (err) {
+                  console.error('background initial category fetch failed', err);
+                }
+              })();
+            }
+          } catch (err) {
+            console.error('background load failed', err);
+          }
+        })();
       } catch (err) {
-        console.error('Initial global load failed:', err);
+        console.error('Initial global fast load failed:', err);
       } finally {
         const elapsed = Date.now() - start;
         if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-        if (mountedRef.current) setGlobalLoading(false);
+        if (mountedRef.current) setLoadingGlobal(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory, searchQuery]);
+  }, [selectedCategory, searchQuery, fastFetchList, fetchContentBlock, replaceCategoryBlock]);
 
-  // intersection observer for infinite categories (sentinel)
+  // sentinel observer for loading additional categories
   useEffect(() => {
     if (!sentinelRef.current) return;
     const node = sentinelRef.current;
@@ -316,7 +420,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
           loadNextCategoryBatch();
         }
       });
-    }, { root: null, rootMargin: '800px', threshold: 0.1 });
+    }, { root: null, rootMargin: '600px', threshold: 0.1 });
     obs.observe(node);
     return () => obs.disconnect();
   }, [hasMoreCategories, loadingCategories, loadNextCategoryBatch]);
@@ -331,18 +435,18 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     <div className="content-feed-root">
       {/* SEARCH */}
       {searchQuery && searchQuery.trim() && (
-        <LazyLoadCarousel
+        <HorizontalCarousel
           title={`Search results for "${searchQuery}"`}
           items={globalContent.newest}
-          loading={globalLoading}
+          loading={loadingGlobal}
           skeletonCount={6}
           viewAllLink={`/explore?q=${encodeURIComponent(searchQuery)}`}
         >
           {renderCards(globalContent.newest)}
-        </LazyLoadCarousel>
+        </HorizontalCarousel>
       )}
 
-      {/* SPECIFIC CATEGORY */}
+      {/* SPECIFIC CATEGORY PAGE */}
       {(!isForYou && !searchQuery) && loadedCategoryBlocks.length > 0 && (
         <div key={loadedCategoryBlocks[0].category}>
           {['newest', 'mostLiked', 'highestRated', 'mostViewed'].map((k) => {
@@ -352,19 +456,18 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
               highestRated: `Most Rated in ${loadedCategoryBlocks[0].category}`,
               mostViewed: `Most Viewed in ${loadedCategoryBlocks[0].category}`,
             };
-            const items = loadedCategoryBlocks[0][k] || [];
-            const isBlockLoading = loadedCategoryBlocks[0].loading;
+            const items = loadedCategoryBlocks[0][k];
             return (
-              <LazyLoadCarousel
+              <HorizontalCarousel
                 key={k}
                 title={titleMap[k]}
                 items={items}
-                loading={globalLoading || isBlockLoading}
+                loading={loadingGlobal}
                 skeletonCount={6}
                 viewAllLink={`/explore?sort=${k === 'newest' ? 'newest' : (k === 'mostLiked' ? 'likes' : (k === 'highestRated' ? 'rating' : 'views'))}&category=${encodeURIComponent(loadedCategoryBlocks[0].category)}`}
               >
                 {renderCards(items)}
-              </LazyLoadCarousel>
+              </HorizontalCarousel>
             );
           })}
         </div>
@@ -373,44 +476,44 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       {/* FOR YOU / ALL */}
       {isForYou && !searchQuery && (
         <>
-          <LazyLoadCarousel title="Newest" items={globalContent.newest} loading={globalLoading} skeletonCount={6} viewAllLink="/explore?sort=newest">
+          <HorizontalCarousel title="Newest" items={globalContent.newest} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=newest">
             {renderCards(globalContent.newest)}
-          </LazyLoadCarousel>
+          </HorizontalCarousel>
 
-          <LazyLoadCarousel title="Most Liked" items={globalContent.mostLiked} loading={globalLoading} skeletonCount={6} viewAllLink="/explore?sort=likes">
+          <HorizontalCarousel title="Most Liked" items={globalContent.mostLiked} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=likes">
             {renderCards(globalContent.mostLiked)}
-          </LazyLoadCarousel>
+          </HorizontalCarousel>
 
-          <LazyLoadCarousel title="Most Rated" items={globalContent.highestRated} loading={globalLoading} skeletonCount={6} viewAllLink="/explore?sort=rating">
+          <HorizontalCarousel title="Most Rated" items={globalContent.highestRated} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=rating">
             {renderCards(globalContent.highestRated)}
-          </LazyLoadCarousel>
+          </HorizontalCarousel>
 
-          <LazyLoadCarousel title="Most Viewed" items={globalContent.mostViewed} loading={globalLoading} skeletonCount={6} viewAllLink="/explore?sort=views">
+          <HorizontalCarousel title="Most Viewed" items={globalContent.mostViewed} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=views">
             {renderCards(globalContent.mostViewed)}
-          </LazyLoadCarousel>
+          </HorizontalCarousel>
 
           {loadedCategoryBlocks.map((block) => (
             <section className="category-block" key={block.category}>
               <div className="category-block-header">
-                <h3 className="cat-title" data-category={block.category}>{block.category}</h3>
+                <h3 className="cat-title">{block.category}</h3>
                 <a className="cat-viewall" href={`/explore?category=${encodeURIComponent(block.category)}`}>View all</a>
               </div>
 
-              <LazyLoadCarousel title={`Newest in ${block.category}`} items={block.newest} loading={globalLoading || block.loading} skeletonCount={4}>
+              <HorizontalCarousel title={`Newest in ${block.category}`} items={block.newest} loading={loadingGlobal} skeletonCount={4}>
                 {renderCards(block.newest)}
-              </LazyLoadCarousel>
+              </HorizontalCarousel>
 
-              <LazyLoadCarousel title={`Most Liked in ${block.category}`} items={block.mostLiked} loading={globalLoading || block.loading} skeletonCount={4}>
+              <HorizontalCarousel title={`Most Liked in ${block.category}`} items={block.mostLiked} loading={loadingGlobal} skeletonCount={4}>
                 {renderCards(block.mostLiked)}
-              </LazyLoadCarousel>
+              </HorizontalCarousel>
 
-              <LazyLoadCarousel title={`Highest Rated in ${block.category}`} items={block.highestRated} loading={globalLoading || block.loading} skeletonCount={4}>
+              <HorizontalCarousel title={`Highest Rated in ${block.category}`} items={block.highestRated} loading={loadingGlobal} skeletonCount={4}>
                 {renderCards(block.highestRated)}
-              </LazyLoadCarousel>
+              </HorizontalCarousel>
 
-              <LazyLoadCarousel title={`Most Viewed in ${block.category}`} items={block.mostViewed} loading={globalLoading || block.loading} skeletonCount={4}>
+              <HorizontalCarousel title={`Most Viewed in ${block.category}`} items={block.mostViewed} loading={loadingGlobal} skeletonCount={4}>
                 {renderCards(block.mostViewed)}
-              </LazyLoadCarousel>
+              </HorizontalCarousel>
             </section>
           ))}
 

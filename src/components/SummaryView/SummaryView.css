@@ -338,4 +338,47 @@ body.scroll-hide-global .summary-header {
   }
 }
 
+/* Centered loader viewport (fills available height so loader is visually centered) */
+.centered-loader-viewport {
+  min-height: 60vh; /* ensures loader sits in middle of page; adjust as needed */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+/* Loader box */
+.centered-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* simple spinner */
+.spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 6px solid rgba(0,0,0,0.08);
+  border-top-color: rgba(0,0,0,0.42);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loader-text {
+  font-weight: 700;
+  color: #374151;
+}
+
+/* Optional: subtle skeleton for title to reduce layout shift while main body hydrates */
+.summary-header.placeholder .summary-title,
+.summary-header.placeholder .summary-author {
+  background: linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02));
+  border-radius: 6px;
+  color: transparent;
+}
 

@@ -80,3 +80,5 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
 };
 
 export default BookSummaryCard;
+
+
