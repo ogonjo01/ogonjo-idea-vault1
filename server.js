@@ -8,23 +8,34 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// This is the actual Group ID you found in your MailerLite account.
-// This is not a sensitive key, so it can be hardcoded or set as a variable.
 const MAILERLITE_GROUP_ID = '161087138063976399';
 
-// Configure CORS to explicitly allow requests from your Netlify domain.
+// Configure CORS to explicitly allow both the live and local origins.
+const allowedOrigins = ['https://ogonjo.com', 'http://172.31.32.1:8082'];
+
 app.use(cors({
-  origin: 'https://ogonjo.com'
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin.`;
+      callback(new Error(msg), false);
+    }
+  }
 }));
 
 app.use(express.json());
+
+// Explicitly handle the OPTIONS preflight request.
+app.options('/subscribe', cors());
 
 app.post('/subscribe', async (req, res) => {
   const { email, resubscribe } = req.body;
   const apiKey = process.env.MAILERLITE_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ message: 'MailerLite API key not set' });
+    console.error('MailerLite API key not set in environment variables.');
+    return res.status(500).json({ message: 'Server configuration error: API key missing.' });
   }
 
   try {
@@ -40,7 +51,7 @@ app.post('/subscribe', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('MailerLite error:', data);
+      console.error('MailerLite API error:', data);
       return res.status(response.status).json(data);
     }
 
