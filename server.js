@@ -6,9 +6,17 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// This is the actual Group ID you found in your MailerLite account.
+// This is not a sensitive key, so it can be hardcoded or set as a variable.
+const MAILERLITE_GROUP_ID = '161087138063976399';
+
+// Configure CORS to explicitly allow requests from your Netlify domain.
+app.use(cors({
+  origin: 'https://ogonjo.com'
+}));
+
 app.use(express.json());
 
 app.post('/subscribe', async (req, res) => {
@@ -20,7 +28,7 @@ app.post('/subscribe', async (req, res) => {
   }
 
   try {
-    const response = await fetch('https://api.mailerlite.com/api/v2/subscribers', {
+    const response = await fetch(`https://api.mailerlite.com/api/v2/groups/${MAILERLITE_GROUP_ID}/subscribers`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
