@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development && node scripts/copy-redirects.js",
     "lint": "eslint .",
     "preview": "vite preview",
-     "start": "node server.js"
+    "start": "node server.js" 
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -61,6 +61,7 @@
     "dompurify": "^3.2.6",
     "dotenv": "^17.2.1",
     "embla-carousel-react": "^8.3.0",
+    "express": "^4.19.2",
     "framer-motion": "^12.23.9",
     "google-auth-library": "^10.2.0",
     "highlight.js": "^11.11.1",
