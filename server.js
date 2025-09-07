@@ -10,27 +10,15 @@ const PORT = process.env.PORT || 3000;
 
 const MAILERLITE_GROUP_ID = '161087138063976399';
 
-// Configure CORS to explicitly allow both the live and local origins.
-const allowedOrigins = ['https://ogonjo.com', 'http://172.31.32.1:8082'];
+// This will allow requests from all origins, which is fine for this public API.
+app.use(cors());
 
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin.`;
-      callback(new Error(msg), false);
-    }
-  }
-}));
-
+// Use express.json() to parse the JSON request body.
 app.use(express.json());
 
-// Explicitly handle the OPTIONS preflight request.
-app.options('/subscribe', cors());
-
 app.post('/subscribe', async (req, res) => {
-  const { email, resubscribe } = req.body;
+  // Access the email from the parsed JSON body
+  const { email } = req.body;
   const apiKey = process.env.MAILERLITE_API_KEY;
 
   if (!apiKey) {
@@ -45,7 +33,7 @@ app.post('/subscribe', async (req, res) => {
         'Content-Type': 'application/json',
         'X-MailerLite-ApiKey': apiKey
       },
-      body: JSON.stringify({ email, resubscribe })
+      body: JSON.stringify({ email: email, resubscribe: true }) // MailerLite API requires JSON
     });
 
     const data = await response.json();
