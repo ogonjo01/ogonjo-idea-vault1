@@ -13,7 +13,9 @@ const Footer = () => {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:3000/subscribe', {
+      // This is the only change you need to make!
+      // Replace the localhost URL with your live Railway URL.
+      const response = await fetch('https://ogonjo-idea-vault1-production.up.railway.app/subscribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
