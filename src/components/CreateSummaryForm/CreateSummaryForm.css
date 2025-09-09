@@ -94,3 +94,15 @@
   min-height: 200px;
   margin-bottom: 1rem;
 }
+.slug-preview {
+  display: block;
+  font-size: 0.85em;
+  color: #666;
+  margin-top: 2px;
+  font-family: monospace;
+}
+.slug-preview code {
+  background: #f4f4f4;
+  padding: 2px 4px;
+  border-radius: 3px;
+}

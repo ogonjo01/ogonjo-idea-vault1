@@ -1,64 +1,108 @@
-/* SummaryView.css - mobile-safe adjustments for spacer/stacking + desktop behavior */
+/* src/components/SummaryView/SummaryView.css */
+
+/* Global scroll-padding to prevent anchor overlaps */
+html {
+ scroll-padding-top: calc(var(--header-height) + var(--category-height));
+}
 
 /* variables */
-:root{
-  --header-height: 56px;
-  --category-height: 48px;
-  --top-breathing: 8px;
-  --thumb-large: 112px;
-  --thumb-small: 44px;
-  --gap: 10px;
-  --collapsed-header-vh: 10vh;
+:root {
+ --header-height: 56px;
+ --category-height: 48px;
+ --thumb-large: 112px;
+ --thumb-small: 44px;
+ --collapsed-header-vh: 10vh;
+ --gap: 10px;
 }
 
 /* page container */
 .summary-page {
   max-width: 980px;
   margin: 0 auto;
-  padding-left: 18px;
-  padding-right: 18px;
-  padding-bottom: 12px;
+  padding: 0 18px 12px;
   box-sizing: border-box;
+  overflow: visible;
+  
+  /* FIX: Use flexbox to manage spacing consistently */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  
+  /* Push content below fixed global header + category + summary header */
+  padding-top: calc(var(--header-height) + var(--category-height));
 }
 
-/* --- spacer: ensure sticky header sits below header+category on desktop,
-       but make it small (or zero) on small screens to avoid large top gaps --- */
-.summary-top-spacer {
-  height: calc(var(--header-height) + var(--category-height) - var(--top-breathing));
-  width: 100%;
-  pointer-events: none;
-}
-
-/* header layout: two rows (thumb/title/actions) + engagement below */
+/* header: sticky below globals, pins to top when globals hidden */
 .summary-header {
   position: sticky;
-  top: calc(var(--header-height) + var(--category-height) - var(--top-breathing));
-  z-index: 1210;
+  top: calc(var(--header-height) + var(--category-height));
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 980px;
+  z-index: 1500;
   background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(255,255,255,0.96));
   padding: 10px;
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.04);
-  margin-bottom: 8px;
-
+  
+  /* FIX: Removed margin-bottom to close the gap */
+  margin-bottom: 0;
+  
   display: grid;
   grid-template-columns: auto 1fr auto; /* image | title | actions */
-  grid-template-rows: auto auto; /* first row title row, second engagement row */
+  grid-template-rows: auto auto; /* title row, engagement row */
   gap: 8px;
   align-items: center;
-
-  transition: top 160ms linear, padding 140ms ease, box-shadow 140ms ease, border-radius 120ms ease;
+  transition: padding 140ms ease, box-shadow 140ms ease, border-radius 120ms ease, top 220ms cubic-bezier(.2,.9,.2,1);
+  will-change: top, transform;
 }
 
-/* collapsed state (folded) */
+/* When globals are hidden, pin summary header to viewport top and adjust page padding */
+.og-header.og-header--hidden ~ .main-content .summary-page,
+.category-filter-container.category-filter-container--hidden ~ .main-content .summary-page,
+.og-header.og-header--hidden ~ .category-filter-container ~ .main-content .summary-page {
+  padding-top: var(--collapsed-header-vh);
+}
+
+.og-header.og-header--hidden ~ .main-content .summary-page .summary-header,
+.category-filter-container.category-filter-container--hidden ~ .main-content .summary-page .summary-header,
+.og-header.og-header--hidden ~ .category-filter-container ~ .main-content .summary-page .summary-header {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 980px;
+  margin-left: auto;
+  margin-right: auto;
+  z-index: 1250;
+  border-radius: 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  transition: top 220ms cubic-bezier(.2,.9,.2,1), box-shadow 140ms ease;
+}
+
+/* collapsed state */
 .summary-header.collapsed {
   padding: 6px 8px;
   border-radius: 6px;
   box-shadow: 0 10px 36px rgba(0,0,0,0.08);
+  min-height: var(--collapsed-header-vh);
+  align-items: center;
+  grid-template-rows: 1fr;
 }
 
-/* support when global header/category hidden (your body class toggles) */
-body.scroll-hide-global .summary-header {
-  top: 0 !important;
+.summary-header.collapsed .summary-title {
+  font-size: 0.96rem;
+}
+
+.summary-header.collapsed .summary-author {
+  font-size: 0.8rem;
+}
+
+.summary-header.collapsed .summary-engagement {
+  margin-top: 4px;
 }
 
 /* thumbnail */
@@ -66,19 +110,21 @@ body.scroll-hide-global .summary-header {
   grid-column: 1 / 2;
   grid-row: 1 / 2;
   width: var(--thumb-large);
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
 .summary-thumb {
   width: var(--thumb-large);
   height: var(--thumb-large);
   object-fit: cover;
   border-radius: 8px;
   box-shadow: 0 8px 20px rgba(6,8,10,0.06);
-  display:block;
+  display: block;
   transition: width 220ms cubic-bezier(.2,.9,.2,1), height 220ms cubic-bezier(.2,.9,.2,1), transform 180ms ease, opacity 140ms ease;
 }
+
 .summary-thumb.collapsed {
   width: var(--thumb-small);
   height: var(--thumb-small);
@@ -90,21 +136,24 @@ body.scroll-hide-global .summary-header {
 .summary-title-left {
   grid-column: 2 / 3;
   grid-row: 1 / 2;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
+
 .summary-title {
   font-size: 1rem;
   margin: 0;
   color: #0f7f63;
   font-weight: 800;
   line-height: 1.12;
+  /* Original rules for desktop */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .summary-author {
   margin: 0;
   font-size: 0.86rem;
@@ -112,17 +161,18 @@ body.scroll-hide-global .summary-header {
   font-weight: 600;
 }
 
-/* actions column (Get Book) stays right on wide screens */
+/* actions column */
 .summary-actions {
   grid-column: 3 / 4;
   grid-row: 1 / 2;
-  display:flex;
-  align-items:center;
+  display: flex;
+  align-items: center;
   justify-self: end;
   gap: 8px;
 }
+
 .affiliate-btn {
-  background: linear-gradient(90deg,#0fd1a3,#06b38f);
+  background: linear-gradient(90deg, #0fd1a3, #06b38f);
   color: white;
   padding: 8px 10px;
   border-radius: 8px;
@@ -132,54 +182,89 @@ body.scroll-hide-global .summary-header {
   font-size: 0.92rem;
 }
 
-/* engagement row below (spans full width) */
+/* engagement row */
 .summary-engagement {
   grid-column: 1 / -1;
   grid-row: 2 / 3;
-  display:flex;
-  align-items:center;
+  display: flex;
+  align-items: center;
   gap: 10px;
   margin-top: 6px;
-  flex-wrap:wrap;
-  justify-content:flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 /* engagement widgets */
 .eng-btn, .eng-item {
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:6px 10px;
-  border-radius:10px;
-  background:#fff;
-  border:1px solid #eef3f6;
-  font-weight:700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #eef3f6;
+  font-weight: 700;
   font-size: 0.92rem;
 }
-.like-btn.liked { color:#e74c3c; border-color: rgba(231,76,60,0.08); background: linear-gradient(180deg, rgba(231,76,60,0.03), #fff); }
 
-.rating-block { display:flex; align-items:center; gap:8px; margin-left: 4px; }
-.rating-stars { display:flex; gap:6px; align-items:center; }
+.like-btn.liked {
+  color: #e74c3c;
+  border-color: rgba(231,76,60,0.08);
+  background: linear-gradient(180deg, rgba(231,76,60,0.03), #fff);
+}
+
+.rating-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+}
+
+.rating-stars {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 
 /* star styles */
 .star-button {
-  background:transparent;
-  border:none;
-  cursor:pointer;
-  color:#d7d7d7;
-  font-size:0.95rem;
-  padding:4px;
-  border-radius:6px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #d7d7d7;
+  font-size: 0.95rem;
+  padding: 4px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform .06s ease, color .08s ease;
 }
-.star-button:hover { transform: translateY(-2px); }
-.star-button.active { color:#f1c40f; }
-.star-button.small { font-size:0.86rem; padding:3px; }
 
-.avg-text { font-weight:800; color:#111827; font-size:0.92rem; margin-left:6px; }
+.star-button:hover {
+  transform: translateY(-2px);
+}
+
+.star-button.active {
+  color: #f1c40f;
+}
+
+.star-button.small {
+  font-size: 0.86rem;
+  padding: 3px;
+}
+
+.star-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.avg-text {
+  font-weight: 800;
+  color: #111827;
+  font-size: 0.92rem;
+  margin-left: 6px;
+}
 
 /* body */
 .summary-body {
@@ -190,157 +275,153 @@ body.scroll-hide-global .summary-header {
   margin-bottom: 0;
   word-break: break-word;
 }
+
 .summary-body img, .summary-body picture, .summary-body figure, .summary-body iframe {
-  max-width:100%;
-  height:auto;
-  display:block;
+  max-width: 100%;
+  height: auto;
+  display: block;
   margin: 12px auto;
-  object-fit:contain;
+  object-fit: contain;
 }
-.summary-body p { margin-bottom: 12px; }
-.summary-body p:last-child { margin-bottom: 0; }
 
-/* collapsed tuning */
-.summary-header.collapsed {
-  min-height: var(--collapsed-header-vh);
-  align-items: center;
-  grid-template-rows: 1fr;
+.summary-body p {
+  margin-bottom: 12px;
 }
-.summary-header.collapsed .summary-title { font-size: 0.96rem; }
-.summary-header.collapsed .summary-author { font-size: 0.8rem; }
-.summary-header.collapsed .summary-engagement { margin-top: 4px; }
 
-/* ========== MOBILE: stack cleanly and remove extra spacer ========== */
-@media (max-width: 780px) {
-  :root { --thumb-large: 84px; --thumb-small: 40px; --top-breathing: 6px; }
-
-  /* reduce/remove the spacer at the top to prevent big empty space */
-  .summary-top-spacer {
-    /* only keep the actual header height so the sticky header sits just below global header */
-    height: calc(var(--header-height) + 4px); /* small gap only */
-  }
-
-  /* make header fixed/pinned under global header for crisp UX */
-  .summary-header {
-    position: fixed;
-    top: calc(var(--header-height)); /* sits under global header (category might be hidden on mobile) */
-    left: 0;
-    right: 0;
-    margin-left: auto;
-    margin-right: auto;
-    width: 100%;
-    max-width: 980px;
-    z-index: 1250;
-    border-radius: 0;
-    padding: 8px 12px;
-    grid-template-columns: auto 1fr; /* thumb | title */
-    grid-template-rows: auto auto; /* first row: thumb/title; second: engagement + actions */
-    gap: 8px;
-  }
-
-  /* put actions underneath title so they don't overlap thumb */
-  .summary-actions {
-    grid-column: 1 / -1;
-    grid-row: 2 / 3;
-    justify-self: start;
-    order: 3;
-    margin-top: 4px;
-  }
-
-  .summary-title-left { grid-column: 1 / -1; grid-row: 1 / 2; order: 2; }
-  .summary-thumb-wrap { grid-column: 1 / 2; grid-row: 1 / 2; order: 1; width: var(--thumb-large); }
-
-  .summary-engagement { grid-column: 1 / -1; grid-row: 3 / 4; margin-top: 6px; justify-content:flex-start; }
-
-  /* push content down so fixed header does not cover it */
-  .summary-page {
-    padding-top: calc(var(--header-height) + var(--category-height) + var(--thumb-small) + 18px);
-  }
+.summary-body p:last-child {
+  margin-bottom: 0;
 }
 
 /* ensure no trailing whitespace */
-.summary-page > *:last-child { margin-bottom: 0; padding-bottom: 0; }
+.summary-page > *:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
 
-
-/* MOBILE: remove image preview (small screens) - minimal change */
+/* MOBILE: adjust for fixed header, no thumb */
 @media (max-width: 780px) {
-  /* hide the thumbnail entirely */
+  :root {
+    --thumb-large: 84px;
+    --thumb-small: 40px;
+  }
+
+  .summary-page {
+    padding-top: calc(var(--header-height) + var(--category-height) + var(--collapsed-header-vh));
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* When globals hidden on mobile */
+  .og-header.og-header--hidden ~ .main-content .summary-page,
+  .category-filter-container.category-filter-container--hidden ~ .main-content .summary-page {
+    padding-top: var(--collapsed-header-vh);
+  }
+
+  .og-header.og-header--hidden ~ .main-content .summary-page .summary-header,
+  .category-filter-container.category-filter-container--hidden ~ .main-content .summary-page .summary-header {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0;
+    right: 0;
+    z-index: 1250;
+    border-radius: 0;
+    padding: 8px 12px;
+    grid-template-columns: 1fr auto; /* title | actions */
+    grid-template-rows: auto auto;
+    gap: 8px;
+  }
+
+  /* FIX: Allow title to wrap on two lines with truncation */
+  .summary-title {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.3;
+    white-space: normal; /* Allow text to wrap */
+  }
+
   .summary-thumb-wrap {
-    display: none !important;
-    width: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
+    display: none;
+    width: 0;
+    padding: 0;
+    margin: 0;
   }
 
-  /* use two columns: title (1fr) | actions (auto) so layout doesn't leave blank space */
-  .summary-header {
-    grid-template-columns: 1fr auto !important;
-    grid-template-rows: auto auto; /* keep engagement on second row */
-  }
-
-  /* ensure title occupies first column */
-  .summary-title-left {
-    grid-column: 1 / 2 !important;
-    grid-row: 1 / 2 !important;
-  }
-
-  /* ensure actions occupy second column */
   .summary-actions {
-    grid-column: 2 / 3 !important;
-    grid-row: 1 / 2 !important;
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
     justify-self: end;
   }
 
-  /* engagement still spans full width on the second row */
-  .summary-engagement {
-    grid-column: 1 / -1 !important;
-    grid-row: 2 / 3 !important;
+  .summary-title-left {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
   }
-}
-/* --- Ensure engagement row stays one horizontal line on small screens --- */
-@media (max-width: 780px) {
-  /* Prevent wrapping and allow horizontal scroll when necessary */
+
   .summary-engagement {
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
+    grid-column: 1 / -1;
+    grid-row: 2 / 3;
+    margin-top: 6px;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    gap: 8px !important;
-    padding-bottom: 6px; /* small breathing space for the scrollbar */
-    justify-content: flex-start !important;
+    gap: 8px;
+    padding-bottom: 6px;
   }
 
-  /* Make each engagement control keep its intrinsic size and not shrink */
-  .eng-btn,
-  .eng-item {
-    flex: 0 0 auto !important; /* don't grow, don't shrink, auto width */
-    white-space: nowrap !important; /* keep label & numbers on single line */
-    min-width: 0; /* avoid unexpected min size from children */
-    padding: 6px 8px !important; /* slightly tighter on mobile */
-    font-size: 0.9rem !important;
+  .eng-btn, .eng-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    min-width: 0;
+    padding: 6px 8px;
+    font-size: 0.9rem;
   }
 
-  /* Make rating stars more compact */
-  .rating-block { gap: 6px !important; margin-left: 6px !important; }
-  .rating-stars { display: flex; gap: 4px !important; align-items: center; }
-  .star-button { padding: 2px 4px !important; font-size: 0.86rem !important; }
+  .rating-block {
+    gap: 6px;
+    margin-left: 6px;
+  }
 
-  /* Keep avg-text compact */
-  .avg-text { font-size: 0.88rem !important; margin-left: 6px !important; }
+  .rating-stars {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
 
-  /* Small horizontal scrollbar styling (nice but optional) */
-  .summary-engagement::-webkit-scrollbar { height: 6px; }
-  .summary-engagement::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.06); border-radius: 999px; }
+  .star-button {
+    padding: 2px 4px;
+    font-size: 0.86rem;
+  }
 
-  /* If .summary-actions is in the header row, ensure it doesn't force engagement line to wrap */
+  .avg-text {
+    font-size: 0.88rem;
+    margin-left: 6px;
+  }
+
+  .summary-engagement::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .summary-engagement::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.06);
+    border-radius: 999px;
+  }
+
   .summary-actions {
     flex: 0 0 auto;
     margin-left: 8px;
   }
+
+  .summary-body {
+    margin-top: 8px;
+  }
 }
 
-/* Centered loader viewport (fills available height so loader is visually centered) */
+/* Centered loader viewport */
 .centered-loader-viewport {
-  min-height: 60vh; /* ensures loader sits in middle of page; adjust as needed */
+  min-height: 60vh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -365,6 +446,7 @@ body.scroll-hide-global .summary-header {
   border-top-color: rgba(0,0,0,0.42);
   animation: spin 0.9s linear infinite;
 }
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -374,11 +456,34 @@ body.scroll-hide-global .summary-header {
   color: #374151;
 }
 
-/* Optional: subtle skeleton for title to reduce layout shift while main body hydrates */
-.summary-header.placeholder .summary-title,
-.summary-header.placeholder .summary-author {
+/* skeleton for title */
+.summary-header.placeholder .summary-title, .summary-header.placeholder .summary-author {
   background: linear-gradient(90deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02));
   border-radius: 6px;
   color: transparent;
 }
 
+
+.summary-body a {
+  color: #28a745; /* Green for affiliate/action links, or #007bff for blue */
+  text-decoration: none; /* No underline by default */
+  font-weight: 600; /* Slightly bolder to draw eye */
+  border-bottom: 1px solid transparent; /* Subtle underline potential */
+  transition: all 0.2s ease; /* Smooth hover */
+}
+
+.summary-body a:hover {
+  text-decoration: underline;
+  border-bottom-color: #28a745; /* Matches color on hover */
+  background-color: rgba(40, 167, 69, 0.1); /* Light highlight bg */
+}
+
+.summary-body a::after {
+  content: ' ↗'; /* Small arrow icon to signal "external/action" */
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.summary-body a:hover::after {
+  opacity: 1;
+}

@@ -4,41 +4,49 @@ import { useLocation } from 'react-router-dom';
 
 export default function ScrollHideManager() {
   const { pathname } = useLocation();
-
   const lastPos = useRef(0);
-  const lastToggleTime = useRef(0);
   const ticking = useRef(false);
   const hidden = useRef(false);
   const scrollerRef = useRef(null);
 
   useEffect(() => {
-    // pick the scroll container: prefer .main-content (app scroller), otherwise window
     const container = document.querySelector('.main-content') || window;
     scrollerRef.current = container;
 
-    // route: homepage => fixed header+category; other routes => page-static (in-flow)
+    // Reset classes first
+    document.body.classList.remove('scroll-hide-global', 'homepage-fixed', 'page-static');
+    hidden.current = false;
+
+    // Homepage => fixed header + category; disable scroll-hide entirely
     if (pathname === '/' || pathname === '') {
       document.body.classList.add('homepage-fixed');
-      document.body.classList.remove('page-static');
-      document.body.classList.remove('scroll-hide-global');
-      // reset hidden state
-      hidden.current = false;
-      lastPos.current = container === window ? window.scrollY : (container.scrollTop || 0);
+      // no scroll-listener needed
+      lastPos.current = container === window ? window.scrollY || 0 : container.scrollTop || 0;
       return () => {
         document.body.classList.remove('homepage-fixed');
         document.body.classList.remove('scroll-hide-global');
       };
     }
 
-    // Non-home pages: header/category should be in-flow (but sticky)
-    document.body.classList.remove('homepage-fixed');
-    document.body.classList.add('page-static');
-    document.body.classList.remove('scroll-hide-global');
+    // Only enable auto-hide logic on Summary pages
+    const isSummaryPage = pathname.startsWith('/summary/');
+    if (!isSummaryPage) {
+      // non-home, non-summary: keep default (header remains fixed or page static based on your other logic)
+      document.body.classList.add('page-static');
+      return () => {
+        document.body.classList.remove('page-static');
+        document.body.classList.remove('scroll-hide-global');
+      };
+    }
 
-    const HIDE_THRESHOLD = 18;
-    const SHOW_THRESHOLD = 10;
-    const MIN_TOGGLE_INTERVAL = 160; // ms
-    const ALWAYS_SHOW_TOP = 80;
+    // For summary pages we want the header+category to slide away
+    document.body.classList.add('page-static'); // optional, for semantics
+    lastPos.current = container === window ? window.scrollY || 0 : container.scrollTop || 0;
+
+    const HIDE_THRESHOLD = 12; // px delta to consider hide
+    const SHOW_THRESHOLD = 8;
+    const MIN_TOGGLE_INTERVAL = 120; // ms
+    let lastToggle = performance.now();
 
     const getPos = () => (container === window ? window.scrollY || 0 : container.scrollTop || 0);
 
@@ -51,25 +59,25 @@ export default function ScrollHideManager() {
         requestAnimationFrame(() => {
           const delta = current - lastPos.current;
 
-          if (current <= ALWAYS_SHOW_TOP) {
-            // near top -> ensure show
-            if (hidden.current && now - lastToggleTime.current > MIN_TOGGLE_INTERVAL) {
+          // near top -> always show
+          if (current <= 40) {
+            if (hidden.current) {
               hidden.current = false;
-              lastToggleTime.current = now;
+              lastToggle = now;
               document.body.classList.remove('scroll-hide-global');
             }
-          } else if (delta > HIDE_THRESHOLD) {
+          } else if (delta > HIDE_THRESHOLD && (now - lastToggle) > MIN_TOGGLE_INTERVAL) {
             // scrolling down
-            if (!hidden.current && now - lastToggleTime.current > MIN_TOGGLE_INTERVAL) {
+            if (!hidden.current) {
               hidden.current = true;
-              lastToggleTime.current = now;
+              lastToggle = now;
               document.body.classList.add('scroll-hide-global');
             }
-          } else if (delta < -SHOW_THRESHOLD) {
+          } else if (delta < -SHOW_THRESHOLD && (now - lastToggle) > MIN_TOGGLE_INTERVAL) {
             // scrolling up
-            if (hidden.current && now - lastToggleTime.current > MIN_TOGGLE_INTERVAL) {
+            if (hidden.current) {
               hidden.current = false;
-              lastToggleTime.current = now;
+              lastToggle = now;
               document.body.classList.remove('scroll-hide-global');
             }
           }
@@ -80,29 +88,26 @@ export default function ScrollHideManager() {
       }
     };
 
-    // initialize
-    lastPos.current = getPos();
-    // bind to the appropriate element(s)
+    // bind
     if (container === window) {
       window.addEventListener('scroll', handler, { passive: true });
-      window.addEventListener('wheel', handler, { passive: true });
       window.addEventListener('touchmove', handler, { passive: true });
+      window.addEventListener('wheel', handler, { passive: true });
     } else {
       container.addEventListener('scroll', handler, { passive: true });
-      // wheel/touch on the container are less critical, but safe to add:
-      container.addEventListener('wheel', handler, { passive: true });
       container.addEventListener('touchmove', handler, { passive: true });
+      container.addEventListener('wheel', handler, { passive: true });
     }
 
     return () => {
       if (container === window) {
         window.removeEventListener('scroll', handler);
-        window.removeEventListener('wheel', handler);
         window.removeEventListener('touchmove', handler);
+        window.removeEventListener('wheel', handler);
       } else {
         container.removeEventListener('scroll', handler);
-        container.removeEventListener('wheel', handler);
         container.removeEventListener('touchmove', handler);
+        container.removeEventListener('wheel', handler);
       }
       document.body.classList.remove('scroll-hide-global');
       document.body.classList.remove('page-static');

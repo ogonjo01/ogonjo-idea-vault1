@@ -1,9 +1,11 @@
 // src/components/CreateSummaryForm/CreateSummaryForm.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/supabaseClient';
 import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
+import 'quill/dist/quill.snow.css';
+import slugify from 'slugify'; // New import for slug generation
+
 import './CreateSummaryForm.css';
 
 const categories = [
@@ -36,6 +38,7 @@ const categories = [
 
 const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [title, setTitle] = useState('');
+  const [slug, setSlug] = useState(''); // New state for the generated slug
   const [author, setAuthor] = useState('');
   const [summaryText, setSummaryText] = useState('');
   const [category, setCategory] = useState(categories[0]);
@@ -43,8 +46,22 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [affiliateLink, setAffiliateLink] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Auto-generate slug from title whenever title changes
+  useEffect(() => {
+    if (title.trim()) {
+      const generatedSlug = slugify(title, { lower: true, strict: true }); // e.g., "The Great Gatsby" -> "the-great-gatsby"
+      setSlug(generatedSlug);
+    } else {
+      setSlug('');
+    }
+  }, [title]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!title.trim()) {
+      alert('Title is required.');
+      return;
+    }
     setLoading(true);
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -54,27 +71,66 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       return;
     }
 
+    let finalSlug = slug;
+
+    // Check for existing slug and append counter if duplicate
+    const { data: existing, error: checkError } = await supabase
+      .from('book_summaries')
+      .select('id')
+      .eq('slug', finalSlug)
+      .maybeSingle(); // Use maybeSingle to handle no rows gracefully
+
+    if (checkError) {
+      console.error('Error checking slug:', checkError);
+      // Fall back to original slug if check fails
+    } else if (existing) {
+      // Duplicate found; append -2, -3, etc.
+      let counter = 2;
+      while (true) {
+        const candidateSlug = `${slug}-${counter}`;
+        const { data: slugExists } = await supabase
+          .from('book_summaries')
+          .select('id')
+          .eq('slug', candidateSlug)
+          .maybeSingle();
+        if (!slugExists) {
+          finalSlug = candidateSlug;
+          break;
+        }
+        counter++;
+      }
+    }
+
     const { error } = await supabase
       .from('book_summaries')
       .insert([
         { 
           title,
           author,
-          summary: summaryText, // now HTML from Quill
+          summary: summaryText, // HTML from Quill
           category,
           user_id: user.id,
           image_url: imageUrl,
-          affiliate_link: affiliateLink
+          affiliate_link: affiliateLink,
+          slug: finalSlug // Insert the final slug
         },
       ]);
 
     setLoading(false);
 
     if (error) {
-      alert('Error creating summary. Please try again.');
+      alert(`Error creating summary: ${error.message}. Please try again.`);
       console.error('Error:', error);
     } else {
-      alert('Summary created successfully!');
+      alert(`Summary created successfully! Suggested URL: https://ogonjo.com/summary/${finalSlug}`);
+      // Reset form if needed
+      setTitle('');
+      setAuthor('');
+      setSummaryText('');
+      setCategory(categories[0]);
+      setImageUrl('');
+      setAffiliateLink('');
+      setSlug('');
       onNewSummary();
       onClose();
     }
@@ -107,6 +163,11 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             onChange={(e) => setTitle(e.target.value)}
             required
           />
+          {slug && (
+            <small className="slug-preview">
+              Generated URL slug: <code>/summary/{slug}</code> (will be: https://ogonjo.com/summary/{slug})
+            </small>
+          )}
 
           <label htmlFor="author">Author</label>
           <input

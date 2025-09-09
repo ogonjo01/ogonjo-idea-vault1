@@ -1,5 +1,6 @@
 // src/components/AuthForm/AuthForm.jsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom"; // ⬅️ import navigate
 import { supabase } from "../../supabase/supabaseClient";
 import "./AuthForm.css";
 
@@ -8,6 +9,7 @@ const AuthForm = () => {
   const [mode, setMode] = useState("login"); // "login" | "signup" | "forgot"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const navigate = useNavigate(); // ⬅️ hook for routing
 
   // 🔹 Handle Login
   const handleLogin = async (e) => {
@@ -19,7 +21,9 @@ const AuthForm = () => {
         password,
       });
       if (error) throw error;
-      alert("Logged in successfully!");
+
+      // Redirect after success
+      navigate("/"); // ⬅️ go to homepage
     } catch (err) {
       alert(err.message);
     } finally {
@@ -38,6 +42,8 @@ const AuthForm = () => {
       });
       if (error) throw error;
       alert("Signup successful! Please check your email for confirmation.");
+      // optional: redirect to login
+      setMode("login");
     } catch (err) {
       alert(err.message);
     } finally {

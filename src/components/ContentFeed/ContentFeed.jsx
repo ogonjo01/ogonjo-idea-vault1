@@ -1,15 +1,18 @@
-
 // src/components/ContentFeed/ContentFeed.jsx
+// Modified: Added <Ad /> after each HorizontalCarousel section.
+// For category blocks and specific categories, ads after each sub-section (newest, most liked, etc.).
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../supabase/supabaseClient';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
+import Ad from '../Ad/Ad'; // New import for ads
 import './ContentFeed.css';
 
 const ITEMS_PER_CAROUSEL = 12;
 const CATEGORY_BATCH = 3;
 const MIN_LOAD_MS = 350; // minimum skeleton display to avoid flashes
 
+// Added `slug` to the selects so UI receives the slug for SEO-friendly links
 const LIGHT_SELECT = `
   id,
   created_at,
@@ -20,7 +23,8 @@ const LIGHT_SELECT = `
   user_id,
   image_url,
   affiliate_link,
-  avg_rating
+  avg_rating,
+  slug
 `;
 
 const SELECT_WITH_COUNTS = `
@@ -35,7 +39,8 @@ const SELECT_WITH_COUNTS = `
   affiliate_link,
   likes_count:likes!likes_post_id_fkey(count),
   views_count:views!views_post_id_fkey(count),
-  comments_count:comments!comments_post_id_fkey(count)
+  comments_count:comments!comments_post_id_fkey(count),
+  slug
 `;
 
 // helpers
@@ -73,6 +78,7 @@ const normalizeRow = (r = {}) => {
 
   return {
     id: r.id,
+    slug: r.slug ?? null, // <- include slug so cards can prefer it
     title: r.title,
     author: r.author,
     summary: r.summary,
@@ -426,24 +432,40 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
   }, [hasMoreCategories, loadingCategories, loadNextCategoryBatch]);
 
   const renderCards = (items) => (items || []).map((summary) => (
-    <BookSummaryCard key={String(summary.id)} summary={summary} onEdit={onEdit} onDelete={onDelete} />
+    // use slug || id as key so when slugs are backfilled React keys are stable
+    <BookSummaryCard key={String(summary.slug || summary.id)} summary={summary} onEdit={onEdit} onDelete={onDelete} />
   ));
 
   const isForYou = selectedCategory === 'For You' || selectedCategory === 'All';
+
+  // Helper to render a carousel with ad after it
+  const renderCarouselWithAd = (title, items, loading, skeletonCount, viewAllLink, slot = 'feed') => (
+    <>
+      <HorizontalCarousel
+        title={title}
+        items={items}
+        loading={loading}
+        skeletonCount={skeletonCount}
+        viewAllLink={viewAllLink}
+      >
+        {renderCards(items)}
+      </HorizontalCarousel>
+      <Ad slot={slot} />
+    </>
+  );
 
   return (
     <div className="content-feed-root">
       {/* SEARCH */}
       {searchQuery && searchQuery.trim() && (
-        <HorizontalCarousel
-          title={`Search results for "${searchQuery}"`}
-          items={globalContent.newest}
-          loading={loadingGlobal}
-          skeletonCount={6}
-          viewAllLink={`/explore?q=${encodeURIComponent(searchQuery)}`}
-        >
-          {renderCards(globalContent.newest)}
-        </HorizontalCarousel>
+        renderCarouselWithAd(
+          `Search results for "${searchQuery}"`,
+          globalContent.newest,
+          loadingGlobal,
+          6,
+          `/explore?q=${encodeURIComponent(searchQuery)}`,
+          'search'
+        )
       )}
 
       {/* SPECIFIC CATEGORY PAGE */}
@@ -457,17 +479,14 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
               mostViewed: `Most Viewed in ${loadedCategoryBlocks[0].category}`,
             };
             const items = loadedCategoryBlocks[0][k];
-            return (
-              <HorizontalCarousel
-                key={k}
-                title={titleMap[k]}
-                items={items}
-                loading={loadingGlobal}
-                skeletonCount={6}
-                viewAllLink={`/explore?sort=${k === 'newest' ? 'newest' : (k === 'mostLiked' ? 'likes' : (k === 'highestRated' ? 'rating' : 'views'))}&category=${encodeURIComponent(loadedCategoryBlocks[0].category)}`}
-              >
-                {renderCards(items)}
-              </HorizontalCarousel>
+            const sortKey = k === 'newest' ? 'newest' : (k === 'mostLiked' ? 'likes' : (k === 'highestRated' ? 'rating' : 'views'));
+            return renderCarouselWithAd(
+              titleMap[k],
+              items,
+              loadingGlobal,
+              6,
+              `/explore?sort=${sortKey}&category=${encodeURIComponent(loadedCategoryBlocks[0].category)}`,
+              `category-${k}`
             );
           })}
         </div>
@@ -476,21 +495,10 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       {/* FOR YOU / ALL */}
       {isForYou && !searchQuery && (
         <>
-          <HorizontalCarousel title="Newest" items={globalContent.newest} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=newest">
-            {renderCards(globalContent.newest)}
-          </HorizontalCarousel>
-
-          <HorizontalCarousel title="Most Liked" items={globalContent.mostLiked} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=likes">
-            {renderCards(globalContent.mostLiked)}
-          </HorizontalCarousel>
-
-          <HorizontalCarousel title="Most Rated" items={globalContent.highestRated} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=rating">
-            {renderCards(globalContent.highestRated)}
-          </HorizontalCarousel>
-
-          <HorizontalCarousel title="Most Viewed" items={globalContent.mostViewed} loading={loadingGlobal} skeletonCount={6} viewAllLink="/explore?sort=views">
-            {renderCards(globalContent.mostViewed)}
-          </HorizontalCarousel>
+          {renderCarouselWithAd("Newest", globalContent.newest, loadingGlobal, 6, "/explore?sort=newest", "newest")}
+          {renderCarouselWithAd("Most Liked", globalContent.mostLiked, loadingGlobal, 6, "/explore?sort=likes", "most-liked")}
+          {renderCarouselWithAd("Most Rated", globalContent.highestRated, loadingGlobal, 6, "/explore?sort=rating", "most-rated")}
+          {renderCarouselWithAd("Most Viewed", globalContent.mostViewed, loadingGlobal, 6, "/explore?sort=views", "most-viewed")}
 
           {loadedCategoryBlocks.map((block) => (
             <section className="category-block" key={block.category}>
@@ -499,21 +507,13 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 <a className="cat-viewall" href={`/explore?category=${encodeURIComponent(block.category)}`}>View all</a>
               </div>
 
-              <HorizontalCarousel title={`Newest in ${block.category}`} items={block.newest} loading={loadingGlobal} skeletonCount={4}>
-                {renderCards(block.newest)}
-              </HorizontalCarousel>
+              {renderCarouselWithAd(`Newest in ${block.category}`, block.newest, loadingGlobal, 4, null, `cat-${block.category}-newest`)}
+              {renderCarouselWithAd(`Most Liked in ${block.category}`, block.mostLiked, loadingGlobal, 4, null, `cat-${block.category}-liked`)}
+              {renderCarouselWithAd(`Highest Rated in ${block.category}`, block.highestRated, loadingGlobal, 4, null, `cat-${block.category}-rated`)}
+              {renderCarouselWithAd(`Most Viewed in ${block.category}`, block.mostViewed, loadingGlobal, 4, null, `cat-${block.category}-viewed`)}
 
-              <HorizontalCarousel title={`Most Liked in ${block.category}`} items={block.mostLiked} loading={loadingGlobal} skeletonCount={4}>
-                {renderCards(block.mostLiked)}
-              </HorizontalCarousel>
-
-              <HorizontalCarousel title={`Highest Rated in ${block.category}`} items={block.highestRated} loading={loadingGlobal} skeletonCount={4}>
-                {renderCards(block.highestRated)}
-              </HorizontalCarousel>
-
-              <HorizontalCarousel title={`Most Viewed in ${block.category}`} items={block.mostViewed} loading={loadingGlobal} skeletonCount={4}>
-                {renderCards(block.mostViewed)}
-              </HorizontalCarousel>
+              {/* Optional: Ad after entire category block for extra monetization */}
+              <Ad slot={`category-block-${block.category}`} className="full-width-ad" />
             </section>
           ))}
 

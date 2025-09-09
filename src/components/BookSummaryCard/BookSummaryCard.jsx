@@ -10,12 +10,26 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     author = 'Unknown',
     summary: text = '',
     id,
+    slug, // New: Destructure slug if available
     likes_count = 0,
     views_count = 0,
     comments_count = 0,
     image_url = '',
     avg_rating = 0,
   } = summary;
+
+  // Helper to get the dynamic path: prefer slug for SEO, fallback to id for old records
+  const getSummaryPath = (id, slug) => {
+    if (slug) {
+      return `/summary/${slug}`;
+    }
+    // Optional: Simple check if id looks like a UUID (for extra safety, but not required)
+    // const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    // return isUUID ? `/summary/${id}` : `/summary/${slug || id}`;
+    return `/summary/${id}`;
+  };
+
+  const summaryPath = getSummaryPath(id, slug);
 
   // Function to strip HTML tags and truncate text
   const cleanText = (html, maxLength = 140) => {
@@ -29,7 +43,7 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
   };
 
   return (
-    <Link to={`/summary/${id}`} className="card-link" aria-label={`Open ${title}`}>
+    <Link to={summaryPath} className="card-link" aria-label={`Open ${title}`}>
       <motion.div
         className="summary-card"
         data-post-id={id}
@@ -80,5 +94,3 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
 };
 
 export default BookSummaryCard;
-
-

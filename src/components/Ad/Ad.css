@@ -1,0 +1,35 @@
+/* src/components/Ad/Ad.css */
+/* Professional styling for ads - adjust as needed */
+.ad-container {
+  margin: 24px 0;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.ad-placeholder {
+  font-size: 14px;
+  color: #6c757d;
+  font-style: italic;
+  padding: 8px;
+}
+
+.ad-inline {
+  margin: 20px 0;
+  width: 100%;
+  text-align: center;
+  background: #fff;
+  border: 1px dashed #dee2e6;
+  padding: 12px;
+  border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .ad-container {
+    margin: 16px 0;
+    padding: 12px;
+  }
+}

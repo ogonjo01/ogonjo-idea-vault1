@@ -1,119 +1,194 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { supabase } from '../../supabase/supabaseClient';
-import UserProfileModal from '../UserProfile/UserProfile'; // modal popup
-import './Header.css';
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "../../supabase/supabaseClient";
+import UserProfileModal from "../UserProfile/UserProfile";
+import "./Header.css";
 
-const Header = ({ session, onAddClick, onSearch }) => {
+const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
   const [profile, setProfile] = useState(null);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let mounted = true;
     const fetchProfile = async () => {
-      if (!session) { setProfile(null); return; }
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('username')
-        .eq('id', session.user.id)
+      if (!session) return setProfile(null);
+      const { data } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", session.user.id)
         .maybeSingle();
-
-      if (!mounted) return;
-      if (error) {
-        console.warn('Profile fetch error', error);
-        setProfile({ username: null });
-      } else if (data) {
-        setProfile(data);
-      } else {
-        setProfile({ username: null });
-      }
+      if (mounted) setProfile(data || { username: null });
     };
-
     fetchProfile();
     return () => { mounted = false; };
   }, [session]);
 
   const submitSearch = (e) => {
-    e.preventDefault();
-    if (typeof onSearch === 'function') onSearch(q);
-    setShowSearch(false);
+    e?.preventDefault?.();
+    const trimmed = (q || "").trim();
+    // call optional callback
+    if (typeof onSearch === "function") onSearch(trimmed);
+    // navigate (empty -> /explore)
+    if (!trimmed) navigate("/explore");
+    else navigate(`/explore?q=${encodeURIComponent(trimmed)}`);
   };
 
-  const avatarLetter = (profile?.username || session?.user?.email || 'U')[0]?.toUpperCase() || 'U';
-
-  // called by modal when profile is updated
-  const handleProfileUpdated = (updatedProfile) => {
-    setProfile((p) => ({ ...(p || {}), ...updatedProfile }));
+  const clearSearch = (e) => {
+    e?.preventDefault?.();
+    setQ("");
+    // optionally call onSearch with empty string
+    if (typeof onSearch === "function") onSearch("");
+    // keep focus in the input after clearing
+    const el = document.querySelector(".og-search input");
+    if (el) el.focus();
   };
+
+  const avatarLetter =
+    (profile?.username || session?.user?.email || "U")[0]?.toUpperCase() || "U";
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/auth";
+  };
+
+  const headerClassName = `og-header ${isHomePage ? "" : "og-header--scrollable"} ${
+    isHidden ? "og-header--hidden" : ""
+  }`;
 
   return (
     <>
-      <header className="og-header" role="banner">
+      <header className={headerClassName}>
         <div className="og-header-left">
-          <Link to="/" className="og-logo" aria-label="Go to home">
-            <div className="og-logo-mark" aria-hidden>O</div>
-            <div className="og-logo-text">OGONJO <span style={{ fontWeight: 400 }}>Summaries</span></div>
-          </Link>
-
-          <form
-            onSubmit={submitSearch}
-            className={`og-search ${showSearch ? 'og-search--visible' : ''}`}
-            role="search"
-            aria-label="Search summaries"
+          <button
+            className="icon-btn mobile-menu-toggle"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Toggle menu"
           >
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search summaries, author..."
-              aria-label="Search summaries"
-            />
-          </form>
+            ☰
+          </button>
+          <Link to="/" className="og-logo" aria-label="Home">
+            <div className="og-logo-mark">O</div>
+            <div className="og-logo-text">OGONJO</div>
+          </Link>
         </div>
+
+        {/* Search area */}
+        <form onSubmit={submitSearch} className="og-search" role="search" aria-label="Site search">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search summaries (title, author, text)..."
+            aria-label="Search summaries"
+            autoComplete="off"
+            className="search-input"
+          />
+
+          {/* Clear button (only visible when there's text) */}
+          {q && q.length > 0 && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={clearSearch}
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+
+          {/* Submit/search button */}
+          <button type="submit" className="search-btn" aria-label="Submit search">
+            {/* simple svg icon (magnifier) */}
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM10 15.5A5.5 5.5 0 1110 4.5a5.5 5.5 0 010 11z"/>
+            </svg>
+          </button>
+        </form>
 
         <div className="og-header-right">
-          <button
-            className="icon-btn search-toggle"
-            aria-label={showSearch ? 'Close search' : 'Open search'}
-            onClick={() => setShowSearch((s) => !s)}
-            title="Search"
-          >
-            🔍
-          </button>
-
-          <button className="create-button" onClick={onAddClick}>+ Add Summary</button>
-
-          {session ? (
-            <>
-              <button
-                className="profile-button"
-                onClick={() => setShowProfileModal(true)}
-                aria-haspopup="dialog"
-                aria-expanded={showProfileModal}
-                title="Open profile"
-              >
-                <span className="letter-avatar" aria-hidden>{avatarLetter}</span>
-                <span className="profile-name">{profile?.username || 'Profile'}</span>
-              </button>
-
-              <button
-                className="logout-button"
-                onClick={async () => { await supabase.auth.signOut(); window.location.href = '/auth'; }}
-              >
-                Sign Out
-              </button>
-            </>
-          ) : (
-            <Link to="/auth" className="sign-in-link">Sign In</Link>
-          )}
+          <div className="og-actions-desktop">
+            {session ? (
+              <>
+                <button
+                  className="profile-button"
+                  onClick={() => setShowProfileModal(true)}
+                >
+                  <span className="letter-avatar">{avatarLetter}</span>
+                  <span className="profile-name">{profile?.username || "Profile"}</span>
+                </button>
+                <button className="logout-button" onClick={handleSignOut}>
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <Link to="/auth" className="sign-in-link">Sign In</Link>
+            )}
+            <button className="create-button" onClick={onAddClick}>+ Add Summary</button>
+            <Link to="/subscribe" className="subscribe-button">Subscribe</Link>
+          </div>
         </div>
       </header>
+
+      {menuOpen && (
+        <>
+          <div className="mobile-menu-left">
+            <button
+              className="mobile-menu-close"
+              onClick={() => setMenuOpen(false)}
+              aria-label="Close menu"
+            >
+              ✕
+            </button>
+
+            {session ? (
+              <>
+                <button
+                  onClick={() => {
+                    setShowProfileModal(true);
+                    setMenuOpen(false);
+                  }}
+                >
+                  Profile
+                </button>
+                <button
+                  onClick={() => {
+                    handleSignOut();
+                    setMenuOpen(false);
+                  }}
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <Link to="/auth" onClick={() => setMenuOpen(false)}>Sign In</Link>
+            )}
+
+            <button
+              onClick={() => {
+                onAddClick();
+                setMenuOpen(false);
+              }}
+            >
+              + Add Summary
+            </button>
+            <Link to="/subscribe" onClick={() => setMenuOpen(false)}>Subscribe</Link>
+          </div>
+
+          <div
+            className="overlay"
+            onClick={() => setMenuOpen(false)}
+          />
+        </>
+      )}
 
       {showProfileModal && session && (
         <UserProfileModal
           onClose={() => setShowProfileModal(false)}
-          onUpdated={handleProfileUpdated}
+          onUpdated={(updatedProfile) =>
+            setProfile((p) => ({ ...(p || {}), ...updatedProfile }))
+          }
         />
       )}
     </>

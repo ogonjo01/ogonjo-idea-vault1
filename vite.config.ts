@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
       mode === 'development' && componentTagger(),
     ].filter(Boolean),
     optimizeDeps: {
-      include: ['react-quill', 'quill-table'],
+      include: ['react-quill', 'quill', 'prop-types', 'quill-table'],
     },
     build: {
       outDir: 'dist',

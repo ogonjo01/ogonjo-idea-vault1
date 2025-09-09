@@ -1,4 +1,3 @@
-// src/components/ExplorePage/ExplorePage.jsx
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
@@ -53,9 +52,8 @@ const ExplorePage = () => {
   const q = useQuery();
   const rawCategory = q.get('category') || '';
   const sortType = (q.get('sort') || 'newest').toLowerCase();
+  const searchTerm = (q.get('q') || q.get('search') || '').trim();
 
-  // URLSearchParams already percent-decodes, so avoid decodeURIComponent.
-  // Normalize: trim and ensure empty string if not provided.
   const category = (rawCategory || '').trim();
 
   const [items, setItems] = useState([]);
@@ -79,17 +77,76 @@ const ExplorePage = () => {
       setLoading(true);
       setError(null);
 
-      // build base query
-      let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS, { count: 'exact' });
-
-      // Use exact (case-insensitive) match for category — avoid substring matches.
-      // If you prefer strict case-sensitive matching, replace ilike with eq.
-      if (category) {
-        query = query.ilike('category', category); // exact-ish, case-insensitive
-      }
-
       try {
-        console.debug('[ExplorePage] fetchItems category=', category, 'offset=', pageOffset, 'sort=', sortType);
+        // SEARCH MODE
+        if (searchTerm) {
+          // Try RPC search first (fast / full-text if you have it). Fallback to ilike OR if RPC unavailable.
+          try {
+            const lim = 500; // get up to 500 results and paginate client-side
+            const rpcRes = await supabase.rpc('book_summaries_search_prefix', { q: searchTerm, lim });
+            if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+              const all = (rpcRes.data || []).map(normalizeRow);
+              // client-side sort + paginate
+              const sorted = all.sort((a, b) => {
+                if (sortType === 'views') return (b.views_count || 0) - (a.views_count || 0);
+                if (sortType === 'likes') return (b.likes_count || 0) - (a.likes_count || 0);
+                return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+              });
+              const slice = sorted.slice(pageOffset, pageOffset + ITEMS_PER_PAGE);
+              if (mountedRef.current) {
+                setItems((prev) => (append ? [...prev, ...slice] : slice));
+                setOffset(pageOffset + slice.length);
+                setHasMore(pageOffset + slice.length < sorted.length);
+              }
+              return;
+            }
+            // if rpc returned an error, fall through to fallback
+            console.debug('[ExplorePage] RPC search not available or returned error, using fallback.');
+          } catch (rpcErr) {
+            console.debug('[ExplorePage] RPC search threw:', rpcErr);
+            // continue to fallback
+          }
+
+          // FALLBACK: ilike OR across title / author / summary
+          try {
+            const pattern = `%${searchTerm}%`;
+            // build OR clause
+            const { data, error } = await supabase
+              .from('book_summaries')
+              .select(SELECT_WITH_COUNTS)
+              .or(`title.ilike.${pattern},author.ilike.${pattern},summary.ilike.${pattern}`)
+              .range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
+
+            if (error) throw error;
+            const normalized = (data || []).map(normalizeRow);
+            const sortedRows = normalized.sort((a, b) => {
+              if (sortType === 'views') return (b.views_count || 0) - (a.views_count || 0);
+              if (sortType === 'likes') return (b.likes_count || 0) - (a.likes_count || 0);
+              return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+            });
+
+            if (mountedRef.current) {
+              if (append) setItems((prev) => [...prev, ...sortedRows]);
+              else setItems(sortedRows);
+              setOffset(pageOffset + (data?.length || 0));
+              setHasMore((data?.length || 0) === ITEMS_PER_PAGE);
+            }
+            return;
+          } catch (err) {
+            console.error('Explore search fallback error:', err);
+            if (mountedRef.current) setError('Search failed.');
+            return;
+          }
+        }
+
+        // NON-SEARCH MODE: normal category/sort browsing
+        let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS, { count: 'exact' });
+
+        if (category) {
+          // use exact match for category. If you want partial/case-insensitive use ilike with `%${category}%`
+          query = query.eq('category', category);
+        }
+
         const { data, error } = await query.range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
         if (error) throw error;
 
@@ -117,16 +174,17 @@ const ExplorePage = () => {
         if (mountedRef.current) setLoading(false);
       }
     },
-    [category, sortType]
+    [category, sortType, searchTerm]
   );
 
   useEffect(() => {
+    // reset when query / category / sort change
     setItems([]);
     setOffset(0);
     setHasMore(true);
     fetchItems(0, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, sortType, fetchItems]);
+  }, [category, sortType, searchTerm]);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -144,6 +202,7 @@ const ExplorePage = () => {
   }, [hasMore, loading, offset, fetchItems]);
 
   const getTitle = () => {
+    if (searchTerm) return `Search: "${searchTerm}"`;
     const sortTitle = { views: 'Most Viewed', likes: 'Most Liked', newest: 'Newest' };
     return `${sortTitle[sortType] || sortType}${category ? `: ${category}` : ''}`;
   };
