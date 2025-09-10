@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from './supabase/supabaseClient';
@@ -18,6 +17,7 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import FAQ from "./pages/FAQ";
 import Footer from './components/Footer';
+import SubscriptionPopup from './components/SubscriptionPopup/SubscriptionPopup';
 import './App.css';
 
 const AppInner = ({ session }) => {
@@ -36,6 +36,7 @@ const AppInner = ({ session }) => {
   const [editingSummary, setEditingSummary] = useState(null);
   const isHomePage = location.pathname === '/';
   const [headerHidden, setHeaderHidden] = useState(false);
+  const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
     setSelectedCategory(getCategoryFromSearch());
@@ -45,14 +46,11 @@ const AppInner = ({ session }) => {
     let lastScrollY = window.scrollY;
 
     const handleScroll = () => {
-      // The header is always fixed on the homepage, no need to hide
       if (isHomePage) {
         setHeaderHidden(false);
         return;
       }
-      
       const currentScrollY = window.scrollY;
-      // Hide globals as soon as scrolled away from top (position-based, not direction-based)
       setHeaderHidden(currentScrollY > 0);
       lastScrollY = currentScrollY;
     };
@@ -60,6 +58,11 @@ const AppInner = ({ session }) => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isHomePage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowPopup(true), 10000); // Show popup after 10 seconds
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleNavClick = useCallback((category) => {
     const cat = category || 'For You';
@@ -122,7 +125,6 @@ const AppInner = ({ session }) => {
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
           <Route path="/subscribe" element={<SubscriptionPage />} />
         </Routes>
 
@@ -136,7 +138,11 @@ const AppInner = ({ session }) => {
           />
         )}
       </main>
+
+      {/* Footer */}
       <Footer />
+
+      {showPopup && <SubscriptionPopup onClose={() => setShowPopup(false)} />}
     </div>
   );
 };

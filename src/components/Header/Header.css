@@ -336,10 +336,10 @@
   align-items: center;
   justify-content: center;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid transparent;
-  background: #addcb5; /* adjust to match theme */
-  color: #010f18;
+  background: #e6e6e6; /* adjust to match theme */
+  color: #000000;
   cursor: pointer;
 }
 @media (max-width: 640px) {

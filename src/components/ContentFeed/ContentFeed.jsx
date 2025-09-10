@@ -1,11 +1,8 @@
 // src/components/ContentFeed/ContentFeed.jsx
-// Modified: Added <Ad /> after each HorizontalCarousel section.
-// For category blocks and specific categories, ads after each sub-section (newest, most liked, etc.).
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../supabase/supabaseClient';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
-import Ad from '../Ad/Ad'; // New import for ads
 import './ContentFeed.css';
 
 const ITEMS_PER_CAROUSEL = 12;
@@ -326,7 +323,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         return;
       }
 
-      // SPECIFIC CATEGORY (shows placeholder then heavy replace — already fast)
+      // SPECIFIC CATEGORY PAGE
       const specific = selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All';
       if (specific) {
         const start = Date.now();
@@ -438,34 +435,19 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   const isForYou = selectedCategory === 'For You' || selectedCategory === 'All';
 
-  // Helper to render a carousel with ad after it
-  const renderCarouselWithAd = (title, items, loading, skeletonCount, viewAllLink, slot = 'feed') => (
-    <>
-      <HorizontalCarousel
-        title={title}
-        items={items}
-        loading={loading}
-        skeletonCount={skeletonCount}
-        viewAllLink={viewAllLink}
-      >
-        {renderCards(items)}
-      </HorizontalCarousel>
-      <Ad slot={slot} />
-    </>
-  );
-
   return (
     <div className="content-feed-root">
       {/* SEARCH */}
       {searchQuery && searchQuery.trim() && (
-        renderCarouselWithAd(
-          `Search results for "${searchQuery}"`,
-          globalContent.newest,
-          loadingGlobal,
-          6,
-          `/explore?q=${encodeURIComponent(searchQuery)}`,
-          'search'
-        )
+        <HorizontalCarousel
+          title={`Search results for "${searchQuery}"`}
+          items={globalContent.newest}
+          loading={loadingGlobal}
+          skeletonCount={6}
+          viewAllLink={`/explore?q=${encodeURIComponent(searchQuery)}`}
+        >
+          {renderCards(globalContent.newest)}
+        </HorizontalCarousel>
       )}
 
       {/* SPECIFIC CATEGORY PAGE */}
@@ -480,13 +462,17 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             };
             const items = loadedCategoryBlocks[0][k];
             const sortKey = k === 'newest' ? 'newest' : (k === 'mostLiked' ? 'likes' : (k === 'highestRated' ? 'rating' : 'views'));
-            return renderCarouselWithAd(
-              titleMap[k],
-              items,
-              loadingGlobal,
-              6,
-              `/explore?sort=${sortKey}&category=${encodeURIComponent(loadedCategoryBlocks[0].category)}`,
-              `category-${k}`
+            return (
+              <HorizontalCarousel
+                key={k}
+                title={titleMap[k]}
+                items={items}
+                loading={loadingGlobal}
+                skeletonCount={6}
+                viewAllLink={`/explore?sort=${sortKey}&category=${encodeURIComponent(loadedCategoryBlocks[0].category)}`}
+              >
+                {renderCards(items)}
+              </HorizontalCarousel>
             );
           })}
         </div>
@@ -495,10 +481,42 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       {/* FOR YOU / ALL */}
       {isForYou && !searchQuery && (
         <>
-          {renderCarouselWithAd("Newest", globalContent.newest, loadingGlobal, 6, "/explore?sort=newest", "newest")}
-          {renderCarouselWithAd("Most Liked", globalContent.mostLiked, loadingGlobal, 6, "/explore?sort=likes", "most-liked")}
-          {renderCarouselWithAd("Most Rated", globalContent.highestRated, loadingGlobal, 6, "/explore?sort=rating", "most-rated")}
-          {renderCarouselWithAd("Most Viewed", globalContent.mostViewed, loadingGlobal, 6, "/explore?sort=views", "most-viewed")}
+          <HorizontalCarousel
+            title="Newest"
+            items={globalContent.newest}
+            loading={loadingGlobal}
+            skeletonCount={6}
+            viewAllLink="/explore?sort=newest"
+          >
+            {renderCards(globalContent.newest)}
+          </HorizontalCarousel>
+          <HorizontalCarousel
+            title="Most Liked"
+            items={globalContent.mostLiked}
+            loading={loadingGlobal}
+            skeletonCount={6}
+            viewAllLink="/explore?sort=likes"
+          >
+            {renderCards(globalContent.mostLiked)}
+          </HorizontalCarousel>
+          <HorizontalCarousel
+            title="Most Rated"
+            items={globalContent.highestRated}
+            loading={loadingGlobal}
+            skeletonCount={6}
+            viewAllLink="/explore?sort=rating"
+          >
+            {renderCards(globalContent.highestRated)}
+          </HorizontalCarousel>
+          <HorizontalCarousel
+            title="Most Viewed"
+            items={globalContent.mostViewed}
+            loading={loadingGlobal}
+            skeletonCount={6}
+            viewAllLink="/explore?sort=views"
+          >
+            {renderCards(globalContent.mostViewed)}
+          </HorizontalCarousel>
 
           {loadedCategoryBlocks.map((block) => (
             <section className="category-block" key={block.category}>
@@ -507,13 +525,42 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 <a className="cat-viewall" href={`/explore?category=${encodeURIComponent(block.category)}`}>View all</a>
               </div>
 
-              {renderCarouselWithAd(`Newest in ${block.category}`, block.newest, loadingGlobal, 4, null, `cat-${block.category}-newest`)}
-              {renderCarouselWithAd(`Most Liked in ${block.category}`, block.mostLiked, loadingGlobal, 4, null, `cat-${block.category}-liked`)}
-              {renderCarouselWithAd(`Highest Rated in ${block.category}`, block.highestRated, loadingGlobal, 4, null, `cat-${block.category}-rated`)}
-              {renderCarouselWithAd(`Most Viewed in ${block.category}`, block.mostViewed, loadingGlobal, 4, null, `cat-${block.category}-viewed`)}
-
-              {/* Optional: Ad after entire category block for extra monetization */}
-              <Ad slot={`category-block-${block.category}`} className="full-width-ad" />
+              <HorizontalCarousel
+                title={`Newest in ${block.category}`}
+                items={block.newest}
+                loading={loadingGlobal}
+                skeletonCount={4}
+                viewAllLink={`/explore?sort=newest&category=${encodeURIComponent(block.category)}`}
+              >
+                {renderCards(block.newest)}
+              </HorizontalCarousel>
+              <HorizontalCarousel
+                title={`Most Liked in ${block.category}`}
+                items={block.mostLiked}
+                loading={loadingGlobal}
+                skeletonCount={4}
+                viewAllLink={`/explore?sort=likes&category=${encodeURIComponent(block.category)}`}
+              >
+                {renderCards(block.mostLiked)}
+              </HorizontalCarousel>
+              <HorizontalCarousel
+                title={`Highest Rated in ${block.category}`}
+                items={block.highestRated}
+                loading={loadingGlobal}
+                skeletonCount={4}
+                viewAllLink={`/explore?sort=rating&category=${encodeURIComponent(block.category)}`}
+              >
+                {renderCards(block.highestRated)}
+              </HorizontalCarousel>
+              <HorizontalCarousel
+                title={`Most Viewed in ${block.category}`}
+                items={block.mostViewed}
+                loading={loadingGlobal}
+                skeletonCount={4}
+                viewAllLink={`/explore?sort=views&category=${encodeURIComponent(block.category)}`}
+              >
+                {renderCards(block.mostViewed)}
+              </HorizontalCarousel>
             </section>
           ))}
 
