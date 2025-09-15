@@ -57,6 +57,7 @@ const categories = [
 ];
 
 
+
 const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState(''); // New state for the generated slug
