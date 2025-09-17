@@ -49,3 +49,25 @@ body.scroll-hide-global .category-filter-container {
   opacity: 0;
   pointer-events: none;
 }
+/* Table styling for summaries */
+.summary-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+.summary-content th,
+.summary-content td {
+  border: 1px solid #333;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.summary-content th {
+  background-color: #f0f0f0;
+  font-weight: bold;
+}
+
+.summary-content td {
+  background-color: #fff;
+}

@@ -60,7 +60,19 @@ const AppInner = ({ session }) => {
   }, [isHomePage]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowPopup(true), 10000); // Show popup after 10 seconds
+    const checkPopup = () => {
+      const subscribedAt = localStorage.getItem('subscribedAt');
+      const dismissedAt = localStorage.getItem('popupDismissedAt');
+      const now = Date.now();
+      const popupDelay = 4 * 24 * 60 * 60 * 1000; // 4 days in milliseconds
+
+      if (subscribedAt) return; // Don't show if subscribed
+      if (!dismissedAt || now - parseInt(dismissedAt) > popupDelay) {
+        setShowPopup(true); // Show if never dismissed or 4+ days since dismissal
+      }
+    };
+
+    const timer = setTimeout(checkPopup, 10000); // Show after 10 seconds
     return () => clearTimeout(timer);
   }, []);
 
@@ -74,7 +86,7 @@ const AppInner = ({ session }) => {
   const handleSearch = useCallback((query) => {
     setSearchQuery(query);
     setSelectedCategory('');
-    navigate(`/` + (query ? `?q=${encodeURIComponent(query)}` : ''), { replace: false });
+    navigate(query ? `/?q=${encodeURIComponent(query)}` : '/', { replace: false });
   }, [navigate]);
 
   const handleEdit = (summary) => {
@@ -117,7 +129,6 @@ const AppInner = ({ session }) => {
           <Route path="/auth" element={!session ? <AuthForm /> : <p className="logged-in-message">You are already logged in!</p>} />
           <Route path="/profile/:userId" element={<UserProfile onEdit={handleEdit} onDelete={handleDelete} />} />
           <Route path="/summary/:param" element={<SummaryView />} />
-
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/features" element={<Features />} />
           <Route path="/contact" element={<Contact />} />
@@ -139,7 +150,6 @@ const AppInner = ({ session }) => {
         )}
       </main>
 
-      {/* Footer */}
       <Footer />
 
       {showPopup && <SubscriptionPopup onClose={() => setShowPopup(false)} />}

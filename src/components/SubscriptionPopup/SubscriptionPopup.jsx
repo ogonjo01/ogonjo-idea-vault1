@@ -1,4 +1,3 @@
-// src/components/SubscriptionPopup/SubscriptionPopup.jsx
 import React, { useState, useEffect } from "react";
 import { Mail, Check, Star, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -13,11 +12,16 @@ const SubscriptionPopup = ({ onClose }) => {
   // Close popup on Escape key
   useEffect(() => {
     const handleEscape = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
+  }, []);
+
+  const handleClose = () => {
+    localStorage.setItem('popupDismissedAt', Date.now()); // Store dismissal timestamp
+    onClose();
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,8 +44,9 @@ const SubscriptionPopup = ({ onClose }) => {
 
       if (response.ok) {
         setMessage('🎉 Subscribed! Check your inbox for confirmation.');
+        localStorage.setItem('subscribedAt', Date.now()); // Store subscription timestamp
         setEmail('');
-        setTimeout(onClose, 3000); // Auto-close after success
+        setTimeout(handleClose, 3000); // Auto-close after success
       } else {
         setError('Oops! ' + (data?.message || 'Try again.'));
       }
@@ -59,7 +64,7 @@ const SubscriptionPopup = ({ onClose }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <motion.div
         className="sp-popup"
@@ -69,7 +74,7 @@ const SubscriptionPopup = ({ onClose }) => {
         transition={{ duration: 0.3 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <button className="sp-popup-close" onClick={onClose}>
+        <button className="sp-popup-close" onClick={handleClose}>
           <X size={20} />
         </button>
 

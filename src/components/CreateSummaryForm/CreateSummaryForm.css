@@ -7,9 +7,9 @@
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   justify-content: center;
-  align-items: center; /* keep modal centered vertically */
-  z-index: 2000; /* above header + category */
-  padding: 20px; /* small breathing room */
+  align-items: center;
+  z-index: 2000;
+  padding: 20px;
 }
 
 .modal-content {
@@ -19,17 +19,16 @@
   max-width: 800px;
   width: 90%;
   position: relative;
-  max-height: 90vh; /* ensures modal fits in viewport */
-  overflow-y: auto; /* scroll inside if content is tall */
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 8px 30px rgba(0,0,0,0.2);
 }
 
-
 .close-button {
-  position: fixed;      
-  top: 20px;            
+  position: fixed;
+  top: 20px;
   right: 30px;
-  background: white;    
+  background: white;
   border: none;
   border-radius: 50%;
   width: 36px;
@@ -38,7 +37,7 @@
   font-weight: bold;
   cursor: pointer;
   color: #333;
-  z-index: 2100;        
+  z-index: 2100;
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
@@ -94,6 +93,17 @@
   min-height: 200px;
   margin-bottom: 1rem;
 }
+
+/* Make toolbar sticky */
+.ql-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1px solid #ccc;
+}
+
+/* Slug preview */
 .slug-preview {
   display: block;
   font-size: 0.85em;
@@ -101,6 +111,7 @@
   margin-top: 2px;
   font-family: monospace;
 }
+
 .slug-preview code {
   background: #f4f4f4;
   padding: 2px 4px;

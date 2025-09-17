@@ -17,10 +17,10 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
       if (!session) return setProfile(null);
       const { data } = await supabase
         .from("profiles")
-        .select("username")
+        .select("username, can_add_summary")
         .eq("id", session.user.id)
         .maybeSingle();
-      if (mounted) setProfile(data || { username: null });
+      if (mounted) setProfile(data || { username: null, can_add_summary: false });
     };
     fetchProfile();
     return () => { mounted = false; };
@@ -29,9 +29,7 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
   const submitSearch = (e) => {
     e?.preventDefault?.();
     const trimmed = (q || "").trim();
-    // call optional callback
     if (typeof onSearch === "function") onSearch(trimmed);
-    // navigate (empty -> /explore)
     if (!trimmed) navigate("/explore");
     else navigate(`/explore?q=${encodeURIComponent(trimmed)}`);
   };
@@ -39,9 +37,7 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
   const clearSearch = (e) => {
     e?.preventDefault?.();
     setQ("");
-    // optionally call onSearch with empty string
     if (typeof onSearch === "function") onSearch("");
-    // keep focus in the input after clearing
     const el = document.querySelector(".og-search input");
     if (el) el.focus();
   };
@@ -75,7 +71,6 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
           </Link>
         </div>
 
-        {/* Search area */}
         <form onSubmit={submitSearch} className="og-search" role="search" aria-label="Site search">
           <input
             value={q}
@@ -85,22 +80,12 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
             autoComplete="off"
             className="search-input"
           />
-
-          {/* Clear button (only visible when there's text) */}
           {q && q.length > 0 && (
-            <button
-              type="button"
-              className="search-clear"
-              onClick={clearSearch}
-              aria-label="Clear search"
-            >
+            <button type="button" className="search-clear" onClick={clearSearch} aria-label="Clear search">
               ×
             </button>
           )}
-
-          {/* Submit/search button */}
           <button type="submit" className="search-btn" aria-label="Submit search">
-            {/* simple svg icon (magnifier) */}
             <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM10 15.5A5.5 5.5 0 1110 4.5a5.5 5.5 0 010 11z"/>
             </svg>
@@ -111,21 +96,23 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
           <div className="og-actions-desktop">
             {session ? (
               <>
-                <button
-                  className="profile-button"
-                  onClick={() => setShowProfileModal(true)}
-                >
+                <button className="profile-button" onClick={() => setShowProfileModal(true)}>
                   <span className="letter-avatar">{avatarLetter}</span>
                   <span className="profile-name">{profile?.username || "Profile"}</span>
                 </button>
-                <button className="logout-button" onClick={handleSignOut}>
-                  Sign Out
-                </button>
+                <button className="logout-button" onClick={handleSignOut}>Sign Out</button>
+
+                {/* Only show Add Summary if user can_add_summary is true */}
+                {profile?.can_add_summary && (
+                  <button className="create-button" onClick={onAddClick}>
+                    + Add Summary
+                  </button>
+                )}
               </>
             ) : (
               <Link to="/auth" className="sign-in-link">Sign In</Link>
             )}
-            <button className="create-button" onClick={onAddClick}>+ Add Summary</button>
+
             <Link to="/subscribe" className="subscribe-button">Subscribe</Link>
           </div>
         </div>
@@ -134,52 +121,26 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
       {menuOpen && (
         <>
           <div className="mobile-menu-left">
-            <button
-              className="mobile-menu-close"
-              onClick={() => setMenuOpen(false)}
-              aria-label="Close menu"
-            >
-              ✕
-            </button>
+            <button className="mobile-menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">✕</button>
 
             {session ? (
               <>
-                <button
-                  onClick={() => {
-                    setShowProfileModal(true);
-                    setMenuOpen(false);
-                  }}
-                >
-                  Profile
-                </button>
-                <button
-                  onClick={() => {
-                    handleSignOut();
-                    setMenuOpen(false);
-                  }}
-                >
-                  Sign Out
-                </button>
+                <button onClick={() => { setShowProfileModal(true); setMenuOpen(false); }}>Profile</button>
+                <button onClick={() => { handleSignOut(); setMenuOpen(false); }}>Sign Out</button>
+
+                {profile?.can_add_summary && (
+                  <button onClick={() => { onAddClick(); setMenuOpen(false); }}>
+                    + Add Summary
+                  </button>
+                )}
               </>
             ) : (
               <Link to="/auth" onClick={() => setMenuOpen(false)}>Sign In</Link>
             )}
 
-            <button
-              onClick={() => {
-                onAddClick();
-                setMenuOpen(false);
-              }}
-            >
-              + Add Summary
-            </button>
             <Link to="/subscribe" onClick={() => setMenuOpen(false)}>Subscribe</Link>
           </div>
-
-          <div
-            className="overlay"
-            onClick={() => setMenuOpen(false)}
-          />
+          <div className="overlay" onClick={() => setMenuOpen(false)} />
         </>
       )}
 

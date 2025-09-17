@@ -1,66 +1,51 @@
-// src/components/CreateSummaryForm/CreateSummaryForm.jsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase/supabaseClient';
-import ReactQuill from 'react-quill';
+import ReactQuill, { Quill } from 'react-quill';
 import 'quill/dist/quill.snow.css';
-import slugify from 'slugify'; // New import for slug generation
-
+import slugify from 'slugify';
 import './CreateSummaryForm.css';
 
-// src/components/CreateSummaryForm/CreateSummaryForm.jsx
+// Custom clipboard handler to parse tab-separated text into tables
+const Clipboard = Quill.import('modules/clipboard');
+const Delta = Quill.import('delta');
+
+class CustomClipboard extends Clipboard {
+  onPaste(e) {
+    if (e.clipboardData && e.clipboardData.getData('text/plain')) {
+      const text = e.clipboardData.getData('text/plain');
+      const lines = text.split('\n').filter(line => line.trim());
+      if (lines.length > 1 && lines.every(line => line.includes('\t'))) {
+        e.preventDefault();
+        const tableDelta = new Delta();
+        tableDelta.insert({ table: true }); // Start table
+        lines.forEach(line => {
+          const cells = line.split('\t').map(cell => cell.trim());
+          tableDelta.insert({ 'table-row': cells });
+        });
+        tableDelta.insert({ 'table-end': true });
+        this.quill.updateContents(tableDelta, 'user');
+        return;
+      }
+    }
+    super.onPaste(e);
+  }
+}
+
+Quill.register('modules/clipboard', CustomClipboard, true);
 
 const categories = [
-  'Retail & E-Commerce',
-  'Food & Beverage',
-  'Health & Wellness',
-  'Sustainability & Eco-Friendly',
-  'Personal Services',
-  'Construction & Renovation',
-  'Transportation & Logistics',
-  'Entertainment & Recreation',
-  'Beauty & Personal Care',
-  'Technology & Innovation',
-  'Sports & Recreation',
-  'Real Estate & Property Management',
-  'Arts & Crafts',
-  'Event Planning & Management',
-  'Agriculture & Farming',
-  'Cleaning & Maintenance',
-  'Transportation & Delivery',
-  'Technology & Electronics',
-  'Pets & Animal Services',
-  'Professional Services',
-  'Home Services',
-  'Fashion & Apparel',
-  'Technology Services',
-  'Tourism & Travel',
-  'Fitness & Sports',
-  'Education & Training',
-  'Media & Publishing',
-  'Home Improvement & Repair',
-  'Wellness & Personal Care',
-  'Automotive Services',
-  'Construction & Contracting',
-  'Health & Medical Services',
-  'Outdoor & Adventure',
-  'Entertainment & Leisure',
-  'Agriculture & Gardening',
-  'Specialty Retail',
-  'Environmental & Green Businesses',
-  'Miscellaneous Ideas',
-  'Community & Social Services',
-  'Sports & Fitness',
-  'Specialized Repair & Maintenance',
-  'Food & Beverage Production',
-  'Transportation Enhancements',
+  "Vision & Strategy (CEO's)",
+  "Product & Innovation (CPO's)",
+  "Marketing & Brand (CMO's)",
+  "Sales & Revenue (CRO's)",
+  "Operations & Delivery (COO's)",
+  "Finance & Accounting (CFO's)",
+  "People & Culture (CHRO's)",
 ];
-
-
 
 const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [title, setTitle] = useState('');
-  const [slug, setSlug] = useState(''); // New state for the generated slug
+  const [slug, setSlug] = useState('');
   const [author, setAuthor] = useState('');
   const [summaryText, setSummaryText] = useState('');
   const [category, setCategory] = useState(categories[0]);
@@ -68,10 +53,16 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [affiliateLink, setAffiliateLink] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Auto-generate slug from title whenever title changes
+  const quillRef = useRef(null);
+
+  // Auto-generate slug
   useEffect(() => {
     if (title.trim()) {
-      const generatedSlug = slugify(title, { lower: true, strict: true }); // e.g., "The Great Gatsby" -> "the-great-gatsby"
+      const generatedSlug = slugify(title, { 
+        lower: true,
+        replacement: "-", 
+        strict: false
+      });
       setSlug(generatedSlug);
     } else {
       setSlug('');
@@ -95,18 +86,16 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
 
     let finalSlug = slug;
 
-    // Check for existing slug and append counter if duplicate
+    // Check for existing slug
     const { data: existing, error: checkError } = await supabase
       .from('book_summaries')
       .select('id')
       .eq('slug', finalSlug)
-      .maybeSingle(); // Use maybeSingle to handle no rows gracefully
+      .maybeSingle();
 
     if (checkError) {
       console.error('Error checking slug:', checkError);
-      // Fall back to original slug if check fails
     } else if (existing) {
-      // Duplicate found; append -2, -3, etc.
       let counter = 2;
       while (true) {
         const candidateSlug = `${slug}-${counter}`;
@@ -125,18 +114,16 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
 
     const { error } = await supabase
       .from('book_summaries')
-      .insert([
-        { 
-          title,
-          author,
-          summary: summaryText, // HTML from Quill
-          category,
-          user_id: user.id,
-          image_url: imageUrl,
-          affiliate_link: affiliateLink,
-          slug: finalSlug // Insert the final slug
-        },
-      ]);
+      .insert([{
+        title,
+        author,
+        summary: summaryText,
+        category,
+        user_id: user.id,
+        image_url: imageUrl,
+        affiliate_link: affiliateLink,
+        slug: finalSlug
+      }]);
 
     setLoading(false);
 
@@ -144,8 +131,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       alert(`Error creating summary: ${error.message}. Please try again.`);
       console.error('Error:', error);
     } else {
-      alert(`Summary created successfully! Suggested URL: https://ogonjo.com/summary/${finalSlug}`);
-      // Reset form if needed
+      alert(`Summary created successfully! URL: https://ogonjo.com/summary/${finalSlug}`);
       setTitle('');
       setAuthor('');
       setSummaryText('');
@@ -153,8 +139,8 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       setImageUrl('');
       setAffiliateLink('');
       setSlug('');
-      onNewSummary();
-      onClose();
+      if (typeof onNewSummary === 'function') onNewSummary();
+      if (typeof onClose === 'function') onClose();
     }
   };
 
@@ -168,7 +154,16 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       ['link', 'image'],
       ['clean'],
     ],
+    clipboard: {
+      matchVisual: false,
+    },
   };
+
+  const quillFormats = [
+    'header', 'bold', 'italic', 'underline', 'strike',
+    'color', 'background', 'list', 'bullet', 'blockquote',
+    'code-block', 'link', 'image', 'table'
+  ];
 
   return (
     <div className="modal-overlay">
@@ -176,7 +171,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         <button className="close-button" onClick={onClose}>&times;</button>
         <h2>Create a New Summary</h2>
         <form onSubmit={handleSubmit} className="summary-form">
-          
           <label htmlFor="title">Title</label>
           <input
             id="title"
@@ -184,6 +178,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
+            aria-label="Summary title"
           />
           {slug && (
             <small className="slug-preview">
@@ -198,6 +193,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             value={author}
             onChange={(e) => setAuthor(e.target.value)}
             required
+            aria-label="Author name"
           />
 
           <label htmlFor="category">Category</label>
@@ -206,20 +202,12 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             required
+            aria-label="Select category"
           >
             {categories.map(cat => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
-
-          <label htmlFor="summaryText">Summary</label>
-          <ReactQuill
-            id="summaryText"
-            value={summaryText}
-            onChange={setSummaryText}
-            modules={quillModules}
-            theme="snow"
-          />
 
           <label htmlFor="imageUrl">Book Cover Image URL</label>
           <input
@@ -228,6 +216,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
             placeholder="e.g., https://example.com/cover.jpg"
+            aria-label="Book cover image URL"
           />
 
           <label htmlFor="affiliateLink">Affiliate Link</label>
@@ -237,7 +226,21 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             value={affiliateLink}
             onChange={(e) => setAffiliateLink(e.target.value)}
             placeholder="e.g., https://amazon.com/book123"
+            aria-label="Affiliate link"
           />
+
+          <label htmlFor="summaryText">Summary</label>
+          <div className="quill-container">
+            <ReactQuill
+              ref={quillRef}
+              id="summaryText"
+              value={summaryText}
+              onChange={setSummaryText}
+              modules={quillModules}
+              formats={quillFormats}
+              theme="snow"
+            />
+          </div>
 
           <button type="submit" disabled={loading}>
             {loading ? 'Submitting...' : 'Submit Summary'}

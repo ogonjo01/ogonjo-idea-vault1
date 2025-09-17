@@ -487,3 +487,18 @@ html {
 .summary-body a:hover::after {
   opacity: 1;
 }
+
+.summary-body a {
+  color: #28a745 !important;        /* Green for visibility */
+  font-weight: bold !important;     /* Bold */
+  font-style: italic !important;    /* Italic for extra emphasis */
+  font-size: 1.1em;                 /* Slightly larger */
+  font-family: 'Inter', sans-serif; /* Clean, fast-to-read font */
+  text-decoration: none;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.summary-body a:hover {
+  color: #218838 !important;        /* Darker green on hover */
+  transform: scale(1.03);           /* Small zoom effect */
+}
