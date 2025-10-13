@@ -39,6 +39,7 @@ const categories = [
   "Arts & Crafts",
   "Automotive Services",
   "Beauty & Personal Care",
+  "BookTube (YouTube)",
   "Cleaning & Maintenance",
   "Community & Social Services",
   "Construction & Contracting",
