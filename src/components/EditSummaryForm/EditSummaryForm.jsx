@@ -9,6 +9,8 @@ import './EditSummaryForm.css';
 
 const CATEGORIES = [
   "Best Books",
+  "Business Strategy & Systems",
+  "Courses & Learning Paths",
   "Business Ideas",
   "Book Summaries",
   "Entrepreneurship",
