@@ -8,6 +8,7 @@ import 'react-quill/dist/quill.snow.css';
 import './EditSummaryForm.css';
 
 const CATEGORIES = [
+  "Best Books",
   "Business Ideas",
   "Book Summaries",
   "Entrepreneurship",

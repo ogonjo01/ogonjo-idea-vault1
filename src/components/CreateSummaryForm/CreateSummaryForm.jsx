@@ -38,6 +38,7 @@ Quill.register("modules/clipboard", CustomClipboard, true);
 
 // FINAL 10 CATEGORIES
 const categories = [
+  "Best Books",
   "Business Ideas",
   "Book Summaries",
   "Entrepreneurship",
