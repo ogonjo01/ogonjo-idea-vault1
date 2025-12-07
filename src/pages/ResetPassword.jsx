@@ -6,21 +6,22 @@ import "./ResetPassword.css";
 const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
   const [password, setPassword] = useState("");
-  const [accessToken, setAccessToken] = useState(null);
+  const [token, setToken] = useState(null);
   const [email, setEmail] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("access_token");
+    const recoveryToken = params.get("token");
+    const type = params.get("type");
     const userEmail = params.get("email");
 
-    if (!token) {
-      alert("Invalid password reset link.");
+    if (type !== "recovery" || !recoveryToken) {
+      alert("Invalid or expired password reset link.");
       return;
     }
 
-    setAccessToken(token);
+    setToken(recoveryToken);
     if (userEmail) setEmail(userEmail);
   }, []);
 
@@ -30,11 +31,13 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
+      // Set session temporarily using the recovery token
       const { error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
+        refresh_token: token,
       });
       if (sessionError) throw sessionError;
 
+      // Update the password
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
@@ -48,27 +51,29 @@ const ResetPassword = () => {
   };
 
   return (
-    <div className="reset-container">
-      <h2>Set a New Password</h2>
-      <form className="reset-form" onSubmit={handleResetPassword}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="New Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button type="submit" disabled={loading}>
-          {loading ? "Updating..." : "Update Password"}
-        </button>
-      </form>
+    <div className="reset-page">
+      <div className="reset-container">
+        <h2>Set a New Password</h2>
+        <form className="reset-form" onSubmit={handleResetPassword}>
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <input
+            type="password"
+            placeholder="New Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <button type="submit" disabled={loading}>
+            {loading ? "Updating..." : "Update Password"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
