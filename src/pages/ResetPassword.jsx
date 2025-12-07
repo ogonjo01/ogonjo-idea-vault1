@@ -1,7 +1,7 @@
-// src/pages/ResetPassword.jsx
 import React, { useState, useEffect } from "react";
-import { supabase } from "../supabase/supabaseClient"; // make sure path is correct
+import { supabase } from "../supabase/supabaseClient";
 import { useNavigate } from "react-router-dom";
+import "./ResetPassword.css";
 
 const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
@@ -11,7 +11,6 @@ const ResetPassword = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Parse URL parameters
     const params = new URLSearchParams(window.location.search);
     const token = params.get("access_token");
     const userEmail = params.get("email");
@@ -31,18 +30,16 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      // Set the session using the access_token from the link
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
       });
       if (sessionError) throw sessionError;
 
-      // Update the password
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
       alert("Password successfully updated! Please login.");
-      navigate("/login"); // redirect to login page
+      navigate("/login");
     } catch (err) {
       alert(err.message);
     } finally {
@@ -51,15 +48,14 @@ const ResetPassword = () => {
   };
 
   return (
-    <div style={{ maxWidth: "400px", margin: "50px auto", textAlign: "center" }}>
+    <div className="reset-container">
       <h2>Set a New Password</h2>
-      <form onSubmit={handleResetPassword}>
+      <form className="reset-form" onSubmit={handleResetPassword}>
         <input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="auth-input"
           required
         />
         <input
@@ -67,7 +63,6 @@ const ResetPassword = () => {
           placeholder="New Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="auth-input"
           required
         />
         <button type="submit" disabled={loading}>
