@@ -113,7 +113,15 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
               <Link to="/auth" className="sign-in-link">Sign In</Link>
             )}
 
-            <Link to="/subscribe" className="subscribe-button">Subscribe</Link>
+            <a
+  href="https://onjo.gumroad.com"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="subscribe-button"
+>
+  Subscribe
+</a>
+
           </div>
         </div>
       </header>
@@ -138,7 +146,15 @@ const Header = ({ session, onAddClick, onSearch, isHomePage, isHidden }) => {
               <Link to="/auth" onClick={() => setMenuOpen(false)}>Sign In</Link>
             )}
 
-            <Link to="/subscribe" onClick={() => setMenuOpen(false)}>Subscribe</Link>
+            <a
+  href="https://onjo.gumroad.com"
+  target="_blank"
+  rel="noopener noreferrer"
+  onClick={() => setMenuOpen(false)}
+>
+  Subscribe
+</a>
+
           </div>
           <div className="overlay" onClick={() => setMenuOpen(false)} />
         </>

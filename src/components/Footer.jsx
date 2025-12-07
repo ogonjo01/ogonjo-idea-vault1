@@ -1,57 +1,20 @@
-
-
 import { Link } from 'react-router-dom';
-import React, { useState } from 'react';
-import './Footer.css'; // Import the new CSS file
+import React from 'react';
+import './Footer.css'; // Keep your CSS
 
 const Footer = () => {
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage('');
-    setIsSubmitting(true);
-
-    try {
-      // This is the only change you need to make!
-      // Replace the localhost URL with your live Railway URL.
-      const response = await fetch('https://ogonjo-idea-vault1-production.up.railway.app/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setMessage('🎉 You are all set! Check your inbox to confirm.');
-        setEmail('');
-      } else {
-        setMessage(`Oops! ${data.message || 'Something went wrong. Please try again.'}`);
-      }
-    } catch (error) {
-      setMessage('An error occurred. Please check your network and try again.');
-      console.error('Subscription error:', error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
     <footer className="ogonjo-footer">
       <div className="ogonjo-footer-container">
         <div className="ogonjo-footer-grid">
+          
           {/* Logo/Branding Section */}
           <div className="ogonjo-footer-brand">
             <Link to="/">
               <h1>OGONJO</h1>
             </Link>
             <p>
-              Discover a world of books, summaries, and insights. Your journey to knowledge starts here.
+             To become the world’s trusted gateway for business knowledge, tools, and technology that empower entrepreneurs to grow, innovate, and succeed.
             </p>
           </div>
 
@@ -74,30 +37,19 @@ const Footer = () => {
               <Link to="/faq" className="ogonjo-footer-link">FAQ</Link>
             </div>
           </div>
-          
-          {/* Subscription Box */}
+
+          {/* Gumroad Subscription Box */}
           <div className="ogonjo-footer-subscribe">
             <h3>Stay Updated</h3>
             <p>Get the latest book summaries and updates directly to your inbox.</p>
-            <form onSubmit={handleSubmit} className="ogonjo-subscribe-form">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isSubmitting}
-                className="ogonjo-subscribe-input"
-              />
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="ogonjo-subscribe-button"
-              >
-                {isSubmitting ? 'Subscribing...' : 'Subscribe'}
-              </button>
-            </form>
-            {message && <p className="ogonjo-subscribe-message">{message}</p>}
+            <a
+              href="https://onjo.gumroad.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ogonjo-subscribe-button"
+            >
+              Subscribe
+            </a>
           </div>
 
           {/* Social Media */}
@@ -124,6 +76,7 @@ const Footer = () => {
               </a>
             </div>
           </div>
+
         </div>
 
         {/* Copyright */}

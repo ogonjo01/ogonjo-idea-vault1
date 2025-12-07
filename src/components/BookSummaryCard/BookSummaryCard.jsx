@@ -2,15 +2,25 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FaHeart, FaEye, FaComment, FaStar } from 'react-icons/fa';
+import DOMPurify from 'dompurify';
 import './BookSummaryCard.css';
+
+/**
+ * BookSummaryCard: IMPORTANT
+ * - This card will ONLY use `description` for the preview text.
+ * - It will NOT fall back to `summary` (heavy) under any circumstance.
+ */
 
 const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
   const {
     title = 'Untitled',
     author = 'Unknown',
-    summary: text = '',
+    // prefer description for feed preview; do NOT fallback to summary
+    description = '',
+    // keep fullSummary variable but we're not going to use it for preview
+    summary: fullSummary = '',
     id,
-    slug, // New: Destructure slug if available
+    slug, // prefer slug for friendly URLs
     likes_count = 0,
     views_count = 0,
     comments_count = 0,
@@ -18,29 +28,23 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     avg_rating = 0,
   } = summary;
 
-  // Helper to get the dynamic path: prefer slug for SEO, fallback to id for old records
-  const getSummaryPath = (id, slug) => {
-    if (slug) {
-      return `/summary/${slug}`;
-    }
-    // Optional: Simple check if id looks like a UUID (for extra safety, but not required)
-    // const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-    // return isUUID ? `/summary/${id}` : `/summary/${slug || id}`;
-    return `/summary/${id}`;
-  };
-
+  const getSummaryPath = (id, slug) => (slug ? `/summary/${slug}` : `/summary/${id}`);
   const summaryPath = getSummaryPath(id, slug);
 
-  // Function to strip HTML tags and truncate text
-  const cleanText = (html, maxLength = 140) => {
-    if (!html) return '';
-    
-    // Remove HTML tags
-    const clean = html.replace(/<[^>]*>/g, '');
-    
-    // Truncate if needed
-    return clean.length > maxLength ? clean.substring(0, maxLength) + '…' : clean;
+  // sanitize and strip HTML, then truncate
+  const cleanText = (text, maxLength = 140) => {
+    if (!text) return '';
+    // sanitize any HTML (remove tags)
+    const cleaned = DOMPurify.sanitize(String(text || ''), { ALLOWED_TAGS: [] });
+    const stripped = cleaned.replace(/<[^>]*>/g, '').trim();
+    return stripped.length > maxLength ? `${stripped.substring(0, maxLength)}…` : stripped;
   };
+
+  // IMPORTANT: previewText is derived ONLY from description.
+  // If description is empty, show an empty string (no heavy fallback to summary).
+  const previewText = description && String(description).trim()
+    ? cleanText(description, 140)
+    : '';
 
   return (
     <Link to={summaryPath} className="card-link" aria-label={`Open ${title}`}>
@@ -64,7 +68,8 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
           <h3 className="book-title" title={title}>{title}</h3>
           <p className="book-author">by {author}</p>
 
-          <p className="summary-text" aria-hidden>{cleanText(text)}</p>
+          {/* SUMMARY PREVIEW: only description (sanitized & truncated) */}
+          <p className="summary-text" aria-hidden>{previewText}</p>
 
           <div className="card-footer">
             <div className="engagement-item" aria-hidden>

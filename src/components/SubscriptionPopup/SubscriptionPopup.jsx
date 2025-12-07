@@ -5,9 +5,6 @@ import './SubscriptionPopup.css';
 
 const SubscriptionPopup = ({ onClose }) => {
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [error, setError] = useState(null);
 
   // Close popup on Escape key
   useEffect(() => {
@@ -19,43 +16,26 @@ const SubscriptionPopup = ({ onClose }) => {
   }, []);
 
   const handleClose = () => {
-    localStorage.setItem('popupDismissedAt', Date.now()); // Store dismissal timestamp
+    localStorage.setItem('popupDismissedAt', Date.now());
     onClose();
   };
 
-  const submit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setMessage(null);
-    setError(null);
+
     if (!email || email.indexOf('@') === -1) {
-      setError('Please enter a valid email.');
+      alert('Please enter a valid email.');
       return;
     }
-    setLoading(true);
-    try {
-      const response = await fetch('https://ogonjo-idea-vault1-production.up.railway.app/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
 
-      let data = null;
-      try { data = await response.json(); } catch (err) {}
+    // Optionally store email locally for analytics or UX
+    localStorage.setItem('popupEmail', email);
 
-      if (response.ok) {
-        setMessage('🎉 Subscribed! Check your inbox for confirmation.');
-        localStorage.setItem('subscribedAt', Date.now()); // Store subscription timestamp
-        setEmail('');
-        setTimeout(handleClose, 3000); // Auto-close after success
-      } else {
-        setError('Oops! ' + (data?.message || 'Try again.'));
-      }
-    } catch (err) {
-      setError('Network error. Try again.');
-      console.error('Subscription error:', err);
-    } finally {
-      setLoading(false);
-    }
+    // Redirect to Gumroad subscription page
+    window.open("https://onjo.gumroad.com", "_blank");
+
+    // Auto-close popup
+    handleClose();
   };
 
   return (
@@ -90,7 +70,7 @@ const SubscriptionPopup = ({ onClose }) => {
             <li><Check size={16} /> Strategic curation for founders</li>
           </ul>
 
-          <form onSubmit={submit} className="sp-popup-form">
+          <form onSubmit={handleSubmit} className="sp-popup-form">
             <div className="sp-popup-input-group">
               <Mail size={18} className="sp-popup-icon" />
               <input
@@ -99,22 +79,14 @@ const SubscriptionPopup = ({ onClose }) => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading}
                 className="sp-popup-input"
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="sp-popup-submit"
-            >
-              {loading ? 'Subscribing...' : 'Get Free Insights'}
+            <button type="submit" className="sp-popup-submit">
+              Get Free Insights
             </button>
           </form>
-
-          {error && <p className="sp-popup-error">{error}</p>}
-          {message && <p className="sp-popup-success">{message}</p>}
 
           <div className="sp-popup-testimonial">
             <Star size={16} className="sp-popup-star" />

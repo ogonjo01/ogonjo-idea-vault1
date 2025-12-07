@@ -139,3 +139,143 @@
     padding-right: 10px;
   }
 }
+
+/* =========================
+   Intro / Mission Banner Styles (Light Green Version)
+   ========================= */
+
+.intro-banner {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  margin-bottom: 12px;
+
+  /* banner height rules */
+  max-height: 30vh;
+  min-height: 72px;
+  overflow: hidden;
+
+  border-radius: 12px;
+
+  /* soft elevated look */
+  box-shadow: 0 6px 18px rgba(10, 50, 20, 0.06);
+
+background: linear-gradient(
+  90deg,
+  rgba(31, 86, 51, 0.92),
+  rgba(44, 111, 69, 0.93),
+  rgba(107, 168, 140, 0.94)
+);
+
+  color: #ffffff;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  transition: transform 220ms ease, opacity 300ms ease;
+  opacity: 0;
+  transform: translateY(6px);
+
+  /* entrance animation */
+  animation: introBannerEnter 420ms cubic-bezier(.2,.9,.2,1) forwards,
+             introBannerPulse 6s ease-in-out infinite; /* breathing fade */
+}
+
+/* entrance animation */
+@keyframes introBannerEnter {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ✨ subtle breathing animation (very soft) */
+@keyframes introBannerPulse {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.06); }
+}
+
+.intro-banner-inner {
+  width: 100%;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.intro-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
+.intro-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 12px;
+}
+
+.intro-banner-title {
+  font-weight: 600;
+  line-height: 1.05;
+  font-size: clamp(16px, 2.2vw, 20px);
+  letter-spacing: -0.2px;
+}
+
+.intro-banner-subtitle {
+  opacity: 0.95;
+  font-weight: 400;
+  font-size: clamp(13px, 1.6vw, 15px);
+  line-height: 1.35;
+}
+
+.intro-banner-cta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+/* button */
+.btn-mini {
+  display: inline-block;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.12);
+  transition: background 160ms ease, transform 120ms ease;
+}
+
+.btn-mini:hover { 
+  background: rgba(255,255,255,0.22); 
+  transform: translateY(-1px); 
+}
+
+/* mobile layout */
+@media (max-width: 720px) {
+  .intro-banner-inner {
+    flex-direction: row;
+    align-items: center;
+  }
+  .intro-banner-text {
+    padding-right: 8px;
+  }
+  .intro-banner-cta { 
+    display: none; 
+  }
+}
+
+/* dark mode */
+@media (prefers-color-scheme: dark) {
+  .intro-banner {
+    box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+  }
+}
