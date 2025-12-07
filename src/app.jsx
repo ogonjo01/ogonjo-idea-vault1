@@ -17,6 +17,7 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import FAQ from "./pages/FAQ";
 import Footer from './components/Footer';
+import ResetPassword from "./pages/ResetPassword"; 
 import SubscriptionPopup from './components/SubscriptionPopup/SubscriptionPopup';
 import './App.css';
 
