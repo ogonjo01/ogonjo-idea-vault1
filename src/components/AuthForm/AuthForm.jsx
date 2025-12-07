@@ -66,8 +66,9 @@ const AuthForm = () => {
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
-      });
+  redirectTo: "https://ogonjo.com/reset-password",
+});
+
       if (error) throw error;
       alert("Password reset link sent! Check your email.");
     } catch (err) {
