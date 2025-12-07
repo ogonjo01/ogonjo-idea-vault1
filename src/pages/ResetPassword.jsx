@@ -122,7 +122,7 @@ const ResetPassword = () => {
 
       setMessage("Password updated successfully — please log in with your new password.");
       // small delay so user sees message, then redirect to login
-      setTimeout(() => navigate("/login"), 1200);
+      setTimeout(() => navigate("/auth"), 1200);
     } catch (err) {
       setError(err?.message || "Failed to reset password.");
     } finally {

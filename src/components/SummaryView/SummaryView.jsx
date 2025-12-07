@@ -640,26 +640,21 @@ const SummaryView = () => {
           />
         ) : null}
 
-        {youtubeId && (
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-            <iframe
-              title="YouTube clip"
-              src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              style={{
-                width: '70%',
-                height: '50%',
-                minHeight: 240,
-                borderRadius: 10,
-                border: 0,
-                boxShadow: '0 6px 18px rgba(0,0,0,0.22)',
-                display: 'block',
-              }}
-            />
-          </div>
-        )}
+       {youtubeId && (
+  <div className="youtube-embed" style={{ marginBottom: 12 }}>
+    <div className="embed-inner">
+      <iframe
+        className="youtube-iframe"
+        title="YouTube clip"
+        src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+        frameBorder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      />
+    </div>
+  </div>
+)}
+
       </div>
 
       <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
