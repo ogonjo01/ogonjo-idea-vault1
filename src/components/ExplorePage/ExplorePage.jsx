@@ -1,76 +1,108 @@
+// src/pages/ExplorePage.jsx
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
 import './ExplorePage.css';
 
+/* SELECT already includes `description` and other fields */
 const SELECT_WITH_COUNTS = `
   id,
   created_at,
   title,
   author,
-  summary,
+  description,
   category,
   user_id,
   image_url,
   affiliate_link,
+  tags,
+  slug,
   likes_count:likes!likes_post_id_fkey(count),
   views_count:views!views_post_id_fkey(count),
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
-const normalizeCount = (maybeArr) => {
-  try {
-    return Number(maybeArr?.[0]?.count || 0);
-  } catch {
-    return 0;
-  }
-};
+const normalizeCount = (arr) => Number(arr?.[0]?.count || 0);
 
-const normalizeRow = (r = {}) => ({
-  id: r.id,
-  title: r.title,
-  author: r.author,
-  summary: r.summary,
-  category: r.category,
-  image_url: r.image_url,
-  affiliate_link: r.affiliate_link,
-  likes_count: normalizeCount(r.likes_count),
-  views_count: normalizeCount(r.views_count),
-  comments_count: normalizeCount(r.comments_count),
-  created_at: r.created_at ?? null,
-});
+const safeStr = (v) => (v === null || v === undefined ? '' : typeof v === 'string' ? v.trim() : String(v));
+
+/*
+  IMPORTANT:
+  - Ensure each row contains:
+    - description (source of truth)
+    - summary (kept for backward compatibility)
+    - excerpt  (short preview used by cards)
+*/
+const normalizeRow = (r) => {
+  const description = safeStr(r.description || '');
+  const fallbackSummary = safeStr(r.summary || '');
+  const chosen = description || fallbackSummary || '';
+  const excerpt = chosen.length > 240 ? `${chosen.slice(0, 237).trim()}…` : chosen;
+
+  return {
+    id: r.id,
+    title: safeStr(r.title) || 'Untitled',
+    author: safeStr(r.author) || '',
+    // keep both fields so BookSummaryCard (whichever it checks) can find text
+    description: chosen,         // canonical full text (may be short)
+    summary: chosen,             // backward-compatible alias
+    excerpt,                     // short preview (use this in UI if you want fixed length)
+    category: r.category,
+    image_url: r.image_url,
+    affiliate_link: r.affiliate_link,
+    tags: Array.isArray(r.tags) ? r.tags.map(t => (t || '').toLowerCase()) : [],
+    likes_count: normalizeCount(r.likes_count),
+    views_count: normalizeCount(r.views_count),
+    comments_count: normalizeCount(r.comments_count),
+    created_at: r.created_at,
+    slug: r.slug ?? null,
+  };
+};
 
 const ITEMS_PER_PAGE = 20;
 
 const useQuery = () => {
   const { search } = useLocation();
-  return React.useMemo(() => new URLSearchParams(search), [search]);
+  return new URLSearchParams(search);
+};
+
+const sortClient = (items, sort) => {
+  const list = [...items];
+  switch (sort) {
+    case 'views':
+      return list.sort((a, b) => b.views_count - a.views_count);
+    case 'likes':
+      return list.sort((a, b) => b.likes_count - a.likes_count);
+    case 'rating':
+      return list.sort((a, b) => b.comments_count - a.comments_count);
+    default:
+      return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
 };
 
 const ExplorePage = () => {
   const q = useQuery();
-  const rawCategory = q.get('category') || '';
-  const sortType = (q.get('sort') || 'newest').toLowerCase();
-  const searchTerm = (q.get('q') || q.get('search') || '').trim();
+  const location = useLocation(); // used for scroll restoration
 
-  const category = (rawCategory || '').trim();
+  const sortType = (q.get('sort') || 'newest').toLowerCase();
+  const category = q.get('category');
+  const tag = q.get('tag');
+  const searchTerm = q.get('q');
 
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const sentinelRef = useRef(null);
-  const mountedRef = useRef(true);
 
+  // Scroll to top whenever the Explore route or its query changes
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+    // Immediate, no smooth scroll to avoid layout jumps during data load
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [location.pathname, location.search]);
 
   const fetchItems = useCallback(
     async (pageOffset = 0, append = false) => {
@@ -78,158 +110,85 @@ const ExplorePage = () => {
       setError(null);
 
       try {
-        // SEARCH MODE
+        let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS);
+
+        if (category) query = query.eq('category', category);
+        if (tag) query = query.contains('tags', [tag]);
         if (searchTerm) {
-          // Try RPC search first (fast / full-text if you have it). Fallback to ilike OR if RPC unavailable.
-          try {
-            const lim = 500; // get up to 500 results and paginate client-side
-            const rpcRes = await supabase.rpc('book_summaries_search_prefix', { q: searchTerm, lim });
-            if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-              const all = (rpcRes.data || []).map(normalizeRow);
-              // client-side sort + paginate
-              const sorted = all.sort((a, b) => {
-                if (sortType === 'views') return (b.views_count || 0) - (a.views_count || 0);
-                if (sortType === 'likes') return (b.likes_count || 0) - (a.likes_count || 0);
-                return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-              });
-              const slice = sorted.slice(pageOffset, pageOffset + ITEMS_PER_PAGE);
-              if (mountedRef.current) {
-                setItems((prev) => (append ? [...prev, ...slice] : slice));
-                setOffset(pageOffset + slice.length);
-                setHasMore(pageOffset + slice.length < sorted.length);
-              }
-              return;
-            }
-            // if rpc returned an error, fall through to fallback
-            console.debug('[ExplorePage] RPC search not available or returned error, using fallback.');
-          } catch (rpcErr) {
-            console.debug('[ExplorePage] RPC search threw:', rpcErr);
-            // continue to fallback
-          }
-
-          // FALLBACK: ilike OR across title / author / summary
-          try {
-            const pattern = `%${searchTerm}%`;
-            // build OR clause
-            const { data, error } = await supabase
-              .from('book_summaries')
-              .select(SELECT_WITH_COUNTS)
-              .or(`title.ilike.${pattern},author.ilike.${pattern},summary.ilike.${pattern}`)
-              .range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
-
-            if (error) throw error;
-            const normalized = (data || []).map(normalizeRow);
-            const sortedRows = normalized.sort((a, b) => {
-              if (sortType === 'views') return (b.views_count || 0) - (a.views_count || 0);
-              if (sortType === 'likes') return (b.likes_count || 0) - (a.likes_count || 0);
-              return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-            });
-
-            if (mountedRef.current) {
-              if (append) setItems((prev) => [...prev, ...sortedRows]);
-              else setItems(sortedRows);
-              setOffset(pageOffset + (data?.length || 0));
-              setHasMore((data?.length || 0) === ITEMS_PER_PAGE);
-            }
-            return;
-          } catch (err) {
-            console.error('Explore search fallback error:', err);
-            if (mountedRef.current) setError('Search failed.');
-            return;
-          }
+          const pattern = `%${searchTerm}%`;
+          query = query.or(`title.ilike.${pattern},author.ilike.${pattern},description.ilike.${pattern}`);
         }
 
-        // NON-SEARCH MODE: normal category/sort browsing
-        let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS, { count: 'exact' });
+        if (sortType === 'views') query = query.order('views_count', { ascending: false });
+        else if (sortType === 'likes') query = query.order('likes_count', { ascending: false });
+        else query = query.order('created_at', { ascending: false });
 
-        if (category) {
-          // use exact match for category. If you want partial/case-insensitive use ilike with `%${category}%`
-          query = query.eq('category', category);
-        }
+        query = query.range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
 
-        const { data, error } = await query.range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
+        const { data, error } = await query;
         if (error) throw error;
 
-        const normalizedRows = (data || []).map(normalizeRow);
+        const normalized = (data || []).map(normalizeRow);
 
-        const sortedRows = normalizedRows.sort((a, b) => {
-          if (sortType === 'views') return (b.views_count || 0) - (a.views_count || 0);
-          if (sortType === 'likes') return (b.likes_count || 0) - (a.likes_count || 0);
-          return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-        });
-
-        if (mountedRef.current) {
-          if (append) {
-            setItems((prev) => [...prev, ...sortedRows]);
-          } else {
-            setItems(sortedRows);
-          }
-          setOffset(pageOffset + (data?.length || 0));
-          setHasMore((data?.length || 0) === ITEMS_PER_PAGE);
-        }
+        setItems((prev) => (append ? [...prev, ...normalized] : normalized));
+        setOffset(pageOffset + normalized.length);
+        setHasMore(normalized.length === ITEMS_PER_PAGE);
       } catch (err) {
         console.error('Explore fetch error:', err);
-        if (mountedRef.current) setError('Unable to load content.');
+        setError('Unable to load content.');
       } finally {
-        if (mountedRef.current) setLoading(false);
+        setLoading(false);
       }
     },
-    [category, sortType, searchTerm]
+    [category, tag, searchTerm, sortType]
   );
 
   useEffect(() => {
-    // reset when query / category / sort change
     setItems([]);
     setOffset(0);
     setHasMore(true);
     fetchItems(0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, sortType, searchTerm]);
+  }, [fetchItems]);
 
   useEffect(() => {
-    const node = sentinelRef.current;
-    if (!node || !hasMore || loading) return;
+    if (!hasMore || loading) return;
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) fetchItems(offset, true);
+      ([entry]) => {
+        if (entry.isIntersecting) fetchItems(offset, true);
       },
-      { root: null, rootMargin: '800px', threshold: 0.1 }
+      { rootMargin: '600px' }
     );
 
-    observer.observe(node);
+    if (sentinelRef.current) observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasMore, loading, offset, fetchItems]);
+  }, [offset, hasMore, loading, fetchItems]);
 
-  const getTitle = () => {
-    if (searchTerm) return `Search: "${searchTerm}"`;
-    const sortTitle = { views: 'Most Viewed', likes: 'Most Liked', newest: 'Newest' };
-    return `${sortTitle[sortType] || sortType}${category ? `: ${category}` : ''}`;
-  };
+  const title = tag
+    ? `Tag: ${tag}`
+    : sortType === 'views'
+    ? 'Most Viewed'
+    : sortType === 'likes'
+    ? 'Most Liked'
+    : sortType === 'rating'
+    ? 'Most Rated'
+    : 'Newest';
 
   return (
     <div className="explore-page">
-      <div className="explore-header">
-        <h2>{getTitle()}</h2>
+      <h2>{title}</h2>
+
+      {error && <div className="explore-error">{error}</div>}
+
+      <div className="explore-grid">
+        {items.map((item) => (
+          // BookSummaryCard receives the whole item; it can read item.description || item.summary || item.excerpt
+          <BookSummaryCard key={item.id} summary={item} />
+        ))}
       </div>
 
-      {loading && items.length === 0 ? (
-        <div className="explore-loading">Loading...</div>
-      ) : error ? (
-        <div className="explore-error">{error}</div>
-      ) : items.length > 0 ? (
-        <>
-          <div className="explore-grid">
-            {items.map((it) => (
-              <BookSummaryCard key={it.id} summary={it} />
-            ))}
-          </div>
-          {hasMore && <div ref={sentinelRef} className="explore-sentinel" />}
-          {loading && <div className="explore-loading">Loading more...</div>}
-        </>
-      ) : (
-        <div className="explore-empty">No items found.</div>
-      )}
+      {hasMore && <div ref={sentinelRef} className="explore-sentinel" />}
+      {loading && <div className="explore-loading">Loading...</div>}
     </div>
   );
 };

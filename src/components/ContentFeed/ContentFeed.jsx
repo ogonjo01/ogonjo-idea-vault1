@@ -191,7 +191,14 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   // tags states
   const [availableTags, setAvailableTags] = useState([]); // all tags discovered in DB or category
-  const [selectedTags, setSelectedTags] = useState([]); // user-selected tags for boosting
+  const [selectedTags, setSelectedTags] = useState([]); // user-selected tags for boosting (now single-selection by design)
+
+  // new: tagged results (carousel-limited) and loading indicator
+  const [taggedResults, setTaggedResults] = useState(null);
+  const [taggedLoading, setTaggedLoading] = useState(false);
+
+  // reload key for tags list when DB content changes (used to re-fetch available tags)
+  const [tagsReloadKey, setTagsReloadKey] = useState(0);
 
   const rootRef = useRef(null);           // <-- feed root ref for instant jump
   const sentinelRef = useRef(null);
@@ -238,7 +245,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         let q = supabase
           .from('book_summaries')
           .select('tags')
-          .limit(2000);
+          .limit(5000);
 
         const specific = selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All';
         if (specific) {
@@ -272,7 +279,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         console.warn('Could not load tags for chips bar', err);
       }
     })();
-  }, [selectedCategory]);
+  }, [selectedCategory, tagsReloadKey]);
   // ------------------------------------------------------------------------
 
   // FAST lightweight fetch for immediate UI (by category or global)
@@ -443,6 +450,8 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
           if (error) throw error;
           const rows = safeData(data).map(normalizeRow);
           if (mountedRef.current) setGlobalContent({ newest: rows, mostLiked: [], highestRated: [], mostViewed: [] });
+          // refresh tags list after search results (in case tag distribution changed)
+          setTagsReloadKey(k => k + 1);
         } catch (err) {
           console.error('search error', err);
         } finally {
@@ -468,6 +477,8 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
               const block = await fetchContentBlock(selectedCategory);
               if (!mountedRef.current) return;
               setLoadedCategoryBlocks((block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length) ? [block] : []);
+              // after heavy fetch for category, refresh tags list (so removed tags disappear)
+              setTagsReloadKey(k => k + 1);
             } catch (err) {
               console.error('specific category background fetch error', err);
             }
@@ -496,6 +507,8 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             const [globalBlock, cats] = await Promise.all([fetchContentBlock(), fetchTopCategories(200)]);
             if (!mountedRef.current) return;
             setGlobalContent(globalBlock);
+            // refresh tags after heavy global block arrives
+            setTagsReloadKey(k => k + 1);
             setCategoryQueue(cats);
             setHasMoreCategories(cats.length > 0);
 
@@ -558,13 +571,90 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return () => obs.disconnect();
   }, [hasMoreCategories, loadingCategories, loadNextCategoryBatch]);
 
-  // tag chips toggle
+  // NEW: fetch full results for a single selected tag (carousel-limited) - returns `limit` items
+  const fetchTaggedContent = useCallback(async (tag, category = null, limit = ITEMS_PER_CAROUSEL) => {
+    if (!tag) return [];
+    try {
+      let q = supabase
+        .from('book_summaries')
+        .select(SELECT_WITH_COUNTS)
+        .contains('tags', [tag])
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (category) q = q.eq('category', category);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []).map(normalizeRow);
+    } catch (err) {
+      console.error('fetchTaggedContent error', err);
+      return [];
+    }
+  }, []);
+
+  // small helper to build a comma-separated list of preview ids from an items array
+  const getPreviewIds = (items) => {
+    try {
+      if (!items || !Array.isArray(items) || items.length === 0) return null;
+      const ids = items.map(i => i?.id).filter(Boolean);
+      return ids.length ? ids.join(',') : null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // helper to build viewAll links that respect category and tag context and pass preview ids + fields
+  const buildViewAllLink = (sortKey = 'newest', category = null, tag = null, previewIds = null, fields = 'id,title,description,author,created_at,tags') => {
+    const params = new URLSearchParams();
+    if (sortKey) params.set('sort', sortKey);
+    if (category) params.set('category', category);
+    if (tag) {
+      params.set('tag', tag);
+      params.set('tag_only', '1'); // hint to Explore to only return items matching this tag
+    }
+    if (previewIds) params.set('preview_ids', previewIds);
+    if (fields) params.set('fields', fields);
+    return `/explore?${params.toString()}`;
+  };
+
+  // when selectedTags changes we will fetch the carousel-limited set for that tag
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!selectedTags || selectedTags.length === 0) {
+        setTaggedResults(null);
+        setTaggedLoading(false);
+        return;
+      }
+
+      // we support only single-selection UX: only first tag used
+      const tag = selectedTags[0];
+      setTaggedLoading(true);
+      try {
+        // only fetch ITEMS_PER_CAROUSEL for the carousel preview
+        const rows = await fetchTaggedContent(tag, (selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All') ? selectedCategory : null, ITEMS_PER_CAROUSEL);
+        if (!mountedRef.current || !mounted) return;
+        setTaggedResults(rows || []);
+      } catch (err) {
+        console.error('tag fetch failed', err);
+        if (mountedRef.current && mounted) setTaggedResults([]);
+      } finally {
+        if (mountedRef.current && mounted) setTaggedLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [selectedTags, selectedCategory, fetchTaggedContent]);
+
+  // tag chips toggle (single-selection behavior)
   const toggleTag = (tag) => {
+    const lower = tag.toLowerCase();
     setSelectedTags(prev => {
-      const copy = Array.isArray(prev) ? prev.slice() : [];
-      const lower = tag.toLowerCase();
-      if (copy.includes(lower)) return copy.filter(t => t !== lower);
-      return [...copy, lower];
+      const cur = Array.isArray(prev) ? prev : [];
+      if (cur.length > 0 && cur[0] === lower) {
+        // clicking already-selected tag clears selection
+        return [];
+      }
+      // single-select: replace previous selection with the new one
+      return [lower];
     });
   };
 
@@ -637,7 +727,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                   onClick={() => toggleTag(tag)}
                   aria-pressed={active}
                   type="button"
-                  title={`Boost by ${tag}`}
+                  title={`Filter by ${tag}`}
                 >
                   {tag}
                 </button>
@@ -652,6 +742,19 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
           )}
         </div>
       </div>
+
+      {/* If a tag is selected show the limited tag results (carousel-limited to 12) */}
+      {selectedTags.length > 0 && (
+        <HorizontalCarousel
+          title={`Tag: ${selectedTags[0]}`}
+          items={taggedResults || []}
+          loading={taggedLoading}
+          skeletonCount={6}
+          viewAllLink={buildViewAllLink('newest', (selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All') ? selectedCategory : null, selectedTags[0], getPreviewIds(taggedResults), 'id,title,description,author,created_at,tags')}
+        >
+          {renderCards(taggedResults || [], 'newest')}
+        </HorizontalCarousel>
+      )}
 
       {/* SEARCH */}
       {searchQuery && searchQuery.trim() && (
@@ -685,7 +788,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 items={items}
                 loading={loadingGlobal}
                 skeletonCount={6}
-                viewAllLink={`/explore?sort=${sortKey}&category=${encodeURIComponent(loadedCategoryBlocks[0].category)}`}
+                viewAllLink={buildViewAllLink(sortKey, loadedCategoryBlocks[0].category, selectedTags[0] || null, getPreviewIds(items))}
               >
                 {renderCards(items, sortKey)}
               </HorizontalCarousel>
@@ -702,7 +805,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             items={globalContent.newest}
             loading={loadingGlobal}
             skeletonCount={6}
-            viewAllLink="/explore?sort=newest"
+            viewAllLink={buildViewAllLink('newest', null, selectedTags[0] || null, getPreviewIds(globalContent.newest))}
           >
             {renderCards(globalContent.newest, 'newest')}
           </HorizontalCarousel>
@@ -711,7 +814,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             items={globalContent.mostLiked}
             loading={loadingGlobal}
             skeletonCount={6}
-            viewAllLink="/explore?sort=likes"
+            viewAllLink={buildViewAllLink('likes', null, selectedTags[0] || null, getPreviewIds(globalContent.mostLiked))}
           >
             {renderCards(globalContent.mostLiked, 'likes')}
           </HorizontalCarousel>
@@ -720,7 +823,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             items={globalContent.highestRated}
             loading={loadingGlobal}
             skeletonCount={6}
-            viewAllLink="/explore?sort=rating"
+            viewAllLink={buildViewAllLink('rating', null, selectedTags[0] || null, getPreviewIds(globalContent.highestRated))}
           >
             {renderCards(globalContent.highestRated, 'rating')}
           </HorizontalCarousel>
@@ -729,7 +832,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             items={globalContent.mostViewed}
             loading={loadingGlobal}
             skeletonCount={6}
-            viewAllLink="/explore?sort=views"
+            viewAllLink={buildViewAllLink('views', null, selectedTags[0] || null, getPreviewIds(globalContent.mostViewed))}
           >
             {renderCards(globalContent.mostViewed, 'views')}
           </HorizontalCarousel>
@@ -738,7 +841,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             <section className="category-block" key={block.category}>
               <div className="category-block-header">
                 <h3 className="cat-title">{block.category}</h3>
-                <a className="cat-viewall" href={`/explore?category=${encodeURIComponent(block.category)}`}>View all</a>
+                <a className="cat-viewall" href={buildViewAllLink('newest', block.category, selectedTags[0] || null, getPreviewIds(block.newest))}>View all</a>
               </div>
 
               <HorizontalCarousel
@@ -746,7 +849,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 items={block.newest}
                 loading={loadingGlobal}
                 skeletonCount={4}
-                viewAllLink={`/explore?sort=newest&category=${encodeURIComponent(block.category)}`}
+                viewAllLink={buildViewAllLink('newest', block.category, selectedTags[0] || null, getPreviewIds(block.newest))}
               >
                 {renderCards(block.newest, 'newest')}
               </HorizontalCarousel>
@@ -755,7 +858,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 items={block.mostLiked}
                 loading={loadingGlobal}
                 skeletonCount={4}
-                viewAllLink={`/explore?sort=likes&category=${encodeURIComponent(block.category)}`}
+                viewAllLink={buildViewAllLink('likes', block.category, selectedTags[0] || null, getPreviewIds(block.mostLiked))}
               >
                 {renderCards(block.mostLiked, 'likes')}
               </HorizontalCarousel>
@@ -764,7 +867,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 items={block.highestRated}
                 loading={loadingGlobal}
                 skeletonCount={4}
-                viewAllLink={`/explore?sort=rating&category=${encodeURIComponent(block.category)}`}
+                viewAllLink={buildViewAllLink('rating', block.category, selectedTags[0] || null, getPreviewIds(block.highestRated))}
               >
                 {renderCards(block.highestRated, 'rating')}
               </HorizontalCarousel>
@@ -773,7 +876,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 items={block.mostViewed}
                 loading={loadingGlobal}
                 skeletonCount={4}
-                viewAllLink={`/explore?sort=views&category=${encodeURIComponent(block.category)}`}
+                viewAllLink={buildViewAllLink('views', block.category, selectedTags[0] || null, getPreviewIds(block.mostViewed))}
               >
                 {renderCards(block.mostViewed, 'views')}
               </HorizontalCarousel>
