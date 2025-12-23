@@ -5,7 +5,7 @@ import { supabase } from '../../supabase/supabaseClient';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
 import './ExplorePage.css';
 
-/* SELECT already includes `description` and other fields */
+/* SELECT already includes `description`, `avg_rating`, and other fields */
 const SELECT_WITH_COUNTS = `
   id,
   created_at,
@@ -18,22 +18,21 @@ const SELECT_WITH_COUNTS = `
   affiliate_link,
   tags,
   slug,
+  avg_rating,
   likes_count:likes!likes_post_id_fkey(count),
   views_count:views!views_post_id_fkey(count),
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
 const normalizeCount = (arr) => Number(arr?.[0]?.count || 0);
-
 const safeStr = (v) => (v === null || v === undefined ? '' : typeof v === 'string' ? v.trim() : String(v));
+const safeNumber = (v) => {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
-/*
-  IMPORTANT:
-  - Ensure each row contains:
-    - description (source of truth)
-    - summary (kept for backward compatibility)
-    - excerpt  (short preview used by cards)
-*/
+/* normalizeRow - keep description/summary/excerpt + avg_rating */
 const normalizeRow = (r) => {
   const description = safeStr(r.description || '');
   const fallbackSummary = safeStr(r.summary || '');
@@ -44,14 +43,14 @@ const normalizeRow = (r) => {
     id: r.id,
     title: safeStr(r.title) || 'Untitled',
     author: safeStr(r.author) || '',
-    // keep both fields so BookSummaryCard (whichever it checks) can find text
-    description: chosen,         // canonical full text (may be short)
-    summary: chosen,             // backward-compatible alias
-    excerpt,                     // short preview (use this in UI if you want fixed length)
+    description: chosen,
+    summary: chosen,
+    excerpt,
     category: r.category,
     image_url: r.image_url,
     affiliate_link: r.affiliate_link,
     tags: Array.isArray(r.tags) ? r.tags.map(t => (t || '').toLowerCase()) : [],
+    avg_rating: safeNumber(r.avg_rating),
     likes_count: normalizeCount(r.likes_count),
     views_count: normalizeCount(r.views_count),
     comments_count: normalizeCount(r.comments_count),
@@ -71,24 +70,26 @@ const sortClient = (items, sort) => {
   const list = [...items];
   switch (sort) {
     case 'views':
-      return list.sort((a, b) => b.views_count - a.views_count);
+      return list.sort((a, b) => (b.views_count || 0) - (a.views_count || 0));
     case 'likes':
-      return list.sort((a, b) => b.likes_count - a.likes_count);
+      return list.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
     case 'rating':
-      return list.sort((a, b) => b.comments_count - a.comments_count);
+      return list.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0));
     default:
-      return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
   }
 };
 
 const ExplorePage = () => {
   const q = useQuery();
-  const location = useLocation(); // used for scroll restoration
+  const location = useLocation();
 
   const sortType = (q.get('sort') || 'newest').toLowerCase();
   const category = q.get('category');
   const tag = q.get('tag');
-  const searchTerm = q.get('q');
+  const searchTerm = (q.get('q') || q.get('search') || '')?.trim();
+  const previewIdsRaw = q.get('preview_ids');
+  const previewIds = previewIdsRaw ? previewIdsRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
 
   const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -98,11 +99,38 @@ const ExplorePage = () => {
 
   const sentinelRef = useRef(null);
 
-  // Scroll to top whenever the Explore route or its query changes
+  // mounted guard
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  const mounted = () => mountedRef.current;
+
+  // Scroll to top when route/search changes
   useEffect(() => {
-    // Immediate, no smooth scroll to avoid layout jumps during data load
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [location.pathname, location.search]);
+
+  // Helper: try several RPC arg-name variants for robustness (if needed)
+  const tryCallGetHighestRated = async (limit, categoryArg) => {
+    const variants = [
+      (cat) => ({ p_limit: limit, ...(cat ? { p_category: cat } : {}) }),
+      (cat) => ({ limit, ...(cat ? { category: cat } : {}) }),
+      (cat) => ({ p_limit: limit }),
+      (cat) => ({ limit }),
+    ];
+
+    for (const buildArgs of variants) {
+      const args = buildArgs(categoryArg);
+      try {
+        const { data, error } = await supabase.rpc('get_highest_rated', args);
+        if (!error && Array.isArray(data)) {
+          return { data, usedArgs: args };
+        }
+      } catch (e) {
+        // ignore and try next
+      }
+    }
+    return { data: null };
+  };
 
   const fetchItems = useCallback(
     async (pageOffset = 0, append = false) => {
@@ -110,6 +138,76 @@ const ExplorePage = () => {
       setError(null);
 
       try {
+        // === RESPECT FEED CONTEXT: if preview_ids provided, fetch only those IDs and preserve order ===
+        if (Array.isArray(previewIds) && previewIds.length > 0) {
+          // convert to array of ids (strings are fine)
+          const ids = previewIds;
+          // fetch all matching rows for these ids (we'll paginate client-side)
+          const { data, error } = await supabase
+            .from('book_summaries')
+            .select(SELECT_WITH_COUNTS)
+            .in('id', ids);
+
+          if (error) throw error;
+
+          // normalize and then order exactly as previewIds
+          const normalized = (data || []).map(normalizeRow);
+          const orderMap = new Map(ids.map((id, idx) => [String(id), idx]));
+          const ordered = normalized.slice().sort((a, b) => {
+            const ia = orderMap.has(String(a.id)) ? orderMap.get(String(a.id)) : Number.MAX_SAFE_INTEGER;
+            const ib = orderMap.has(String(b.id)) ? orderMap.get(String(b.id)) : Number.MAX_SAFE_INTEGER;
+            return ia - ib;
+          });
+
+          const slice = ordered.slice(pageOffset, pageOffset + ITEMS_PER_PAGE);
+          if (mounted()) {
+            setItems(prev => (append ? [...prev, ...slice] : slice));
+            setOffset(pageOffset + slice.length);
+            setHasMore(pageOffset + slice.length < ordered.length);
+          }
+          setLoading(false);
+          return;
+        }
+
+        // === Special-case: use the same RPC the feed uses for Most Rated when there is no preview_ids ===
+        if (sortType === 'rating') {
+          try {
+            const rpcLimit = 500;
+            const { data: rpcData } = await tryCallGetHighestRated(rpcLimit, category);
+            if (Array.isArray(rpcData)) {
+              let all = rpcData.map(normalizeRow);
+
+              if (tag) {
+                const tLower = tag.toLowerCase();
+                all = all.filter(it => Array.isArray(it.tags) && it.tags.includes(tLower));
+              }
+              if (searchTerm) {
+                const s = searchTerm.toLowerCase();
+                all = all.filter(it =>
+                  (it.title || '').toLowerCase().includes(s) ||
+                  (it.author || '').toLowerCase().includes(s) ||
+                  (it.description || '').toLowerCase().includes(s)
+                );
+              }
+
+              const sorted = sortClient(all, 'rating');
+              const slice = sorted.slice(pageOffset, pageOffset + ITEMS_PER_PAGE);
+
+              if (mounted()) {
+                setItems(prev => (append ? [...prev, ...slice] : slice));
+                setOffset(pageOffset + slice.length);
+                setHasMore(pageOffset + slice.length < sorted.length);
+              }
+              setLoading(false);
+              return;
+            }
+            // else fall through to table query fallback
+          } catch (rpcErr) {
+            // fall through to table query fallback
+          }
+        }
+
+        // === Default behavior (table queries) ===
         let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS);
 
         if (category) query = query.eq('category', category);
@@ -119,9 +217,19 @@ const ExplorePage = () => {
           query = query.or(`title.ilike.${pattern},author.ilike.${pattern},description.ilike.${pattern}`);
         }
 
+        // server-side ordering when possible
         if (sortType === 'views') query = query.order('views_count', { ascending: false });
         else if (sortType === 'likes') query = query.order('likes_count', { ascending: false });
-        else query = query.order('created_at', { ascending: false });
+        else if (sortType === 'rating') {
+          // defensive: if avg_rating column exists order by it, otherwise rely on client-side sort
+          try {
+            query = query.order('avg_rating', { ascending: false });
+          } catch (e) {
+            // ignore and fallback to client-side sorting
+          }
+        } else {
+          query = query.order('created_at', { ascending: false });
+        }
 
         query = query.range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
 
@@ -130,16 +238,23 @@ const ExplorePage = () => {
 
         const normalized = (data || []).map(normalizeRow);
 
-        setItems((prev) => (append ? [...prev, ...normalized] : normalized));
-        setOffset(pageOffset + normalized.length);
-        setHasMore(normalized.length === ITEMS_PER_PAGE);
+        // enforce client-side sort parity (defensive)
+        const final = sortClient(normalized, sortType);
+
+        if (mounted()) {
+          setItems(prev => (append ? [...prev, ...final] : final));
+          setOffset(pageOffset + final.length);
+          setHasMore(final.length === ITEMS_PER_PAGE);
+        }
       } catch (err) {
         console.error('Explore fetch error:', err);
-        setError('Unable to load content.');
+        if (mounted()) setError('Unable to load content.');
       } finally {
-        setLoading(false);
+        if (mounted()) setLoading(false);
       }
     },
+    // previewIds intentionally not included in deps (we want it to re-run when location.search changes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [category, tag, searchTerm, sortType]
   );
 
@@ -148,7 +263,8 @@ const ExplorePage = () => {
     setOffset(0);
     setHasMore(true);
     fetchItems(0, false);
-  }, [fetchItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, fetchItems]);
 
   useEffect(() => {
     if (!hasMore || loading) return;
@@ -182,7 +298,6 @@ const ExplorePage = () => {
 
       <div className="explore-grid">
         {items.map((item) => (
-          // BookSummaryCard receives the whole item; it can read item.description || item.summary || item.excerpt
           <BookSummaryCard key={item.id} summary={item} />
         ))}
       </div>
