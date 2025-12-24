@@ -1,8 +1,17 @@
 :root {
   --max-width: 1200px;
   --gutter: 18px;
-  --chip-active-bg: rgba(10, 10, 10, 0.06);
-  --chip-border: rgba(0,0,0,0.08);
+
+  /* Chip / tag tokens (light-green theme) */
+  --green-50: #dff8ef;     /* very light background */
+  --green-100: #00ff5e;    /* border/accents */
+  --green-700: #065f46;    /* main chip text */
+  --green-800: #054d3a;    /* darker for hover */
+  --green-overlay: rgba(93, 225, 157, 0.92); /* overlay fill */
+
+  /* previous names (kept for compatibility) */
+  --chip-active-bg: var(--green-50);
+  --chip-border: var(--green-100);
 }
 
 /* container */
@@ -277,5 +286,72 @@ background: linear-gradient(
 @media (prefers-color-scheme: dark) {
   .intro-banner {
     box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+  }
+}
+/* CTA wrapper & style */
+.feed-section {
+  margin-bottom: 2.25rem;
+}
+
+/* Centered wrapper so the CTA visually belongs to the section */
+.see-more-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+/* Light-green, professional pill button with subtle pop animation */
+.see-more-btn {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  color: #065f46;               /* dark green text for contrast */
+  background: #d1fae5;          /* light green background */
+  border: 1px solid #86efac;    /* soft green border */
+  border-radius: 999px;
+  text-decoration: none;
+  box-shadow: 0 1px 0 rgba(6, 95, 70, 0.04);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  animation: cta-pop 600ms cubic-bezier(.2,.9,.3,1);
+  will-change: transform, opacity;
+}
+
+/* Hover state */
+.see-more-btn:hover,
+.see-more-btn:focus {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(6,95,70,0.08);
+  outline: none;
+}
+
+/* Active state (click) */
+.see-more-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(6,95,70,0.06);
+}
+
+/* Entrance animation */
+@keyframes cta-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Small responsive touch-up for mobile */
+@media (max-width: 640px) {
+  .see-more-btn {
+    padding: 0.55rem 1rem;
+    font-size: 0.95rem;
   }
 }

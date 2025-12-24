@@ -602,8 +602,9 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     }
   };
 
-  // helper to build viewAll links that respect category and tag context and pass preview ids + fields
-  const buildViewAllLink = (sortKey = 'newest', category = null, tag = null, previewIds = null, fields = 'id,title,description,author,created_at,tags') => {
+  // helper to build viewAll links that respect category and tag context
+  // NOTE: intentionally does NOT pass preview_ids so /explore performs a full query and can paginate
+  const buildViewAllLink = (sortKey = 'newest', category = null, tag = null, fields = 'id,title,description,author,created_at,tags') => {
     const params = new URLSearchParams();
     if (sortKey) params.set('sort', sortKey);
     if (category) params.set('category', category);
@@ -611,9 +612,34 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       params.set('tag', tag);
       params.set('tag_only', '1'); // hint to Explore to only return items matching this tag
     }
-    if (previewIds) params.set('preview_ids', previewIds);
     if (fields) params.set('fields', fields);
     return `/explore?${params.toString()}`;
+  };
+
+  // Build the CTA copy (user asked for "Explore more")
+  const buildSeeMoreText = ({ sortKey = 'newest', category = null, tag = null } = {}) => {
+    const sortMap = {
+      newest: 'Newest Content',
+      likes: 'Most Liked content',
+      rating: 'Most Rated Content',
+      views: 'Most Viewed Content',
+    };
+    const base = sortMap[sortKey] || 'more content';
+    if (tag) return `Explore More From ${base} In "${tag}"`;
+    if (category) return `Explore More From ${base} In ${category}`;
+    return `Explore More From ${base}`;
+  };
+
+  // CTA component (animated + light green)
+  const SeeMoreCTA = ({ href, text }) => {
+    if (!href) return null;
+    return (
+      <div className="see-more-wrapper" aria-hidden={false}>
+        <a href={href} className="see-more-btn" role="button">
+          {text}
+        </a>
+      </div>
+    );
   };
 
   // when selectedTags changes we will fetch the carousel-limited set for that tag
@@ -745,28 +771,40 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
       {/* If a tag is selected show the limited tag results (carousel-limited to 12) */}
       {selectedTags.length > 0 && (
-        <HorizontalCarousel
-          title={`Tag: ${selectedTags[0]}`}
-          items={taggedResults || []}
-          loading={taggedLoading}
-          skeletonCount={6}
-          viewAllLink={buildViewAllLink('newest', (selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All') ? selectedCategory : null, selectedTags[0], getPreviewIds(taggedResults), 'id,title,description,author,created_at,tags')}
-        >
-          {renderCards(taggedResults || [], 'newest')}
-        </HorizontalCarousel>
+        <section className="feed-section">
+          <HorizontalCarousel
+            title={`Tag: ${selectedTags[0]}`}
+            items={taggedResults || []}
+            loading={taggedLoading}
+            skeletonCount={6}
+          >
+            {renderCards(taggedResults || [], 'newest')}
+          </HorizontalCarousel>
+
+          <SeeMoreCTA
+            href={buildViewAllLink('newest', (selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All') ? selectedCategory : null, selectedTags[0])}
+            text={buildSeeMoreText({ sortKey: 'newest', category: (selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All') ? selectedCategory : null, tag: selectedTags[0] })}
+          />
+        </section>
       )}
 
       {/* SEARCH */}
       {searchQuery && searchQuery.trim() && (
-        <HorizontalCarousel
-          title={`Search results for "${searchQuery}"`}
-          items={globalContent.newest}
-          loading={loadingGlobal}
-          skeletonCount={6}
-          viewAllLink={`/explore?q=${encodeURIComponent(searchQuery)}`}
-        >
-          {renderCards(globalContent.newest, 'newest')}
-        </HorizontalCarousel>
+        <section className="feed-section">
+          <HorizontalCarousel
+            title={`Search results for "${searchQuery}"`}
+            items={globalContent.newest}
+            loading={loadingGlobal}
+            skeletonCount={6}
+          >
+            {renderCards(globalContent.newest, 'newest')}
+          </HorizontalCarousel>
+
+          <SeeMoreCTA
+            href={`/explore?q=${encodeURIComponent(searchQuery)}`}
+            text={`Explore more results for "${searchQuery}"`}
+          />
+        </section>
       )}
 
       {/* SPECIFIC CATEGORY PAGE */}
@@ -782,16 +820,21 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             const items = loadedCategoryBlocks[0][k];
             const sortKey = k === 'newest' ? 'newest' : (k === 'mostLiked' ? 'likes' : (k === 'highestRated' ? 'rating' : 'views'));
             return (
-              <HorizontalCarousel
-                key={k}
-                title={titleMap[k]}
-                items={items}
-                loading={loadingGlobal}
-                skeletonCount={6}
-                viewAllLink={buildViewAllLink(sortKey, loadedCategoryBlocks[0].category, selectedTags[0] || null, getPreviewIds(items))}
-              >
-                {renderCards(items, sortKey)}
-              </HorizontalCarousel>
+              <section className="feed-section" key={k}>
+                <HorizontalCarousel
+                  title={titleMap[k]}
+                  items={items}
+                  loading={loadingGlobal}
+                  skeletonCount={6}
+                >
+                  {renderCards(items, sortKey)}
+                </HorizontalCarousel>
+
+                <SeeMoreCTA
+                  href={buildViewAllLink(sortKey, loadedCategoryBlocks[0].category)}
+                  text={buildSeeMoreText({ sortKey, category: loadedCategoryBlocks[0].category })}
+                />
+              </section>
             );
           })}
         </div>
@@ -800,86 +843,139 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       {/* FOR YOU / ALL */}
       {isForYou && !searchQuery && (
         <>
-          <HorizontalCarousel
-            title="Newest"
-            items={globalContent.newest}
-            loading={loadingGlobal}
-            skeletonCount={6}
-            viewAllLink={buildViewAllLink('newest', null, selectedTags[0] || null, getPreviewIds(globalContent.newest))}
-          >
-            {renderCards(globalContent.newest, 'newest')}
-          </HorizontalCarousel>
-          <HorizontalCarousel
-            title="Most Liked"
-            items={globalContent.mostLiked}
-            loading={loadingGlobal}
-            skeletonCount={6}
-            viewAllLink={buildViewAllLink('likes', null, selectedTags[0] || null, getPreviewIds(globalContent.mostLiked))}
-          >
-            {renderCards(globalContent.mostLiked, 'likes')}
-          </HorizontalCarousel>
-          <HorizontalCarousel
-            title="Most Rated"
-            items={globalContent.highestRated}
-            loading={loadingGlobal}
-            skeletonCount={6}
-            viewAllLink={buildViewAllLink('rating', null, selectedTags[0] || null, getPreviewIds(globalContent.highestRated))}
-          >
-            {renderCards(globalContent.highestRated, 'rating')}
-          </HorizontalCarousel>
-          <HorizontalCarousel
-            title="Most Viewed"
-            items={globalContent.mostViewed}
-            loading={loadingGlobal}
-            skeletonCount={6}
-            viewAllLink={buildViewAllLink('views', null, selectedTags[0] || null, getPreviewIds(globalContent.mostViewed))}
-          >
-            {renderCards(globalContent.mostViewed, 'views')}
-          </HorizontalCarousel>
+          <section className="feed-section">
+            <HorizontalCarousel
+              title="Newest"
+              items={globalContent.newest}
+              loading={loadingGlobal}
+              skeletonCount={6}
+            >
+              {renderCards(globalContent.newest, 'newest')}
+            </HorizontalCarousel>
+
+            <SeeMoreCTA
+              href={buildViewAllLink('newest', null)}
+              text={buildSeeMoreText({ sortKey: 'newest' })}
+            />
+          </section>
+
+          <section className="feed-section">
+            <HorizontalCarousel
+              title="Most Liked"
+              items={globalContent.mostLiked}
+              loading={loadingGlobal}
+              skeletonCount={6}
+            >
+              {renderCards(globalContent.mostLiked, 'likes')}
+            </HorizontalCarousel>
+
+            <SeeMoreCTA
+              href={buildViewAllLink('likes', null)}
+              text={buildSeeMoreText({ sortKey: 'likes' })}
+            />
+          </section>
+
+          <section className="feed-section">
+            <HorizontalCarousel
+              title="Most Rated"
+              items={globalContent.highestRated}
+              loading={loadingGlobal}
+              skeletonCount={6}
+            >
+              {renderCards(globalContent.highestRated, 'rating')}
+            </HorizontalCarousel>
+
+            <SeeMoreCTA
+              href={buildViewAllLink('rating', null)}
+              text={buildSeeMoreText({ sortKey: 'rating' })}
+            />
+          </section>
+
+          <section className="feed-section">
+            <HorizontalCarousel
+              title="Most Viewed"
+              items={globalContent.mostViewed}
+              loading={loadingGlobal}
+              skeletonCount={6}
+            >
+              {renderCards(globalContent.mostViewed, 'views')}
+            </HorizontalCarousel>
+
+            <SeeMoreCTA
+              href={buildViewAllLink('views', null)}
+              text={buildSeeMoreText({ sortKey: 'views' })}
+            />
+          </section>
 
           {loadedCategoryBlocks.map((block) => (
             <section className="category-block" key={block.category}>
               <div className="category-block-header">
                 <h3 className="cat-title">{block.category}</h3>
-                <a className="cat-viewall" href={buildViewAllLink('newest', block.category, selectedTags[0] || null, getPreviewIds(block.newest))}>View all</a>
               </div>
 
-              <HorizontalCarousel
-                title={`Newest in ${block.category}`}
-                items={block.newest}
-                loading={loadingGlobal}
-                skeletonCount={4}
-                viewAllLink={buildViewAllLink('newest', block.category, selectedTags[0] || null, getPreviewIds(block.newest))}
-              >
-                {renderCards(block.newest, 'newest')}
-              </HorizontalCarousel>
-              <HorizontalCarousel
-                title={`Most Liked in ${block.category}`}
-                items={block.mostLiked}
-                loading={loadingGlobal}
-                skeletonCount={4}
-                viewAllLink={buildViewAllLink('likes', block.category, selectedTags[0] || null, getPreviewIds(block.mostLiked))}
-              >
-                {renderCards(block.mostLiked, 'likes')}
-              </HorizontalCarousel>
-              <HorizontalCarousel
-                title={`Highest Rated in ${block.category}`}
-                items={block.highestRated}
-                loading={loadingGlobal}
-                skeletonCount={4}
-                viewAllLink={buildViewAllLink('rating', block.category, selectedTags[0] || null, getPreviewIds(block.highestRated))}
-              >
-                {renderCards(block.highestRated, 'rating')}
-              </HorizontalCarousel>
-              <HorizontalCarousel
-                title={`Most Viewed in ${block.category}`}
-                items={block.mostViewed}
-                loading={loadingGlobal}
-                skeletonCount={4}
-                viewAllLink={buildViewAllLink('views', block.category, selectedTags[0] || null, getPreviewIds(block.mostViewed))}
-              >
-                {renderCards(block.mostViewed, 'views')}
-              </HorizontalCarousel>
+              <section className="feed-section">
+                <HorizontalCarousel
+                  title={`Newest in ${block.category}`}
+                  items={block.newest}
+                  loading={loadingGlobal}
+                  skeletonCount={4}
+                >
+                  {renderCards(block.newest, 'newest')}
+                </HorizontalCarousel>
+
+                <SeeMoreCTA
+                  href={buildViewAllLink('newest', block.category)}
+                  text={buildSeeMoreText({ sortKey: 'newest', category: block.category })}
+                />
+              </section>
+
+              <section className="feed-section">
+                <HorizontalCarousel
+                  title={`Most Liked in ${block.category}`}
+                  items={block.mostLiked}
+                  loading={loadingGlobal}
+                  skeletonCount={4}
+                >
+                  {renderCards(block.mostLiked, 'likes')}
+                </HorizontalCarousel>
+
+                <SeeMoreCTA
+                  href={buildViewAllLink('likes', block.category)}
+                  text={buildSeeMoreText({ sortKey: 'likes', category: block.category })}
+                />
+              </section>
+
+              <section className="feed-section">
+                <HorizontalCarousel
+                  title={`Highest Rated in ${block.category}`}
+                  items={block.highestRated}
+                  loading={loadingGlobal}
+                  skeletonCount={4}
+                >
+                  {renderCards(block.highestRated, 'rating')}
+                </HorizontalCarousel>
+
+                <SeeMoreCTA
+                  href={buildViewAllLink('rating', block.category)}
+                  text={buildSeeMoreText({ sortKey: 'rating', category: block.category })}
+                />
+              </section>
+
+              <section className="feed-section">
+                <HorizontalCarousel
+                  title={`Most Viewed in ${block.category}`}
+                  items={block.mostViewed}
+                  loading={loadingGlobal}
+                  skeletonCount={4}
+                >
+                  {renderCards(block.mostViewed, 'views')}
+                </HorizontalCarousel>
+
+                <SeeMoreCTA
+                  href={buildViewAllLink('views', block.category)}
+                  text={buildSeeMoreText({ sortKey: 'views', category: block.category })}
+                />
+              </section>
             </section>
           ))}
 

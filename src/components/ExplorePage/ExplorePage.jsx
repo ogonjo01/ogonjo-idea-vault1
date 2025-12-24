@@ -59,7 +59,9 @@ const normalizeRow = (r) => {
   };
 };
 
-const ITEMS_PER_PAGE = 20;
+// Config: tweak these values to change initial batch size / hard cap
+const ITEMS_PER_PAGE = 16; // initial visible batch and per-load batch size
+const MAX_ITEMS = 500; // invisible hard cap to protect performance (users won't notice)
 
 const useQuery = () => {
   const { search } = useLocation();
@@ -99,6 +101,11 @@ const ExplorePage = () => {
 
   const sentinelRef = useRef(null);
 
+  // prevent concurrent fetches
+  const fetchInProgress = useRef(false);
+  // store observer so we can disconnect cleanly
+  const observerRef = useRef(null);
+
   // mounted guard
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
@@ -134,15 +141,31 @@ const ExplorePage = () => {
 
   const fetchItems = useCallback(
     async (pageOffset = 0, append = false) => {
+      // guard: don't fetch if a fetch is already in progress
+      if (fetchInProgress.current) return;
+
+      // guard: don't fetch beyond hard cap
+      if (pageOffset >= MAX_ITEMS) {
+        if (mounted()) setHasMore(false);
+        return;
+      }
+
+      fetchInProgress.current = true;
       setLoading(true);
       setError(null);
 
       try {
+        // determine how many items we actually want this call to fetch
+        const remainingAllowed = MAX_ITEMS - pageOffset;
+        const pageSize = Math.max(0, Math.min(ITEMS_PER_PAGE, remainingAllowed));
+        if (pageSize <= 0) {
+          if (mounted()) setHasMore(false);
+          return;
+        }
+
         // === RESPECT FEED CONTEXT: if preview_ids provided, fetch only those IDs and preserve order ===
         if (Array.isArray(previewIds) && previewIds.length > 0) {
-          // convert to array of ids (strings are fine)
           const ids = previewIds;
-          // fetch all matching rows for these ids (we'll paginate client-side)
           const { data, error } = await supabase
             .from('book_summaries')
             .select(SELECT_WITH_COUNTS)
@@ -159,20 +182,23 @@ const ExplorePage = () => {
             return ia - ib;
           });
 
-          const slice = ordered.slice(pageOffset, pageOffset + ITEMS_PER_PAGE);
+          // enforce MAX_ITEMS cap on preview-driven lists too
+          const capped = ordered.slice(0, Math.min(ordered.length, MAX_ITEMS));
+          const slice = capped.slice(pageOffset, pageOffset + pageSize);
+
           if (mounted()) {
             setItems(prev => (append ? [...prev, ...slice] : slice));
             setOffset(pageOffset + slice.length);
-            setHasMore(pageOffset + slice.length < ordered.length);
+            setHasMore(pageOffset + slice.length < capped.length);
           }
-          setLoading(false);
+
           return;
         }
 
         // === Special-case: use the same RPC the feed uses for Most Rated when there is no preview_ids ===
         if (sortType === 'rating') {
           try {
-            const rpcLimit = 500;
+            const rpcLimit = Math.min(MAX_ITEMS, 1000); // be defensive: cap rpc calls
             const { data: rpcData } = await tryCallGetHighestRated(rpcLimit, category);
             if (Array.isArray(rpcData)) {
               let all = rpcData.map(normalizeRow);
@@ -190,15 +216,17 @@ const ExplorePage = () => {
                 );
               }
 
+              // enforce MAX_ITEMS cap
+              all = all.slice(0, MAX_ITEMS);
+
               const sorted = sortClient(all, 'rating');
-              const slice = sorted.slice(pageOffset, pageOffset + ITEMS_PER_PAGE);
+              const slice = sorted.slice(pageOffset, pageOffset + pageSize);
 
               if (mounted()) {
                 setItems(prev => (append ? [...prev, ...slice] : slice));
                 setOffset(pageOffset + slice.length);
                 setHasMore(pageOffset + slice.length < sorted.length);
               }
-              setLoading(false);
               return;
             }
             // else fall through to table query fallback
@@ -208,6 +236,10 @@ const ExplorePage = () => {
         }
 
         // === Default behavior (table queries) ===
+        // guard: calculate range end while respecting MAX_ITEMS
+        const start = pageOffset;
+        const end = Math.min(pageOffset + pageSize - 1, MAX_ITEMS - 1);
+
         let query = supabase.from('book_summaries').select(SELECT_WITH_COUNTS);
 
         if (category) query = query.eq('category', category);
@@ -221,7 +253,6 @@ const ExplorePage = () => {
         if (sortType === 'views') query = query.order('views_count', { ascending: false });
         else if (sortType === 'likes') query = query.order('likes_count', { ascending: false });
         else if (sortType === 'rating') {
-          // defensive: if avg_rating column exists order by it, otherwise rely on client-side sort
           try {
             query = query.order('avg_rating', { ascending: false });
           } catch (e) {
@@ -231,7 +262,7 @@ const ExplorePage = () => {
           query = query.order('created_at', { ascending: false });
         }
 
-        query = query.range(pageOffset, pageOffset + ITEMS_PER_PAGE - 1);
+        query = query.range(start, end);
 
         const { data, error } = await query;
         if (error) throw error;
@@ -244,13 +275,15 @@ const ExplorePage = () => {
         if (mounted()) {
           setItems(prev => (append ? [...prev, ...final] : final));
           setOffset(pageOffset + final.length);
-          setHasMore(final.length === ITEMS_PER_PAGE);
+          // if we received fewer than requested, we reached the end
+          setHasMore(final.length === pageSize && pageOffset + final.length < MAX_ITEMS);
         }
       } catch (err) {
         console.error('Explore fetch error:', err);
         if (mounted()) setError('Unable to load content.');
       } finally {
         if (mounted()) setLoading(false);
+        fetchInProgress.current = false;
       }
     },
     // previewIds intentionally not included in deps (we want it to re-run when location.search changes)
@@ -262,6 +295,8 @@ const ExplorePage = () => {
     setItems([]);
     setOffset(0);
     setHasMore(true);
+    // ensure any in-progress fetch is cancelled logically by guard
+    fetchInProgress.current = false;
     fetchItems(0, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, fetchItems]);
@@ -269,15 +304,32 @@ const ExplorePage = () => {
   useEffect(() => {
     if (!hasMore || loading) return;
 
+    // disconnect any existing observer before creating a new one
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) fetchItems(offset, true);
+        if (entry.isIntersecting) {
+          // load next page
+          fetchItems(offset, true);
+        }
       },
-      { rootMargin: '600px' }
+      { rootMargin: '600px', threshold: 0.1 }
     );
 
+    observerRef.current = observer;
+
     if (sentinelRef.current) observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
   }, [offset, hasMore, loading, fetchItems]);
 
   const title = tag
@@ -302,7 +354,22 @@ const ExplorePage = () => {
         ))}
       </div>
 
+      {/* sentinel for intersection observer (loads next batch) */}
       {hasMore && <div ref={sentinelRef} className="explore-sentinel" />}
+
+      {/* fallback: a manual load-more button if automatic loading fails for any reason */}
+      {hasMore && !loading && (
+        <div className="explore-load-more-wrapper">
+          <button
+            className="explore-load-more"
+            onClick={() => fetchItems(offset, true)}
+            aria-label="Load more"
+          >
+            Load more
+          </button>
+        </div>
+      )}
+
       {loading && <div className="explore-loading">Loading...</div>}
     </div>
   );
