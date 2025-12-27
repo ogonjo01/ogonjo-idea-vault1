@@ -21,7 +21,8 @@ const CATEGORIES = [
   "Career Development",
   "Video Insights",
   "Digital Skills & Technology",
-  "Leadership & Management"
+  "Leadership & Management",
+  "Strategic Communication"
 ];
 
 const quillModules = {
