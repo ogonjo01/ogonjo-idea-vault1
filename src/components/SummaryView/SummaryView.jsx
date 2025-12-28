@@ -16,7 +16,6 @@ const SELECT_WITH_COUNTS = `*,
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
-/* normalizeRow (keeps minimal shape) */
 const normalizeRow = (r = {}) => {
   const toNum = (v) => {
     if (v == null) return 0;
@@ -67,34 +66,24 @@ const extractYouTubeId = (url = '') => {
   return anyMatch ? anyMatch[1] : null;
 };
 
-// strip HTML (simple), used as fallback
 const stripHtml = (html = '') => String(html || '').replace(/<[^>]*>/g, '').trim();
 
-// sanitize + truncate helper for card descriptions
 const makeSafeDescription = (raw = '', maxLen = 140) => {
-  // Remove harmful markup, allow no tags for card preview; then trim & truncate
   const cleaned = DOMPurify.sanitize(String(raw || ''), { ALLOWED_TAGS: [] });
   const plain = stripHtml(cleaned);
   return plain.length > maxLen ? `${plain.slice(0, maxLen)}…` : plain;
 };
 
-/* Helper: build a lightweight card object (NO `summary` field) */
 const buildLightItem = (nr = {}, src = {}) => {
-  // prefer description-like fields from src then normalized row
   let rawDesc =
-  (src.description !== undefined ? src.description : null) ??
-  (nr.description !== undefined ? nr.description : null) ??
-  src.desc ??
-  src.blurb ??
-  src.short_description ??
-  null;
+    (src.description !== undefined ? src.description : null) ??
+    (nr.description !== undefined ? nr.description : null) ??
+    src.desc ??
+    src.blurb ??
+    src.short_description ??
+    null;
 
   let description = String(rawDesc || '').trim();
-  
-  // fallback: derive short plain-text snippet from any summary/html only if description empty
- 
-
-  // sanitize & truncate
   const safeDesc = makeSafeDescription(description, 140);
 
   return {
@@ -112,7 +101,6 @@ const buildLightItem = (nr = {}, src = {}) => {
     tags: nr.tags || [],
     user_id: nr.user_id || null,
     created_at: nr.created_at || null,
-    // intentionally no `summary`
   };
 };
 
@@ -173,7 +161,6 @@ const SummaryView = () => {
       setPostId(null);
 
       try {
-        // MINIMAL fetch — don't request the full `summary` column here
         const { data: slugData } = await supabase
           .from('book_summaries')
           .select(
@@ -447,7 +434,6 @@ const SummaryView = () => {
     };
   }, [summary]);
 
-  // --- fetchRecommended: build explicit lightweight items (no `summary`) ---
   const fetchRecommended = useCallback(async (category, limit = 10, resolvedPostId = null) => {
     setIsRecommending(true);
     setRecError(null);
@@ -455,31 +441,7 @@ const SummaryView = () => {
       const cat = String(category ?? '').trim();
       if (!cat) { setRecommendedContent([]); return []; }
 
-      // 1) Try RPC first — strip heavy fields explicitly
-      try {
-        const rpcRes = await supabase.rpc('get_top_viewed_by_category', { p_limit: limit, p_category: cat });
-        if (!rpcRes.error && Array.isArray(rpcRes.data)) {
-          let rows = (rpcRes.data || []).map(d => {
-            const nr = normalizeRow(d);
-            return buildLightItem(nr, d);
-          }).filter(r => String(r.id) !== String(resolvedPostId));
-
-          // last-safety: ensure no `summary` property and guarantee sanitized description
-          rows = rows.map(r => {
-            const copy = { ...r };
-            if ('summary' in copy) delete copy.summary;
-            copy.description = makeSafeDescription(copy.description || '', 140);
-            return copy;
-          });
-
-          setRecommendedContent(rows.slice(0, limit));
-          return rows.slice(0, limit);
-        }
-      } catch (rpcErr) {
-        console.debug('RPC recommended failed, fallback to select', rpcErr);
-      }
-
-      // 2) FALLBACK: fetch only lightweight columns (explicitly exclude `summary`)
+      // SKIP RPC - go straight to fallback which includes comments_count
       const { data, error } = await supabase
         .from('book_summaries')
         .select(
@@ -506,10 +468,9 @@ const SummaryView = () => {
 
       let rows = (data || []).map(d => {
         const nr = normalizeRow(d);
-        return buildLightItem(nr, d); // guaranteed no `summary`
+        return buildLightItem(nr, d);
       }).filter(r => String(r.id) !== String(resolvedPostId));
 
-      // ranking (views/likes/date)
       rows.sort((a, b) => {
         const vb = Number(b.views_count || 0);
         const va = Number(a.views_count || 0);
@@ -522,7 +483,6 @@ const SummaryView = () => {
         return tb - ta;
       });
 
-      // optional tag-boost reordering (uses tags if available)
       const curTags = Array.isArray(summary?.tags) ? summary.tags.map(t => (t || '').toLowerCase()) : [];
       if (curTags.length > 0) {
         const tagSet = new Set(curTags);
@@ -538,14 +498,6 @@ const SummaryView = () => {
           })
           .map(x => x.r);
       }
-
-      // final safety sanitize + strip any accidental summary
-      rows = rows.map(r => {
-        const copy = { ...r };
-        if ('summary' in copy) delete copy.summary;
-        copy.description = makeSafeDescription(copy.description || '', 140);
-        return copy;
-      });
 
       const top = rows.slice(0, limit);
       setRecommendedContent(top);
@@ -640,21 +592,20 @@ const SummaryView = () => {
           />
         ) : null}
 
-       {youtubeId && (
-  <div className="youtube-embed" style={{ marginBottom: 12 }}>
-    <div className="embed-inner">
-      <iframe
-        className="youtube-iframe"
-        title="YouTube clip"
-        src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
-        frameBorder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowFullScreen
-      />
-    </div>
-  </div>
-)}
-
+        {youtubeId && (
+          <div className="youtube-embed" style={{ marginBottom: 12 }}>
+            <div className="embed-inner">
+              <iframe
+                className="youtube-iframe"
+                title="YouTube clip"
+                src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
@@ -667,23 +618,12 @@ const SummaryView = () => {
           skeletonCount={4}
           viewAllLink={`/explore?category=${encodeURIComponent(summary.category || '')}`}
         >
-          {recommendedContent.map(item => {
-  // Build card object WITHOUT copying summary
-  const { ...lightItem } = item;
-
-  const card = {
-    ...lightItem,
-    description: makeSafeDescription(lightItem.description || '', 140)
-  };
-
-  return (
-    <BookSummaryCard
-      key={String(item.id || item.slug)}
-      summary={card}
-    />
-  );
-})}
-
+          {recommendedContent.map(item => (
+            <BookSummaryCard
+              key={String(item.id || item.slug)}
+              summary={item}
+            />
+          ))}
         </HorizontalCarousel>
       )}
 
