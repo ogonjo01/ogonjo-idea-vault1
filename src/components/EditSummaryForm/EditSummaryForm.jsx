@@ -8,6 +8,8 @@ import 'react-quill/dist/quill.snow.css';
 import './EditSummaryForm.css';
 
 const CATEGORIES = [
+  "Apps",
+  "Business Legends",
   "Best Books",
   "Business Strategy & Systems",
   "Courses & Learning Paths",

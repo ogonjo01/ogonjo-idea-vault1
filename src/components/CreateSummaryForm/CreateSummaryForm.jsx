@@ -38,6 +38,8 @@ Quill.register("modules/clipboard", CustomClipboard, true);
 
 // FINAL 10 CATEGORIES
 const categories = [
+  "Apps",
+  "Business Legends",
   "Business Strategy & Systems",
   "Courses & Learning Paths",
   "Best Books",
