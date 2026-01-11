@@ -391,3 +391,4 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 };
 
 export default EditSummaryForm;
+
