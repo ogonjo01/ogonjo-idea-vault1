@@ -36,7 +36,7 @@ class CustomClipboard extends Clipboard {
 
 Quill.register("modules/clipboard", CustomClipboard, true);
 
-// FINAL 10 CATEGORIES
+// FINAL 10 CATEGORIES (expanded list)
 const categories = [
   "Apps",
   "Business Legends",
@@ -54,7 +54,7 @@ const categories = [
   "Video Insights",
   "Digital Skills & Technology",
   "Leadership & Management",
-  "Strategic Communication"
+  "Strategic Communication",
 ];
 
 const CreateSummaryForm = ({ onClose, onNewSummary }) => {
@@ -66,6 +66,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [category, setCategory] = useState(categories[0]);
   const [imageUrl, setImageUrl] = useState("");
   const [affiliateLink, setAffiliateLink] = useState("");
+  const [affiliateType, setAffiliateType] = useState("book"); // new state: book | pdf | app
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [tags, setTags] = useState(""); // comma-separated input
   const [loading, setLoading] = useState(false);
@@ -94,7 +95,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     }
     setLoading(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } = {} } = await supabase.auth.getUser();
     if (!user) {
       alert("You must be logged in to create a summary.");
       setLoading(false);
@@ -132,7 +133,15 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         ? []
         : tags.split(",").map((t) => t.trim().toLowerCase());
 
-    const finalDescription = description.trim() || summaryText.replace(/<[^>]*>/g, '').slice(0, 200);
+    const finalDescription =
+      description.trim() ||
+      summaryText.replace(/<[^>]*>/g, "").slice(0, 200);
+
+    // Build affiliate value: "type|url" or null if empty
+    const affiliateValue =
+      affiliateLink && affiliateLink.trim()
+        ? `${affiliateType}|${affiliateLink.trim()}`
+        : null;
 
     const { error } = await supabase.from("book_summaries").insert([
       {
@@ -142,9 +151,9 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         summary: summaryText,
         category,
         user_id: user.id,
-        image_url: imageUrl,
-        affiliate_link: affiliateLink,
-        youtube_url: youtubeUrl,
+        image_url: imageUrl || null,
+        affiliate_link: affiliateValue,
+        youtube_url: youtubeUrl || null,
         tags: parsedTags,
         slug: finalSlug,
       },
@@ -168,6 +177,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       setCategory(categories[0]);
       setImageUrl("");
       setAffiliateLink("");
+      setAffiliateType("book");
       setYoutubeUrl("");
       setTags("");
       setSlug("");
@@ -228,8 +238,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
 
           {slug && (
             <small className="slug-preview">
-              Generated slug:{" "}
-              <code>/summary/{slug}</code>
+              Generated slug: <code>/summary/{slug}</code>
             </small>
           )}
 
@@ -250,7 +259,9 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             required
           >
             {categories.map((cat) => (
-              <option key={cat}>{cat}</option>
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
             ))}
           </select>
 
@@ -275,15 +286,55 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
 
           {/* Affiliate */}
           <label>Affiliate Link</label>
-          <input
-            type="url"
-            value={affiliateLink}
-            onChange={(e) => setAffiliateLink(e.target.value)}
-            placeholder="Amazon link"
-          />
+          {/* Updated layout: long link input on the left, small select on the right (10-15%) */}
+          <div
+            className="affiliate-row"
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              width: "100%",
+              marginBottom: 6,
+            }}
+          >
+            {/* Long link input on the left */}
+            <input
+              type="url"
+              value={affiliateLink}
+              onChange={(e) => setAffiliateLink(e.target.value)}
+              placeholder="Paste affiliate link (e.g. https://amazon.com/..., https://example.com/file.pdf)"
+              style={{
+                flex: 1,
+                minWidth: 0, // important so it can shrink on small screens
+                padding: "8px 10px",
+              }}
+              aria-label="Affiliate link"
+            />
+
+            {/* Small select on the right (10-15% width) */}
+            <select
+              value={affiliateType}
+              onChange={(e) => setAffiliateType(e.target.value)}
+              aria-label="Affiliate type"
+              style={{
+                width: "12%", // ~12% fits between 10-15%
+                minWidth: 100, // prevents it becoming too small on tiny screens
+                padding: "6px 8px",
+                textAlign: "center",
+              }}
+            >
+              <option value="book">Get Book</option>
+              <option value="pdf">Get PDF</option>
+              <option value="app">Open App</option>
+            </select>
+          </div>
+
+          <small style={{ display: "block", marginTop: 6, color: "#666" }}>
+            Choose the type and paste the link. If left blank, no affiliate link will be saved.
+          </small>
 
           {/* YouTube */}
-          <label>YouTube URL</label>
+          <label style={{ marginTop: 12 }}>YouTube URL</label>
           <input
             type="url"
             value={youtubeUrl}

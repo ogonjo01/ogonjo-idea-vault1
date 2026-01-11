@@ -46,6 +46,33 @@ const quillFormats = [
 
 const normalizeTag = (t) => (typeof t === 'string' ? t.trim().toLowerCase() : String(t).trim().toLowerCase());
 
+const parseAffiliateValue = (raw) => {
+  // returns { type, url } or { type: null, url: null } defensively
+  if (!raw) return { type: null, url: null };
+  try {
+    if (typeof raw === 'string') {
+      const parts = raw.split('|').map(p => (p || '').trim());
+      if (parts.length === 2 && parts[1]) {
+        return { type: (parts[0] || 'book').toLowerCase(), url: parts[1] };
+      }
+      // legacy plain URL (no pipe)
+      if (raw.trim()) return { type: 'book', url: raw.trim() };
+      return { type: null, url: null };
+    }
+    if (typeof raw === 'object' && raw !== null) {
+      if (raw.url) return { type: (raw.type || 'book').toLowerCase(), url: String(raw.url).trim() };
+      if (raw.link) return { type: (raw.type || 'book').toLowerCase(), url: String(raw.link).trim() };
+    }
+  } catch (e) {
+    // fallthrough
+  }
+  try {
+    return { type: null, url: String(raw).trim() || null };
+  } catch (e) {
+    return { type: null, url: null };
+  }
+};
+
 const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {} }) => {
   // initialize from passed summary safely
   const [title, setTitle] = useState(summary.title || '');
@@ -55,7 +82,8 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [summaryText, setSummaryText] = useState(summary.summary || '');
   const [category, setCategory] = useState(summary.category || CATEGORIES[0]);
   const [imageUrl, setImageUrl] = useState(summary.image_url || '');
-  const [affiliateLink, setAffiliateLink] = useState(summary.affiliate_link || '');
+  const [affiliateLink, setAffiliateLink] = useState(''); // plain url portion
+  const [affiliateType, setAffiliateType] = useState('book'); // book | pdf | app
   const [youtubeUrl, setYoutubeUrl] = useState(summary.youtube_url || '');
   const [tags, setTags] = useState(Array.isArray(summary.tags) ? summary.tags.map(normalizeTag) : []);
   const [tagInput, setTagInput] = useState('');
@@ -67,6 +95,18 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
   // portal container ref
   const portalElRef = useRef(null);
+
+  // parse affiliate when summary prop changes (or on init)
+  useEffect(() => {
+    const parsed = parseAffiliateValue(summary.affiliate_link);
+    if (parsed && parsed.url) {
+      setAffiliateLink(parsed.url);
+      setAffiliateType(parsed.type || 'book');
+    } else {
+      setAffiliateLink('');
+      setAffiliateType('book');
+    }
+  }, [summary.affiliate_link]);
 
   // auto-generate slug preview when title changes (does not try to guarantee uniqueness)
   useEffect(() => {
@@ -149,6 +189,11 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         return;
       }
 
+      // Build affiliate value: "type|url" or null if empty
+      const affiliateValue = (affiliateLink && affiliateLink.trim())
+        ? `${(affiliateType || 'book').toLowerCase()}|${affiliateLink.trim()}`
+        : null;
+
       // Prepare payload - only send fields you want to update
       const payload = {
         title: title.trim(),
@@ -157,7 +202,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         summary: summaryText || null,
         category: category || null,
         image_url: imageUrl || null,
-        affiliate_link: affiliateLink || null,
+        affiliate_link: affiliateValue,
         youtube_url: youtubeUrl || null,
         tags: Array.isArray(tags) ? tags.filter(Boolean) : [],
         slug: slug || null, // DB trigger should ensure uniqueness if necessary
@@ -238,7 +283,52 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           <input id="imageUrl" type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
 
           <label htmlFor="affiliateLink">Affiliate link</label>
-          <input id="affiliateLink" type="url" value={affiliateLink} onChange={e => setAffiliateLink(e.target.value)} placeholder="https://..." />
+
+          {/* New layout: long link input on the left, small select on the right (10-15% width) */}
+          <div
+            className="affiliate-row-edit"
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              width: "100%",
+              marginBottom: 6,
+            }}
+          >
+            <input
+              id="affiliateLink"
+              type="url"
+              value={affiliateLink}
+              onChange={(e) => setAffiliateLink(e.target.value)}
+              placeholder="Paste affiliate link (e.g. https://amazon.com/..., https://example.com/file.pdf)"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: "8px 10px",
+              }}
+              aria-label="Affiliate link"
+            />
+
+            <select
+              value={affiliateType}
+              onChange={(e) => setAffiliateType(e.target.value)}
+              aria-label="Affiliate type"
+              style={{
+                width: "12%",
+                minWidth: 100,
+                padding: "6px 8px",
+                textAlign: "center",
+              }}
+            >
+              <option value="book">Get Book</option>
+              <option value="pdf">Get PDF</option>
+              <option value="app">Open App</option>
+            </select>
+          </div>
+
+          <small style={{ display: "block", marginTop: 6, color: "#666" }}>
+            Choose the type and paste the link. If left blank, no affiliate link will be saved.
+          </small>
 
           <label htmlFor="youtubeUrl">YouTube URL</label>
           <input id="youtubeUrl" type="url" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="https://youtube.com/..." />

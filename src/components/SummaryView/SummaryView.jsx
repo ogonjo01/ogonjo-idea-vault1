@@ -99,8 +99,8 @@ const buildLightItem = (nr = {}, src = {}) => {
     views_count: nr.views_count || 0,
     comments_count: nr.comments_count || 0,
     tags: nr.tags || [],
-    user_id: nr.user_id || null,
-    created_at: nr.created_at || null,
+    user_id: nr.user_id ?? null,
+    created_at: nr.created_at ?? null,
   };
 };
 
@@ -532,7 +532,59 @@ const SummaryView = () => {
   if (!summary) return <div style={{ padding: 28 }}>Summary not found.</div>;
 
   const processedSummary = summary.summary ? DOMPurify.sanitize(summary.summary) : '';
-  const affiliateLink = summary.affiliate_link || null;
+
+  // ------------------------
+  // Affiliate parsing (supports "type|url" and legacy plain URL)
+  // ------------------------
+  let affiliateUrl = null;
+  let affiliateLabel = null;
+  let affiliateType = null;
+
+  const rawAffiliate = summary?.affiliate_link ?? null;
+
+  if (rawAffiliate) {
+    // Try to handle a few possible shapes safely
+    try {
+      if (typeof rawAffiliate === 'string') {
+        // If contains pipe, prefer "type|url"
+        const parts = rawAffiliate.split('|', 2).map(p => (p || '').trim());
+        if (parts.length === 2 && parts[1]) {
+          affiliateType = (parts[0] || '').toLowerCase();
+          affiliateUrl = parts[1];
+        } else {
+          // no pipe -> legacy plain URL
+          affiliateType = 'book';
+          affiliateUrl = rawAffiliate.trim();
+        }
+      } else if (typeof rawAffiliate === 'object' && rawAffiliate !== null) {
+        // in case some records store object { type, url } (defensive)
+        if (rawAffiliate.url) {
+          affiliateUrl = String(rawAffiliate.url);
+          affiliateType = (rawAffiliate.type || 'book').toLowerCase();
+        } else if (rawAffiliate.link) {
+          affiliateUrl = String(rawAffiliate.link);
+          affiliateType = (rawAffiliate.type || 'book').toLowerCase();
+        }
+      }
+    } catch (e) {
+      // fallback: treat as plain string
+      try {
+        affiliateUrl = String(rawAffiliate);
+        affiliateType = 'book';
+      } catch (ee) {
+        affiliateUrl = null;
+        affiliateType = null;
+      }
+    }
+  }
+
+  if (affiliateUrl) {
+    affiliateLabel =
+      affiliateType === 'pdf' ? 'Get PDF' :
+      affiliateType === 'app' ? 'Open App' :
+      'Get Book';
+  }
+
   const youtubeId = extractYouTubeId(summary.youtube_url);
 
   const onClickTag = (tag) => { if (!tag) return; navigate(`/explore?tag=${encodeURIComponent(tag)}`); };
@@ -564,7 +616,16 @@ const SummaryView = () => {
         </div>
 
         <div className="summary-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {affiliateLink && <a className="affiliate-btn" href={affiliateLink} target="_blank" rel="noopener noreferrer">Get Book</a>}
+          {affiliateUrl && affiliateLabel && (
+            <a
+              className={`affiliate-btn ${affiliateType ? `affiliate-${affiliateType}` : ''}`}
+              href={affiliateUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {affiliateLabel}
+            </a>
+          )}
           {ownerId && currentUserId && ownerId === currentUserId && (
             <button className="hf-btn" type="button" onClick={() => setShowEdit(true)}>Edit</button>
           )}
