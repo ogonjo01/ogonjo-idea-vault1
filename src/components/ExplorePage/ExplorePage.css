@@ -1,39 +1,109 @@
+/* =========================
+   EXPLORE PAGE LAYOUT
+   ========================= */
+
 .explore-page {
-  padding: 20px;
-  margin-top: 80px; /* adjust this to match your header height */
-  max-width: 1200px;
-  margin-left: auto;
-  margin-right: auto;
+  
+
+  max-width: 1700px;
+  margin: 0 auto;
+  padding: 18px;
+  padding-top: calc(var(--header-height, 64px) + 46px);
+  box-sizing: border-box;
 }
 
-.explore-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+/* =========================
+   HEADINGS
+   ========================= */
+
+.explore-page h2 {
+  margin: 0 0 16px;
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.2px;
 }
 
-.explore-header h2 {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 600;
+.explore-related-title {
+  margin: 36px 0 14px;
+  font-size: 1.2rem;
+  font-weight: 700;
 }
+
+/* =========================
+   GRID
+   ========================= */
 
 .explore-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
 }
 
-.explore-loading,
-.explore-error,
-.explore-empty {
-  text-align: center;
-  padding: 30px;
-  color: #666;
-  font-size: 1rem;
+/* Related content slightly tighter */
+.explore-grid.explore-related {
+  gap: 14px;
 }
+
+/* =========================
+   EMPTY / LOADING STATES
+   ========================= */
+
+.explore-empty {
+  margin: 28px 0 12px;
+  padding: 28px 18px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.explore-empty h3 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #111;
+}
+
+.explore-loading {
+  margin: 18px 0;
+  text-align: center;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.explore-error {
+  padding: 24px;
+  text-align: center;
+  color: #b91c1c;
+}
+
+/* =========================
+   INFINITE SCROLL SENTINEL
+   ========================= */
 
 .explore-sentinel {
   height: 1px;
+  margin-top: 24px;
+}
+
+/* =========================
+   MOBILE REFINEMENT
+   ========================= */
+
+@media (max-width: 768px) {
+  .explore-page {
+    padding: 14px 10px;
+    padding-top: calc(var(--header-height, 56px) + 12px);
+  }
+
+  .explore-page h2 {
+    font-size: 1.35rem;
+    margin-bottom: 14px;
+  }
+
+  .explore-grid {
+    gap: 12px;
+  }
+
+  .explore-related-title {
+    margin-top: 28px;
+  }
 }

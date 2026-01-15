@@ -1,11 +1,10 @@
-
-
+// src/components/HorizontalCarousel.jsx
 import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './ContentFeed.css';
 
 const SkeletonCard = () => (
-  <div className="summary-card skeleton" aria-hidden>
+  <div className="summary-card skeleton" aria-hidden="true">
     <div className="cover-wrap" />
     <div className="card-content">
       <div className="s-line title" />
@@ -30,53 +29,74 @@ const HorizontalCarousel = ({
   skeletonCount = 6,
 }) => {
   const scrollerRef = useRef(null);
+
   const handleScrollBy = (delta) => {
-    const s = scrollerRef.current;
-    if (!s) return;
-    s.scrollBy({ left: delta, behavior: 'smooth' });
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: 'smooth' });
   };
 
-  // show skeletons while `loading` is true
-  if (loading) {
-    return (
-      <section className="hf-carousel" aria-roledescription="carousel" aria-label={title}>
-        <div className="hf-carousel-header">
-          <h3 className="hf-title">{title}</h3>
-          <div className="hf-actions">
-            <button className="hf-btn" onClick={() => handleScrollBy(-320)} aria-label="scroll left">◀</button>
-            <button className="hf-btn" onClick={() => handleScrollBy(320)} aria-label="scroll right">▶</button>
-            <Link className="hf-viewall" to={viewAllLink}>View all</Link>
-          </div>
-        </div>
-
-        <div className="hf-scroller" ref={scrollerRef} tabIndex={0} role="list">
-          <div className="hf-items">
-            {Array.from({ length: skeletonCount }).map((_, i) => <SkeletonCard key={i} />)}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  // not loading: render items or empty state
   return (
-    <section className="hf-carousel" aria-roledescription="carousel" aria-label={title}>
-      <div className="hf-carousel-header">
+    <section
+      className="hf-carousel"
+      aria-roledescription="carousel"
+      aria-label={title}
+    >
+      <header className="hf-carousel-header">
         <h3 className="hf-title">{title}</h3>
-        <div className="hf-actions">
-          <button className="hf-btn" onClick={() => handleScrollBy(-320)} aria-label="scroll left">◀</button>
-          <button className="hf-btn" onClick={() => handleScrollBy(320)} aria-label="scroll right">▶</button>
-          <Link className="hf-viewall" to={viewAllLink}>View all</Link>
-        </div>
-      </div>
 
-      <div className="hf-scroller" ref={scrollerRef} tabIndex={0} role="list">
-        {items && items.length > 0 ? (
-          <div className="hf-items" role="listbox" aria-label={`${title} items`}>
+        <div className="hf-actions">
+          <button
+            className="hf-btn"
+            type="button"
+            aria-label="Scroll left"
+            onClick={() => handleScrollBy(-320)}
+          >
+            ◀
+          </button>
+
+          <button
+            className="hf-btn"
+            type="button"
+            aria-label="Scroll right"
+            onClick={() => handleScrollBy(320)}
+          >
+            ▶
+          </button>
+
+          <Link
+            className="hf-viewall"
+            to={viewAllLink}
+            aria-label={`View all ${title}`}
+          >
+            View all
+          </Link>
+        </div>
+      </header>
+
+      <div
+        className="hf-scroller"
+        ref={scrollerRef}
+        role="region"
+        tabIndex={0}
+        aria-label={`${title} content`}
+      >
+        {loading ? (
+          <ul className="hf-items" role="list" aria-hidden="true">
+            {Array.from({ length: skeletonCount }).map((_, i) => (
+              <li key={i} className="hf-item">
+                <SkeletonCard />
+              </li>
+            ))}
+          </ul>
+        ) : items.length > 0 ? (
+          <ul className="hf-items" role="list">
             {children}
-          </div>
+          </ul>
         ) : (
-          <div className="hf-empty">{emptyMessage}</div>
+          <p className="hf-empty" aria-live="polite">
+            {emptyMessage}
+          </p>
         )}
       </div>
     </section>
