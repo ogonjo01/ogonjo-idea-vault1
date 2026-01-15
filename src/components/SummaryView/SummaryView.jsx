@@ -1,4 +1,3 @@
-// src/components/SummaryView/SummaryView.jsx
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
@@ -30,7 +29,6 @@ const normalizeRow = (r = {}) => {
     ? r.tags.map(t => (typeof t === 'string' ? t.trim().toLowerCase() : String(t)))
     : [];
 
-  // safe extraction for rating_count variants (keep nullish-coalescing consistent)
   const ratingCountRaw = r.rating_count
     ?? r.ratings_count
     ?? (Array.isArray(r.rating_count_aggregate) ? (r.rating_count_aggregate[0]?.count ?? 0) : 0)
@@ -160,15 +158,42 @@ const SummaryView = () => {
     })();
   }, []);
 
-  // Scroll to top when param changes
+  // Scroll to top when param changes — robust across SPA scroll containers and browsers
   useEffect(() => {
     try {
-      if (pageRef && pageRef.current && typeof pageRef.current.scrollTo === 'function') {
-        pageRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-      } else if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    } catch (e) {}
+      const scrollToTop = () => {
+        try {
+          // If there's a dedicated main-content scroll container, prefer that
+          const main = document.querySelector('.main-content');
+          if (main && typeof main.scrollTo === 'function') {
+            main.scrollTo({ top: 0, behavior: 'auto' });
+            return;
+          }
+
+          // If the summary page wrapper is scrollable, reset that
+          if (pageRef && pageRef.current && typeof pageRef.current.scrollTo === 'function') {
+            pageRef.current.scrollTo({ top: 0, behavior: 'auto' });
+            return;
+          }
+
+          // Fallback to window/document
+          if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+            window.scrollTo(0, 0);
+            // also reset common fallbacks
+            if (document && document.documentElement) document.documentElement.scrollTop = 0;
+            if (document && document.body) document.body.scrollTop = 0;
+          }
+        } catch (e) {
+          // non-fatal
+          // console.debug('scrollToTop inner error', e);
+        }
+      };
+
+      // run immediately when route param changes
+      scrollToTop();
+    } catch (e) {
+      // swallow — scroll is best-effort
+    }
   }, [param]);
 
   /* Recommendation functions (defined before use) */
@@ -843,15 +868,10 @@ const SummaryView = () => {
           </div>
         </div>
       </header>
-           <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
+
+     
       <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
-        {summary.description ? (
-          <div
-            className="summary-description-block"
-            style={{ marginBottom: 12, color: '#374151', fontWeight: 600 }}
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(String(summary.description)) }}
-          />
-        ) : null}
+        
 
         {youtubeId && (
           <div className="youtube-embed" style={{ marginBottom: 12 }}>
@@ -867,10 +887,9 @@ const SummaryView = () => {
             </div>
           </div>
         )}
+        
       </div>
-
-     
-
+         <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
       {(isRecommending || (recommendedContent && recommendedContent.length > 0)) && (
         <HorizontalCarousel
           title={`More like this`}

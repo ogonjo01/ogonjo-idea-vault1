@@ -495,7 +495,7 @@ html {
 .youtube-iframe {
   width: 100%;                /* stays inside the viewport */
   max-width: 100%;            /* prevents overflow */
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 15 / 7;
   border: 0;
   border-radius: 10px;
   box-shadow: 0 6px 18px rgba(0,0,0,0.18);

@@ -368,8 +368,7 @@ background: linear-gradient(
   background: #fff;
   border-radius: 14px;
   overflow: hidden;
-  width: 260px;
-  flex: 0 0 260px;
+  
 }
 
 /* image / cover */
@@ -432,18 +431,75 @@ background: linear-gradient(
 /* =========================
    MOBILE ADJUSTMENTS
    ========================= */
+/* ====== Carousel: enforce rigid card geometry on small screens ====== */
 
-@media (max-width: 640px) {
-  .summary-card {
-    min-height: 280px;
-    max-height: 280px;
+/* Make scroller snap to card edges for a clean visual */
+.hf-scroller {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 12px; /* give breathing room */
+}
+
+/* Ensure the items row behaves as a horizontal scroller but doesn't force shrink */
+.hf-items {
+  display: flex;
+  gap: 12px;
+  padding: 6px 2px;
+  align-items: flex-start; /* avoid vertical overlap when cards differ a bit */
+  /* allow horizontal scroll on narrow screens (keeps layout predictable) */
+  overflow: visible;
+}
+
+/* --- IMPORTANT: enforce a fixed carousel card width and forbid shrinking --- */
+/* Applies to any direct child inside the carousel (.card-skeleton, .summary-card, etc.) */
+.hf-items > * {
+  flex: 0 0 220px;     /* fixed basis, no grow, no shrink */
+  min-width: 220px;    /* prevents compressing below the intended width */
+  box-sizing: border-box;
+  scroll-snap-align: start; /* snap align for nice paging */
+}
+
+/* Match skeleton geometry exactly to real cards */
+.card-skeleton {
+  width: 220px;
+  min-width: 220px;
+  flex-shrink: 0;
+}
+
+/* Ensure real card component behaves inside the enforced container.
+   If your card markup uses .summary-card at the root, this keeps its inner layout correct. */
+.hf-items > .summary-card {
+  width: 100%;         /* fill the enforced flex-basis */
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Small phones: use slightly smaller rigid card so more fit comfortably */
+@media (max-width: 480px) {
+  .hf-items > * {
+    flex: 0 0 180px;
+    min-width: 180px;
+  }
+  .card-skeleton {
+    width: 180px;
+    min-width: 180px;
+  }
+}
+
+/* Keep grid fallback for larger screens, but make sure grid items don't rely on auto min-width */
+@media (min-width: 768px) {
+  .hf-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 0;
   }
 
-  .summary-card .cover-wrap {
-    flex-basis: 120px;
-  }
-
-  .summary-card .summary {
-    -webkit-line-clamp: 2;
+  /* On grid, each card should fully fill the grid cell */
+  .hf-items > * {
+    width: 100%;
+    min-width: 0;
+    flex: none; /* not relevant for grid but defensive */
+    scroll-snap-align: none; /* grid doesn't need snap */
   }
 }
