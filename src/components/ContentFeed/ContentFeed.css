@@ -368,6 +368,8 @@ background: linear-gradient(
   background: #fff;
   border-radius: 14px;
   overflow: hidden;
+  width: 260px;
+  flex: 0 0 260px;
 }
 
 /* image / cover */

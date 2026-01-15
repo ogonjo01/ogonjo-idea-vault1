@@ -843,7 +843,7 @@ const SummaryView = () => {
           </div>
         </div>
       </header>
-
+           <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
       <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
         {summary.description ? (
           <div
@@ -869,7 +869,7 @@ const SummaryView = () => {
         )}
       </div>
 
-      <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
+     
 
       {(isRecommending || (recommendedContent && recommendedContent.length > 0)) && (
         <HorizontalCarousel
