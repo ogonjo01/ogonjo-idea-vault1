@@ -11,6 +11,8 @@ const CATEGORIES = [
   "Apps",
   "Business Legends",
   "Best Books",
+  "Business Giants",
+  "Business Concepts",
   "Business Strategy & Systems",
   "Courses & Learning Paths",
   "Business Ideas",
@@ -25,6 +27,13 @@ const CATEGORIES = [
   "Digital Skills & Technology",
   "Leadership & Management",
   "Strategic Communication"
+];
+
+const DIFFICULTIES = [
+  { value: "", label: "Not specified (optional)" },
+  { value: "Beginner", label: "Beginner" },
+  { value: "Intermediate", label: "Intermediate" },
+  { value: "Advanced", label: "Advanced" }
 ];
 
 const quillModules = {
@@ -87,6 +96,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [youtubeUrl, setYoutubeUrl] = useState(summary.youtube_url || '');
   const [tags, setTags] = useState(Array.isArray(summary.tags) ? summary.tags.map(normalizeTag) : []);
   const [tagInput, setTagInput] = useState('');
+  const [difficulty, setDifficulty] = useState(summary.difficulty_level || ''); // NEW: difficulty_level support
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -107,6 +117,11 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       setAffiliateType('book');
     }
   }, [summary.affiliate_link]);
+
+  // ensure difficulty updates if summary changes
+  useEffect(() => {
+    setDifficulty(summary.difficulty_level || '');
+  }, [summary.difficulty_level]);
 
   // auto-generate slug preview when title changes (does not try to guarantee uniqueness)
   useEffect(() => {
@@ -194,6 +209,12 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         ? `${(affiliateType || 'book').toLowerCase()}|${affiliateLink.trim()}`
         : null;
 
+      // Ensure difficulty is either allowed value or null
+      const allowedDifficulties = ['Beginner', 'Intermediate', 'Advanced'];
+      const difficultyToSave = allowedDifficulties.includes(difficulty) && difficulty.trim()
+        ? difficulty
+        : null;
+
       // Prepare payload - only send fields you want to update
       const payload = {
         title: title.trim(),
@@ -206,6 +227,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         youtube_url: youtubeUrl || null,
         tags: Array.isArray(tags) ? tags.filter(Boolean) : [],
         slug: slug || null, // DB trigger should ensure uniqueness if necessary
+        difficulty_level: difficultyToSave, // NEW: include difficulty
       };
 
       // run update
@@ -274,6 +296,12 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           <label htmlFor="category">Category</label>
           <select id="category" value={category} onChange={e => setCategory(e.target.value)} required>
             {CATEGORIES.map(c => <option value={c} key={c}>{c}</option>)}
+          </select>
+
+          {/* Difficulty (optional) */}
+          <label htmlFor="difficulty">Difficulty level (optional)</label>
+          <select id="difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value)}>
+            {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
           </select>
 
           <label htmlFor="description">Short description (feed preview)</label>

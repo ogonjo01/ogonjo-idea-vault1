@@ -52,6 +52,7 @@ const normalizeRow = (r = {}) => {
     comments_count: toNum(r.comments_count),
     avg_rating: Number(r.avg_rating ?? 0),
     rating_count: Number(ratingCountRaw),
+    difficulty_level: r.difficulty_level ?? null,
     created_at: r.created_at ?? null,
     updated_at: r.updated_at ?? null,
   };
@@ -109,6 +110,7 @@ const buildLightItem = (nr = {}, src = {}) => {
     tags: nr.tags || [],
     user_id: nr.user_id ?? null,
     created_at: nr.created_at ?? null,
+    difficulty_level: nr.difficulty_level || null,
   };
 };
 
@@ -163,36 +165,27 @@ const SummaryView = () => {
     try {
       const scrollToTop = () => {
         try {
-          // If there's a dedicated main-content scroll container, prefer that
           const main = document.querySelector('.main-content');
           if (main && typeof main.scrollTo === 'function') {
             main.scrollTo({ top: 0, behavior: 'auto' });
             return;
           }
-
-          // If the summary page wrapper is scrollable, reset that
           if (pageRef && pageRef.current && typeof pageRef.current.scrollTo === 'function') {
             pageRef.current.scrollTo({ top: 0, behavior: 'auto' });
             return;
           }
-
-          // Fallback to window/document
           if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
             window.scrollTo(0, 0);
-            // also reset common fallbacks
             if (document && document.documentElement) document.documentElement.scrollTop = 0;
             if (document && document.body) document.body.scrollTop = 0;
           }
         } catch (e) {
           // non-fatal
-          // console.debug('scrollToTop inner error', e);
         }
       };
-
-      // run immediately when route param changes
       scrollToTop();
     } catch (e) {
-      // swallow — scroll is best-effort
+      // swallow
     }
   }, [param]);
 
@@ -221,6 +214,7 @@ const SummaryView = () => {
            image_url,
            slug,
            category,
+           difficulty_level,
            avg_rating,
            likes_count:likes!likes_post_id_fkey(count),
            views_count:views!views_post_id_fkey(count),
@@ -288,6 +282,7 @@ const SummaryView = () => {
            image_url,
            slug,
            category,
+           difficulty_level,
            avg_rating,
            likes_count:likes!likes_post_id_fkey(count),
            views_count:views!views_post_id_fkey(count),
@@ -355,6 +350,7 @@ const SummaryView = () => {
              affiliate_link,
              youtube_url,
              tags,
+             difficulty_level,
              user_id,
              created_at`
           )
@@ -378,6 +374,7 @@ const SummaryView = () => {
                affiliate_link,
                youtube_url,
                tags,
+               difficulty_level,
                user_id,
                created_at`
             )
@@ -426,9 +423,8 @@ const SummaryView = () => {
 
     loadMinimalSummary();
     return () => { mounted = false; };
-  }, [param, navigate]); // end useEffect loadMinimalSummary
+  }, [param, navigate]);
 
-  /* backgroundFetchFollowups placed after recommendation functions to ensure they exist */
   const backgroundFetchFollowups = async (resolvedPostId, category = '', tags = []) => {
     try {
       const { data, error } = await supabase
@@ -471,7 +467,6 @@ const SummaryView = () => {
         setViews((v) => (Number(v) || 0) + 1);
       } catch (e) {}
 
-      // Use tags-based recommendations if available; fallback to category if not
       if (Array.isArray(tags) && tags.length > 0) {
         fetchRecommendedByTags(tags, 10, resolvedPostId).catch(() => {});
       } else if ((category ?? '').trim()) {
@@ -693,7 +688,6 @@ const SummaryView = () => {
       };
     }
 
-    // BreadcrumbList
     try {
       const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : '';
       base.breadcrumb = {
@@ -711,7 +705,6 @@ const SummaryView = () => {
     return base;
   }, [summary, metaDescription, ogImage, pageUrl, SITE_DEFAULT_OG, BRAND, avgRating, commentsCount]);
 
-  // Use the first tag for explore links (consistency with ExplorePage which expects `tag`)
   const viewAllLinkForTags = useMemo(() => {
     const tagsArr = Array.isArray(summary?.tags) ? summary.tags.map(t => (t || '').trim()).filter(Boolean) : [];
     if (tagsArr.length === 0) return `/explore`;
@@ -790,6 +783,14 @@ const SummaryView = () => {
     setShowEdit(false);
   };
 
+  const renderDifficultyBadge = (lvl) => {
+    if (!lvl) return null;
+    const text = String(lvl);
+    const cls = `difficulty-label difficulty-${text.toLowerCase().replace(/\s+/g, '-')}`;
+    // small inline badge for compact header
+    return <span className={cls} aria-hidden="false">{text}</span>;
+  };
+
   return (
     <div className={`summary-page ${collapsed ? 'title-collapsed' : ''}`} ref={pageRef} data-collapsed={collapsed ? '1' : '0'}>
       <Helmet>
@@ -837,7 +838,17 @@ const SummaryView = () => {
 
         <div className="summary-title-left">
           <h1 className="summary-title" title={summary.title}>{summary.title}</h1>
-          <div className="summary-author">by {summary.author}</div>
+
+          {/* Author + Difficulty side-by-side (compact) */}
+          <div className="summary-meta-row" aria-hidden="false">
+            <div className="summary-author" title={summary.author || ''}>
+              <span className="author-prefix">by&nbsp;</span>
+              <span className="author-name">{summary.author}</span>
+            </div>
+            <div className="summary-difficulty-inline">
+              {renderDifficultyBadge(summary.difficulty_level)}
+            </div>
+          </div>
         </div>
 
         <div className="summary-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -869,10 +880,7 @@ const SummaryView = () => {
         </div>
       </header>
 
-     
       <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
-        
-
         {youtubeId && (
           <div className="youtube-embed" style={{ marginBottom: 12 }}>
             <div className="embed-inner">
@@ -887,9 +895,10 @@ const SummaryView = () => {
             </div>
           </div>
         )}
-        
       </div>
-         <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
+
+      <article className="summary-body" dangerouslySetInnerHTML={{ __html: processedSummary }} />
+
       {(isRecommending || (recommendedContent && recommendedContent.length > 0)) && (
         <HorizontalCarousel
           title={`More like this`}

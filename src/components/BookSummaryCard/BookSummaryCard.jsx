@@ -24,6 +24,7 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     comments_count = 0,
     image_url = '',
     avg_rating = 0,
+    difficulty_level = null, // NEW: difficulty overlay comes from summary.difficulty_level
   } = summary;
 
   const summaryPath = slug ? `/summary/${slug}` : `/summary/${id}`;
@@ -42,6 +43,23 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     description && String(description).trim()
       ? cleanText(description, 140)
       : '';
+
+  // Render difficulty badge text safely (plain text)
+  const renderDifficultyBadge = (lvl) => {
+    if (!lvl) return null;
+    const text = String(lvl);
+    const cls = `difficulty-badge difficulty-${text.toLowerCase().replace(/\s+/g, '-')}`;
+    return (
+      <span
+        className={cls}
+        title={text}
+        aria-hidden="false"
+        role="note"
+      >
+        {text}
+      </span>
+    );
+  };
 
   return (
     <li
@@ -62,6 +80,11 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
         >
           {image_url ? (
             <div className="cover-wrap">
+              {/* Difficulty overlay sits over the image */}
+              <div className="difficulty-overlay">
+                {renderDifficultyBadge(difficulty_level)}
+              </div>
+
               <img
                 src={image_url}
                 alt={`Cover of ${title}`}
@@ -70,7 +93,11 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
               />
             </div>
           ) : (
-            <div className="cover-placeholder" aria-hidden="true" />
+            <div className="cover-placeholder" aria-hidden="true">
+              <div className="difficulty-overlay">
+                {renderDifficultyBadge(difficulty_level)}
+              </div>
+            </div>
           )}
 
           <div className="card-content">

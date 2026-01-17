@@ -175,3 +175,55 @@
 
 /* If the viewport is narrower than the card width, the container will scroll (recommended),
    or you can adjust parent container to allow wrapping to next row. Don't reduce card width. */
+/* Make cover-wrap a positioned container so overlay sits on it */
+.cover-wrap,
+.cover-placeholder {
+  position: relative;
+}
+
+/* Difficulty overlay container (positioned inside cover) */
+.difficulty-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  pointer-events: none; /* decorative only; link handled by card */
+}
+
+/* Difficulty badge (compact pill) */
+.difficulty-badge {
+  display: inline-block;
+  padding: 6px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #07131a;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 10px rgba(2,6,23,0.08);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Level-specific coloring — keeps previous palette but more subtle on cards */
+.difficulty-badge.difficulty-beginner { background: rgba(209,250,229,0.95); color: #065f46; }
+.difficulty-badge.difficulty-intermediate { background: rgba(255,247,237,0.95); color: #92400e; }
+.difficulty-badge.difficulty-advanced { background: rgba(254,226,226,0.95); color: #7f1d1d; }
+
+/* Slightly reduce badge size on smaller cards */
+@media (max-width: 640px) {
+  .difficulty-badge { padding: 4px 6px; font-size: 0.68rem; }
+  .difficulty-overlay { top: 6px; left: 6px; }
+}
+
+/* Ensure overlay contrasts against dark images by adding subtle border */
+.difficulty-badge {
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+/* If card cover is very light, ensure readability by adding slight text-shadow */
+.difficulty-badge { text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
+

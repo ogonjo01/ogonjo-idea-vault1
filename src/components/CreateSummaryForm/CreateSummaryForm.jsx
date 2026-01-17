@@ -36,10 +36,12 @@ class CustomClipboard extends Clipboard {
 
 Quill.register("modules/clipboard", CustomClipboard, true);
 
-// FINAL 10 CATEGORIES (expanded list)
+// FINAL 10+ CATEGORIES (expanded list)
 const categories = [
   "Apps",
   "Business Legends",
+  "Business Giants",
+  "Business Concepts",
   "Business Strategy & Systems",
   "Courses & Learning Paths",
   "Best Books",
@@ -57,6 +59,14 @@ const categories = [
   "Strategic Communication",
 ];
 
+// Difficulty options (empty means "not specified")
+const difficulties = [
+  { value: "", label: "Not specified (optional)" },
+  { value: "Beginner", label: "Beginner" },
+  { value: "Intermediate", label: "Intermediate" },
+  { value: "Advanced", label: "Advanced" },
+];
+
 const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
@@ -69,6 +79,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [affiliateType, setAffiliateType] = useState("book"); // new state: book | pdf | app
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [tags, setTags] = useState(""); // comma-separated input
+  const [difficulty, setDifficulty] = useState(""); // optional difficulty_level
   const [loading, setLoading] = useState(false);
 
   const quillRef = useRef(null);
@@ -105,21 +116,34 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     let finalSlug = slug;
 
     // Check if slug exists
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("book_summaries")
       .select("id")
       .eq("slug", finalSlug)
       .maybeSingle();
 
+    if (existingError) {
+      console.error("Error checking slug existence:", existingError);
+      // continue — we'll try inserting and let DB/triggers handle if collision occurs
+    }
+
     if (existing) {
       let counter = 2;
       while (true) {
         const newSlug = `${slug}-${counter}`;
-        const { data: exists } = await supabase
+        const { data: exists, error: existsError } = await supabase
           .from("book_summaries")
           .select("id")
           .eq("slug", newSlug)
           .maybeSingle();
+
+        if (existsError) {
+          console.error("Error checking slug collision:", existsError);
+          // fallback: use generatedSlug with counter and proceed
+          finalSlug = newSlug;
+          break;
+        }
+
         if (!exists) {
           finalSlug = newSlug;
           break;
@@ -143,6 +167,13 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         ? `${affiliateType}|${affiliateLink.trim()}`
         : null;
 
+    // Ensure difficulty is either one of allowed values or null
+    const allowedDifficulties = ["Beginner", "Intermediate", "Advanced"];
+    const difficultyToSave =
+      allowedDifficulties.includes(difficulty) && difficulty.trim()
+        ? difficulty
+        : null;
+
     const { error } = await supabase.from("book_summaries").insert([
       {
         title,
@@ -156,6 +187,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         youtube_url: youtubeUrl || null,
         tags: parsedTags,
         slug: finalSlug,
+        difficulty_level: difficultyToSave, // new column (nullable)
       },
     ]);
 
@@ -181,6 +213,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       setYoutubeUrl("");
       setTags("");
       setSlug("");
+      setDifficulty(""); // reset difficulty
 
       if (typeof onNewSummary === "function") onNewSummary();
       if (typeof onClose === "function") onClose();
@@ -261,6 +294,19 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             {categories.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
+              </option>
+            ))}
+          </select>
+
+          {/* Difficulty (optional) */}
+          <label>Difficulty level (optional)</label>
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value)}
+          >
+            {difficulties.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
               </option>
             ))}
           </select>

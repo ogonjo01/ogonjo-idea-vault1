@@ -1,5 +1,6 @@
 // src/components/ContentFeed/ContentFeed.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
@@ -22,7 +23,8 @@ const LIGHT_SELECT = `
   image_url,
   affiliate_link,
   avg_rating,
-  slug
+  slug,
+  difficulty_level
 `;
 
 // Select with aggregates for heavier queries
@@ -41,7 +43,8 @@ const SELECT_WITH_COUNTS = `
   views_count:views!views_post_id_fkey(count),
   comments_count:comments!comments_post_id_fkey(count),
   avg_rating,
-  slug
+  slug,
+  difficulty_level
 `;
 
 /* ---------- helpers ---------- */
@@ -101,6 +104,8 @@ const normalizeRow = (r = {}) => {
     avg_rating: Number(avg_rating || 0),
     rating_count: Number(rating_count || 0),
     created_at: r.created_at ?? null,
+    // propagate difficulty_level from DB into normalized row
+    difficulty_level: r.difficulty_level ?? null,
   };
 };
 
@@ -191,6 +196,8 @@ const similarityScore = (item, query) => {
 
 /* ---------------- Component ---------------- */
 const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQuery = '' }) => {
+  const location = useLocation();
+
   const [loadingGlobal, setLoadingGlobal] = useState(true);
   const [globalContent, setGlobalContent] = useState({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
 
@@ -217,12 +224,65 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
+  // EFFECT A: ensure SPA navigation always starts at top of page AFTER route change (fallback)
+  useEffect(() => {
+    try {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      // also reset document scroll positions
+      if (document && document.documentElement) document.documentElement.scrollTop = 0;
+      if (document && document.body) document.body.scrollTop = 0;
+    } catch (e) {
+      // ignore
+    }
+  }, [location.pathname]);
+
+  // EFFECT B: attach a click-capture handler to the feed root that scrolls to top BEFORE navigation
+  // This prevents cases where the browser preserves scroll or the next page renders and scroll lands middle/end.
+  useEffect(() => {
+    const root = rootRef.current || document;
+    if (!root) return;
+
+    const onLinkClickCapture = (e) => {
+      try {
+        // only run for primary button clicks (ignore modifiers)
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+        const a = e.target && e.target.closest && e.target.closest('a');
+        if (!a) return;
+
+        const href = a.getAttribute('href') || a.href;
+        if (!href) return;
+
+        // Make absolute URL
+        let url;
+        try { url = new URL(href, window.location.origin); } catch (err) { return; }
+
+        // Only internal app routes
+        if (url.origin !== window.location.origin) return;
+
+        // If the destination is a summary page (change to your route if different), scroll to top immediately
+        if (url.pathname.startsWith('/summary/')) {
+          window.scrollTo({ top: 0, behavior: 'auto' });
+          if (document && document.documentElement) document.documentElement.scrollTop = 0;
+          if (document && document.body) document.body.scrollTop = 0;
+        }
+      } catch (err) {
+        // swallow
+      }
+    };
+
+    root.addEventListener('click', onLinkClickCapture, true); // capture phase
+    return () => {
+      root.removeEventListener('click', onLinkClickCapture, true);
+    };
+  }, []);
+
   // effectiveQuery mirrors incoming prop (trimmed). We will scope DB queries to selectedCategory,
   // but do not auto-clear the effectiveQuery (keeps user intent stable while navigating).
   const [effectiveQuery, setEffectiveQuery] = useState((searchQuery || '').trim());
   useEffect(() => { setEffectiveQuery((searchQuery || '').trim()); }, [searchQuery]);
 
-  // Scroll-to-top when category or effectiveQuery changes
+  // Scroll-to-top when category or effectiveQuery changes (feed-specific)
   useEffect(() => {
     const scrollToFeedTop = () => {
       try {

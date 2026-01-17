@@ -514,3 +514,78 @@ html {
     width: 100%;              /* now matches the small box */
   }
 }
+/* --- Meta row: author + difficulty inline --- */
+.summary-title-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px; /* small gap between title and meta row */
+}
+
+/* Row containing author and difficulty side-by-side */
+.summary-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px; /* keep compact */
+}
+
+/* Author container */
+.summary-author {
+  display: flex;
+  align-items: center;
+  min-width: 0; /* allow flex child to shrink */
+  font-size: 0.95rem;
+  color: #374151;
+}
+
+/* 'by' prefix separate to keep truncation on name only */
+.author-prefix {
+  color: #6b7280;
+  margin-right: 4px;
+  flex: 0 0 auto;
+}
+
+/* Author name: truncation */
+.author-name {
+  display: inline-block;
+  max-width: 320px;         /* adjust as needed for layout */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  flex: 1 1 auto;
+}
+
+/* Inline difficulty badge (compact) */
+.summary-difficulty-inline {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+/* Difficulty label styles (compact pill) */
+.difficulty-label {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: none;
+  line-height: 1;
+}
+
+/* Colors for levels — tweak to match your theme */
+.difficulty-beginner { background: #d1fae5; color: #065f46; }
+.difficulty-intermediate { background: #fff7ed; color: #92400e; }
+.difficulty-advanced { background: #fee2e2; color: #7f1d1d; }
+
+/* Reduce header padding when compact */
+.summary-header .summary-title-left { padding-top: 6px; padding-bottom: 6px; }
+
+
+
+/* For very small screens adjust author max width */
+@media (max-width: 640px) {
+  .author-name { max-width: 160px; }
+  .summary-thumb { width: 72px; height: 72px; }
+}
