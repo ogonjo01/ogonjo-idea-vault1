@@ -1,4 +1,5 @@
-import React from 'react';
+// src/components/BookSummaryCard/BookSummaryCard.jsx
+import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FaHeart, FaEye, FaComment, FaStar } from 'react-icons/fa';
@@ -9,6 +10,11 @@ import './BookSummaryCard.css';
  * BookSummaryCard (Content Feed)
  * - Uses ONLY `description` for preview text
  * - No fallback to full summary (performance + SEO)
+ *
+ * Small-screen image focal/cropping fix:
+ * - On image load we read the naturalWidth/naturalHeight
+ * - Decide an object-position (top center, center center) for small screens
+ * - Apply inline style to the <img> so cropping shows the best part
  */
 
 const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
@@ -24,7 +30,7 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     comments_count = 0,
     image_url = '',
     avg_rating = 0,
-    difficulty_level = null, // NEW: difficulty overlay comes from summary.difficulty_level
+    difficulty_level = null,
   } = summary;
 
   const summaryPath = slug ? `/summary/${slug}` : `/summary/${id}`;
@@ -44,7 +50,6 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
       ? cleanText(description, 140)
       : '';
 
-  // Render difficulty badge text safely (plain text)
   const renderDifficultyBadge = (lvl) => {
     if (!lvl) return null;
     const text = String(lvl);
@@ -60,6 +65,50 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
       </span>
     );
   };
+
+  // --- image focal control state ---
+  const [imgObjectPosition, setImgObjectPosition] = useState('center center');
+
+  // determine the best object-position based on natural image ratio & viewport
+  const handleImageLoad = useCallback((e) => {
+    try {
+      const img = e.target;
+      const w = img.naturalWidth || img.width || 1;
+      const h = img.naturalHeight || img.height || 1;
+      const ratio = w / h; // width / height
+      const vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024;
+
+      // heuristics:
+      // - on small screens (mobile), for tall images prefer 'top center' so the top of the cover (title/face) remains visible
+      // - for wide images, center center is fine
+      // - for almost square images, center center
+      //
+      // tweak thresholds as you see fit
+      if (vw <= 640) {
+        if (h > w) {
+          // portrait/tall image -> show top area on mobile
+          setImgObjectPosition('center top');
+        } else if (ratio < 0.9) {
+          // very tall (rare) -> top
+          setImgObjectPosition('center top');
+        } else {
+          // landscape-ish -> center
+          setImgObjectPosition('center center');
+        }
+      } else {
+        // larger screens -> keep center (desktop already looked fine)
+        setImgObjectPosition('center center');
+      }
+    } catch (err) {
+      // fallback
+      setImgObjectPosition('center center');
+    }
+  }, []);
+
+  // optional: if image fails to load, keep center
+  const handleImageError = useCallback(() => {
+    setImgObjectPosition('center center');
+  }, []);
 
   return (
     <li
@@ -77,10 +126,10 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.32 }}
+          style={{ height: '100%' }} // ensures article fills the li wrapper height
         >
           {image_url ? (
             <div className="cover-wrap">
-              {/* Difficulty overlay sits over the image */}
               <div className="difficulty-overlay">
                 {renderDifficultyBadge(difficulty_level)}
               </div>
@@ -90,6 +139,10 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
                 alt={`Cover of ${title}`}
                 className="book-cover-image"
                 loading="lazy"
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+                // apply inline objectPosition so small screens show the "right" crop
+                style={{ objectPosition: imgObjectPosition }}
               />
             </div>
           ) : (
@@ -107,7 +160,6 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
               by <span>{author}</span>
             </p>
 
-            {/* Feed preview text (indexable, lightweight) */}
             {previewText && (
               <p className="summary-text">
                 {previewText}

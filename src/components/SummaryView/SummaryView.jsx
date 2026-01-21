@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
-import { FaHeart, FaStar, FaComment, FaEye, FaPlus, FaMinus, FaPaintBrush, FaCopy } from 'react-icons/fa';
+import { FaHeart, FaStar, FaComment, FaEye, FaPlus, FaMinus, FaPaintBrush } from 'react-icons/fa';
 import CommentsSection from '../CommentsSection/CommentsSection';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
@@ -18,7 +18,7 @@ const SELECT_WITH_COUNTS = `*,
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
-/* ---------- Utilities (same as before) ---------- */
+/* ---------- Small utilities ---------- */
 const toNum = (v) => {
   if (v == null) return 0;
   if (Array.isArray(v)) return Number(v[0]?.count ?? 0);
@@ -76,7 +76,6 @@ const extractYouTubeId = (url = '') => {
 };
 
 const stripHtml = (html = '') => String(html || '').replace(/<[^>]*>/g, '').trim();
-
 const makeSafeDescription = (raw = '', maxLen = 140) => {
   const cleaned = DOMPurify.sanitize(String(raw || ''), { ALLOWED_TAGS: [] });
   const plain = stripHtml(cleaned);
@@ -85,12 +84,7 @@ const makeSafeDescription = (raw = '', maxLen = 140) => {
 
 const buildLightItem = (nr = {}, src = {}) => {
   let rawDesc =
-    (src.description !== undefined ? src.description : null) ??
-    (nr.description !== undefined ? nr.description : null) ??
-    src.desc ??
-    src.blurb ??
-    src.short_description ??
-    null;
+    (src.description !== undefined ? src.description : null) ?? (nr.description !== undefined ? nr.description : null) ?? src.desc ?? src.blurb ?? src.short_description ?? null;
 
   let description = String(rawDesc || '').trim();
   const safeDesc = makeSafeDescription(description, 140);
@@ -143,17 +137,17 @@ const SummaryView = () => {
   const [showEdit, setShowEdit] = useState(false);
 
   // Reader UX state
-  const [fontSize, setFontSize] = useState(18); // px
+  const [fontSize, setFontSize] = useState(18);
   const [lineHeight, setLineHeight] = useState(1.75);
-  const [readingMode, setReadingMode] = useState(true); // white clean view
-  const [processedSummaryHtml, setProcessedSummaryHtml] = useState(''); // final sanitized + resolved HTML
+  const [readingMode, setReadingMode] = useState(true);
+  const [processedSummaryHtml, setProcessedSummaryHtml] = useState('');
 
   /* ---------- refs ---------- */
   const pageRef = useRef(null);
   const headerRef = useRef(null);
-  const slugCache = useRef(new Map()); // id -> slug cache to avoid repeated queries
+  const slugCache = useRef(new Map());
 
-  /* ---------- Basic hooks (auth, scroll) ---------- */
+  /* ---------- Basic hooks (auth) ---------- */
   useEffect(() => {
     (async () => {
       try {
@@ -165,31 +159,49 @@ const SummaryView = () => {
     })();
   }, []);
 
-  useEffect(() => {
+  /* ---------- Robust scroll to top helper ---------- */
+  const scrollToTop = useCallback((behavior = 'auto') => {
     try {
-      const scrollToTop = () => {
-        try {
-          const main = document.querySelector('.main-content');
-          if (main && typeof main.scrollTo === 'function') {
-            main.scrollTo({ top: 0, behavior: 'auto' });
-            return;
-          }
-          if (pageRef && pageRef.current && typeof pageRef.current.scrollTo === 'function') {
-            pageRef.current.scrollTo({ top: 0, behavior: 'auto' });
-            return;
-          }
-          if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-            window.scrollTo(0, 0);
-            if (document && document.documentElement) document.documentElement.scrollTop = 0;
-            if (document && document.body) document.body.scrollTop = 0;
-          }
-        } catch (e) {}
-      };
-      scrollToTop();
-    } catch (e) {}
-  }, [param]);
+      // Prefer a dedicated main-content container (if your app uses one)
+      const mainEl = document.querySelector('.main-content');
+      const scrollEl = (mainEl && typeof mainEl.scrollTo === 'function')
+        ? mainEl
+        : (pageRef.current && typeof pageRef.current.scrollTo === 'function') ? pageRef.current
+        : (document.scrollingElement || document.documentElement || document.body);
 
-  /* ---------- Recommendation functions ---------- */
+      // Clear hash (prevent fragment auto-scroll)
+      if (window && window.location && window.location.hash) {
+        const urlNoHash = window.location.pathname + window.location.search;
+        try { window.history.replaceState(null, '', urlNoHash); } catch (e) {}
+      }
+
+      if (scrollEl && typeof scrollEl.scrollTo === 'function') {
+        try { scrollEl.scrollTo({ top: 0, left: 0, behavior }); } catch (e) { scrollEl.scrollTop = 0; }
+      } else if (typeof window.scrollTo === 'function') {
+        try { window.scrollTo({ top: 0, left: 0, behavior }); } catch (e) { window.scrollTo(0, 0); }
+      } else {
+        // final fallback
+        if (document && document.documentElement) document.documentElement.scrollTop = 0;
+        if (document && document.body) document.body.scrollTop = 0;
+      }
+    } catch (e) {
+      // swallow - non critical
+      try { window.scrollTo(0, 0); } catch (ee) {}
+    }
+  }, []);
+
+  // Ensure scroll to top when the route param changes.
+  useEffect(() => {
+    // immediate attempt
+    scrollToTop('auto');
+    // next frame attempt (after React renders)
+    requestAnimationFrame(() => scrollToTop('smooth'));
+    // small delayed fallback
+    const t = setTimeout(() => scrollToTop('auto'), 120);
+    return () => clearTimeout(t);
+  }, [param, scrollToTop]);
+
+  /* ---------- Recommendation functions (unchanged) ---------- */
   const fetchRecommendedByTags = useCallback(async (tags = [], limit = 10, resolvedPostId = null) => {
     setIsRecommending(true);
     setRecError(null);
@@ -310,7 +322,7 @@ const SummaryView = () => {
     }
   }, []);
 
-  /* ---------- Data followups (must be defined before load effect) ---------- */
+  /* ---------- Data followups ---------- */
   const backgroundFetchFollowups = useCallback(async (resolvedPostId, category = '', tags = []) => {
     try {
       const { data, error } = await supabase
@@ -556,18 +568,14 @@ const SummaryView = () => {
   /* ---------- Link resolution: resolve data-summary-id => slug (batch + cache) ---------- */
   const resolveInternalLinksInHtml = useCallback(async (html) => {
     if (!html) return '';
-    // sanitize first
     const sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ['data-summary-id'] });
-
-    // parse into DOM
     const container = document.createElement('div');
     container.innerHTML = sanitized;
 
-    // find anchors with data-summary-id, or fallback to href '#summary-' pattern
     const anchors = Array.from(container.querySelectorAll('a[data-summary-id]'));
     const fallbackAnchors = anchors.length === 0 ? Array.from(container.querySelectorAll('a[href*="#summary-"]')) : [];
 
-    const targets = new Map(); // idStr -> [anchorNodes...]
+    const targets = new Map();
 
     anchors.forEach(a => {
       const id = String(a.getAttribute('data-summary-id') || '').trim();
@@ -578,29 +586,23 @@ const SummaryView = () => {
       }
     });
 
-    // fallback parse from href if no data-summary-id anchors found
     fallbackAnchors.forEach(a => {
       const href = a.getAttribute('href') || '';
       const m = href.match(/#summary-([0-9a-fA-F-]+)/);
       if (m && m[1]) {
         const key = String(m[1]);
-        a.setAttribute('data-summary-id', key); // normalize into data attribute for future
+        a.setAttribute('data-summary-id', key);
         if (!targets.has(key)) targets.set(key, []);
         targets.get(key).push(a);
       }
     });
 
-    if (targets.size === 0) {
-      // nothing to resolve, return sanitized HTML
-      return container.innerHTML;
-    }
+    if (targets.size === 0) return container.innerHTML;
 
-    // collect ids that need to be looked up (skip cached ones)
     const idsToFetch = Array.from(targets.keys()).filter(id => !slugCache.current.has(id));
     let fetched = [];
     if (idsToFetch.length > 0) {
       try {
-        // Supabase 'in' wants array of values (string ids)
         const { data, error } = await supabase
           .from('book_summaries')
           .select('id, slug')
@@ -613,18 +615,15 @@ const SummaryView = () => {
         fetched = [];
       }
 
-      // update cache
       (fetched || []).forEach(r => {
-        try { slugCache.current.set(String(r.id), r.slug || null); } catch (e) {}
+        try { slugCache.current.set(String(r.id), r.slug || null); } catch (e) { /* ignore */ }
       });
 
-      // for any ids not returned, set cache null to avoid repeated queries
       idsToFetch.forEach(id => {
         if (!slugCache.current.has(id)) slugCache.current.set(id, null);
       });
     }
 
-    // Now map anchors to slugs (from cache)
     targets.forEach((anchorNodes, id) => {
       const slug = slugCache.current.get(id) || null;
       anchorNodes.forEach(a => {
@@ -632,9 +631,7 @@ const SummaryView = () => {
           a.setAttribute('href', `/summary/${slug}`);
           a.setAttribute('data-summary-slug', slug);
           a.classList.add('internal-summary-link');
-          // keep target default - we'll intercept clicks in React to navigate SPA
         } else {
-          // broken — keep as text-like anchor, remove href to avoid jumping
           a.removeAttribute('href');
           a.classList.add('internal-summary-link-broken');
           a.setAttribute('aria-disabled', 'true');
@@ -654,8 +651,6 @@ const SummaryView = () => {
         setProcessedSummaryHtml('');
         return;
       }
-
-      // sanitize summary HTML first and then resolve internal links
       try {
         const resolved = await resolveInternalLinksInHtml(summary.summary);
         if (!cancelled) setProcessedSummaryHtml(resolved);
@@ -670,29 +665,32 @@ const SummaryView = () => {
 
   /* ---------- Intercept clicks inside article to use SPA navigation for internal links ---------- */
   const onArticleClick = (e) => {
-    // find closest anchor
     const a = e.target && e.target.closest && e.target.closest('a');
     if (!a) return;
-    // internal summary anchors (we added data-summary-slug or href starting with /summary/)
-    const dataSlug = a.getAttribute('data-summary-slug');
+
     const href = a.getAttribute('href') || '';
+    const dataSlug = a.getAttribute('data-summary-slug');
+    const isExternal = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(href);
+
+    // allow external links (protocol present) to behave normally
+    if (isExternal) return;
+
+    // if it's an internal link to a summary
     const isInternal = dataSlug || href.startsWith('/summary/');
-    const isExternal = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(href); // protocol present -> external
+    if (!isInternal) return;
 
-    if (isExternal) {
-      // allow external links to behave normally (new tab if target="_blank")
-      return;
-    }
+    // intercept and use SPA navigation
+    e.preventDefault();
 
-    if (isInternal) {
-      e.preventDefault();
-      const slug = dataSlug || href.replace(/^\/summary\//, '').split(/[/?#]/)[0] || null;
-      if (slug) {
-        // SPA navigate
-        navigate(`/summary/${slug}`);
-      } else {
-        // nothing to do (broken)
-      }
+    const slug = dataSlug || href.replace(/^\/summary\//, '').split(/[/?#]/)[0] || null;
+    if (slug) {
+      // navigate to new summary
+      navigate(`/summary/${slug}`);
+      // force scroll to top after navigation (works as a safety fallback too)
+      // schedule a few attempts to ensure we run after the new component renders
+      setTimeout(() => scrollToTop('auto'), 10);
+      requestAnimationFrame(() => scrollToTop('smooth'));
+      setTimeout(() => scrollToTop('auto'), 150);
     }
   };
 
@@ -705,11 +703,7 @@ const SummaryView = () => {
   /* ---------- Derived / meta ---------- */
   const BRAND = 'OGONJO';
   const SITE_DEFAULT_OG = useMemo(() => {
-    try {
-      if (typeof window !== 'undefined' && window.location.origin) {
-        return `${window.location.origin}/ogonjo.jpg`;
-      }
-    } catch (e) {}
+    try { if (typeof window !== 'undefined' && window.location.origin) return `${window.location.origin}/ogonjo.jpg`; } catch (e) {}
     return 'https://your-ogonjo-app.netlify.app/ogonjo.jpg';
   }, []);
 
@@ -767,7 +761,17 @@ const SummaryView = () => {
     return `/explore?tag=${encodeURIComponent(tagsArr[0])}`;
   }, [summary?.tags]);
 
-  /* ---------- UI render ---------- */
+  /* ---------- Handler for edit saved ---------- */
+  const handleEditSaved = (updatedRow) => {
+    if (!updatedRow) { setShowEdit(false); return; }
+    const normalized = normalizeRow(updatedRow);
+    setSummary(prev => prev ? { ...prev, ...normalized } : normalized);
+    backgroundFetchFollowups(normalized.id, normalized.category, normalized.tags).catch(() => {});
+    try { window.dispatchEvent(new CustomEvent('summary:updated', { detail: { id: normalized.id } })); } catch (e) {}
+    setShowEdit(false);
+  };
+
+  /* ---------- Render ---------- */
   if (isLoading) {
     return (
       <div className="centered-loader-viewport" role="status" aria-live="polite">
@@ -807,15 +811,6 @@ const SummaryView = () => {
 
   const onClickTag = (tag) => { if (!tag) return; navigate(`/explore?tag=${encodeURIComponent(tag)}`); };
 
-  const handleEditSaved = (updatedRow) => {
-    if (!updatedRow) { setShowEdit(false); return; }
-    const normalized = normalizeRow(updatedRow);
-    setSummary(prev => prev ? { ...prev, ...normalized } : normalized);
-    backgroundFetchFollowups(normalized.id, normalized.category, normalized.tags).catch(() => {});
-    try { window.dispatchEvent(new CustomEvent('summary:updated', { detail: { id: normalized.id } })); } catch (e) {}
-    setShowEdit(false);
-  };
-
   const renderDifficultyBadge = (lvl) => {
     if (!lvl) return null;
     const text = String(lvl);
@@ -823,7 +818,7 @@ const SummaryView = () => {
     return <span className={cls} aria-hidden="false">{text}</span>;
   };
 
-  // inline styles tuned for reading experience (Times New Roman, white background)
+  // article style
   const articleStyle = {
     fontFamily: '"Times New Roman", Times, serif',
     fontSize: `${fontSize}px`,
@@ -835,7 +830,6 @@ const SummaryView = () => {
     borderRadius: 10,
     boxShadow: readingMode ? '0 6px 20px rgba(0,0,0,0.05)' : 'none',
     color: '#0b1220',
-    // improve readability on long lines
     wordBreak: 'break-word',
   };
 
@@ -956,7 +950,6 @@ const SummaryView = () => {
         className="summary-body"
         style={articleStyle}
         onClick={onArticleClick}
-        // use innerHTML (sanitized above)
         dangerouslySetInnerHTML={{ __html: processedSummaryHtml }}
       />
 
@@ -975,7 +968,6 @@ const SummaryView = () => {
         </HorizontalCarousel>
       )}
 
-      {/* Empty / error states */}
       {!isRecommending && recommendedContent && recommendedContent.length === 0 && !recError && (
         <div className="rec-empty" style={{ padding: '12px 16px', color: '#6b7280' }}>
           No similar items found.
@@ -991,10 +983,14 @@ const SummaryView = () => {
         </div>
       )}
 
-      <section className="summary-comments" style={{ maxWidth: 980, margin: '20px auto', padding: '0 18px' }}>
-        <h3>Comments</h3>
-        <CommentsSection postId={summary.id} />
-      </section>
+      <section
+  className="summary-comments"
+  style={{ width: '80%', margin: '20px auto', padding: '0 18px', boxSizing: 'border-box' }}
+>
+  <h3>Comments</h3>
+  <CommentsSection postId={summary.id} />
+</section>
+
 
       {showEdit && (
         <EditSummaryForm

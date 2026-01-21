@@ -45,7 +45,7 @@ html {
   background: linear-gradient(180deg, rgba(255,255,255,0.99), rgba(255,255,255,0.96));
   padding: 10px;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+  box-shadow: 0 12px 34px rgba(0,0,0,0.04);
   
   /* FIX: Removed margin-bottom to close the gap */
   margin-bottom: 0;
@@ -300,16 +300,18 @@ html {
 /* MOBILE: adjust for fixed header, no thumb */
 @media (max-width: 780px) {
   :root {
-    --thumb-large: 84px;
+    --thumb-large: 46px;
     --thumb-small: 40px;
   }
 
   .summary-page {
     padding-top: calc(var(--header-height) + var(--category-height) + var(--collapsed-header-vh));
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
-
+.summary-header {
+  height: 120px;
+}
   /* When globals hidden on mobile */
   .og-header.og-header--hidden ~ .main-content .summary-page,
   .category-filter-container.category-filter-container--hidden ~ .main-content .summary-page {
@@ -517,14 +519,14 @@ html {
 .summary-title-left {
   display: flex;
   flex-direction: column;
-  gap: 6px; /* small gap between title and meta row */
+  gap: 4px; /* small gap between title and meta row */
 }
 
 /* Row containing author and difficulty side-by-side */
 .summary-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 20px; /* keep compact */
 }
 
@@ -586,5 +588,5 @@ html {
 /* For very small screens adjust author max width */
 @media (max-width: 640px) {
   .author-name { max-width: 160px; }
-  .summary-thumb { width: 72px; height: 72px; }
+  .summary-thumb { width: 72px; height: 50px; }
 }
