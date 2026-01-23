@@ -59,6 +59,7 @@ const categories = [
   "Business Strategy & Systems",
   "Courses & Learning Paths",
   "Best Books",
+  "People",
   "Business Ideas",
   "Book Summaries",
   "Entrepreneurship",

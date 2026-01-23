@@ -9,7 +9,7 @@ import 'react-quill/dist/quill.snow.css';
 import './EditSummaryForm.css';
 
 const CATEGORIES = [
-  "Apps","Business Legends","Best Books","Business Giants","Business Concepts",
+  "Apps","Business Legends","Best Books","People","Business Giants","Business Concepts",
   "Business Strategy & Systems","Courses & Learning Paths","Business Ideas",
   "Book Summaries","Entrepreneurship","Self-Improvement","Marketing & Sales",
   "Money & Productivity","Mindset & Motivation","Career Development","Video Insights",
