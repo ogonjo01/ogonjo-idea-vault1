@@ -71,6 +71,7 @@ const categories = [
   "Video Insights",
   "Digital Skills & Technology",
   "Leadership & Management",
+  "Concepts",
   "Strategic Communication",
 ];
 

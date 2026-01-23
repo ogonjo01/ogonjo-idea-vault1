@@ -13,7 +13,7 @@ const CATEGORIES = [
   "Business Strategy & Systems","Courses & Learning Paths","Business Ideas",
   "Book Summaries","Entrepreneurship","Self-Improvement","Marketing & Sales",
   "Money & Productivity","Mindset & Motivation","Career Development","Video Insights",
-  "Digital Skills & Technology","Leadership & Management","Strategic Communication"
+  "Digital Skills & Technology","Leadership & Management","Concepts","Strategic Communication"
 ];
 
 const DIFFICULTIES = [
