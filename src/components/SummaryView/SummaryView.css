@@ -266,30 +266,28 @@ html {
 }
 
 /* body */
-.summary-body {
-  line-height: 1.6;
-  color: #2b3440;
-  font-size: 0.98rem;
-  margin-top: 12px;
-  margin-bottom: 0;
-  word-break: break-word;
+.summary-body p,
+.summary-body li {
+  text-align: justify !important;
 }
 
-.summary-body img, .summary-body picture, .summary-body figure, .summary-body iframe {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  margin: 12px auto;
-  object-fit: contain;
+/* Override Quill alignment classes */
+.summary-body .ql-align-left,
+.summary-body .ql-align-center,
+.summary-body .ql-align-right {
+  text-align: justify !important;
 }
 
-.summary-body p {
-  margin-bottom: 12px;
+/* Keep headings readable */
+.summary-body h1,
+.summary-body h2,
+.summary-body h3,
+.summary-body h4,
+.summary-body h5,
+.summary-body h6 {
+  text-align: left !important;
 }
 
-.summary-body p:last-child {
-  margin-bottom: 0;
-}
 
 /* ensure no trailing whitespace */
 .summary-page > *:last-child {
@@ -589,4 +587,55 @@ html {
 @media (max-width: 640px) {
   .author-name { max-width: 160px; }
   .summary-thumb { width: 72px; height: 50px; }
+}
+/* ---------- Mobile gutter / spacing fixes ---------- */
+/* Put this after your mobile @media rules so it overrides earlier values */
+@media (max-width: 780px) {
+  /* let the page expand fully inside the viewport */
+  .summary-page {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-left: 10px !important;   /* small horizontal padding */
+    padding-right: 10px !important;  /* match left */
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    box-sizing: border-box;
+  }
+
+  /* make sticky header use full width and not create side gutters */
+  .summary-header {
+    max-width: 100% !important;
+    width: calc(100% - 20px) !important; /* keep small inset */
+    margin: 0 auto !important;
+    padding: 8px 10px !important;
+    left: 0 !important;
+    right: 0 !important;
+    border-radius: 8px; /* keep slight rounding if you like, or set to 0 */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+  }
+
+  /* If there's a layout wrapper adding padding, zero it out for mobile */
+  .main-content, main {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Engagement row should not force extra width */
+  .summary-engagement {
+    padding-left: 0;
+    padding-right: 0;
+    gap: 8px;
+  }
+
+  /* You already hide thumb; ensure no leftover width from it */
+  .summary-thumb-wrap { display: none !important; width: 0 !important; padding: 0 !important; }
+
+  /* Reduce top padding a little so content fits better on small screens */
+  .summary-page { padding-top: calc(var(--header-height) + var(--category-height) + 8px) !important; }
+
+  /* Prevent any internal elements from exceeding the viewport */
+  .summary-page, .summary-header, .summary-body, .youtube-embed, .embed-inner {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
 }

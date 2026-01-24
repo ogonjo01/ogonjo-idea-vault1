@@ -39,7 +39,6 @@ class CustomClipboard extends Clipboard {
     super.onPaste(e);
   }
 }
-
 Quill.register("modules/clipboard", CustomClipboard, true);
 
 // ----------------- Register internal link icon (visual) -----------------
@@ -112,7 +111,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       setSlug("");
       return;
     }
-    // generate a reasonably-clean slug
     const generated = slugify(title, { lower: true, strict: true, replacement: "-" });
     setSlug(generated);
   }, [title]);
@@ -192,7 +190,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     return () => { cancelled = true; };
   }, [linkSearch]);
 
-  // Insert internal link (preserve selection, handle fallback)
+  // Robust insertInternalLink: retry setting attributes, fallback to paste HTML
   const insertInternalLink = (summaryItem) => {
     const editor = quillRef.current?.getEditor();
     if (!editor) {
@@ -208,51 +206,201 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       return;
     }
 
-    // Ensure editor focused
-    editor.focus();
-    editor.setSelection(range.index, range.length);
+    // Ensure editor focused and selection set
+    try { editor.focus(); editor.setSelection(range.index, range.length); } catch (e) { /* ignore */ }
 
     // Determine text to link
     let selectedText = "";
-    if (range.length && editor.getText(range.index, range.length)) {
-      selectedText = editor.getText(range.index, range.length).trim();
+    try {
+      if (range.length && editor.getText(range.index, range.length)) {
+        selectedText = editor.getText(range.index, range.length).trim();
+      }
+    } catch (e) {
+      // ignore
     }
     if (!selectedText) selectedText = summaryItem.title || "link";
 
     // Delete current selection and insert text with a placeholder href
-    editor.deleteText(range.index, range.length);
-    editor.insertText(range.index, selectedText, { link: `#summary-${summaryItem.id}` }, "user");
-
-    // Try to set data-summary-id attribute on the inserted anchor
     try {
-      const [leaf] = editor.getLeaf(range.index);
-      const domNode = leaf?.domNode;
-      const anchor = domNode?.parentElement && domNode.parentElement.tagName === "A" ? domNode.parentElement : null;
-      if (anchor) {
-        anchor.setAttribute("data-summary-id", summaryItem.id);
-        anchor.classList.add("internal-summary-link");
-        anchor.setAttribute("href", `#summary-${summaryItem.id}`); // placeholder; viewer will resolve to final slug
-      } else {
-        // Fallback: replace the inserted text with anchor HTML
-        const safeText = selectedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        editor.deleteText(range.index, selectedText.length);
-        editor.clipboard.dangerouslyPasteHTML(range.index, `<a data-summary-id="${summaryItem.id}" class="internal-summary-link" href="#summary-${summaryItem.id}">${safeText}</a>`);
-      }
-    } catch (err) {
-      console.warn("Could not set anchor attributes via DOM; using HTML paste fallback", err);
-      const safeText = selectedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      editor.deleteText(range.index, selectedText.length);
-      editor.clipboard.dangerouslyPasteHTML(range.index, `<a data-summary-id="${summaryItem.id}" class="internal-summary-link" href="#summary-${summaryItem.id}">${safeText}</a>`);
+      editor.deleteText(range.index, range.length);
+      editor.insertText(range.index, selectedText, { link: `#summary-${summaryItem.id}` }, "user");
+    } catch (e) {
+      console.error("Insert text failed:", e);
     }
 
-    // move cursor after inserted content
-    editor.setSelection(range.index + selectedText.length, 0);
+    // Helper: try to find the inserted anchor and set attributes; retry if needed
+    const tryAttachDataAttr = (attempt = 0) => {
+      try {
+        const [leaf] = editor.getLeaf(range.index);
+        const domNode = leaf?.domNode;
+        const anchor = domNode?.parentElement && domNode.parentElement.tagName === "A"
+          ? domNode.parentElement
+          : null;
+
+        if (anchor) {
+          anchor.setAttribute("data-summary-id", summaryItem.id);
+          anchor.classList.add("internal-summary-link");
+          anchor.setAttribute("href", `#summary-${summaryItem.id}`);
+          return true;
+        }
+      } catch (err) {
+        // swallow and retry
+      }
+
+      // retry a few times because Quill may attach the anchor slightly later
+      if (attempt < 4) {
+        setTimeout(() => tryAttachDataAttr(attempt + 1), 30 * (attempt + 1)); // 30ms, 60ms, 90ms...
+        return false;
+      }
+
+      // final fallback: replace the inserted text with a raw anchor HTML
+      try {
+        const safeText = selectedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        // remove the inserted plain text
+        editor.deleteText(range.index, selectedText.length);
+        // paste the anchor HTML with data-summary-id explicitly
+        editor.clipboard.dangerouslyPasteHTML(range.index, `<a data-summary-id="${summaryItem.id}" class="internal-summary-link" href="#summary-${summaryItem.id}">${safeText}</a>`);
+        return true;
+      } catch (err) {
+        console.warn("Fallback paste failed:", err);
+        return false;
+      }
+    };
+
+    tryAttachDataAttr(0);
+
+    // move cursor after inserted content (best-effort)
+    try { editor.setSelection(range.index + selectedText.length, 0); } catch (e) { /* ignore */ }
 
     // cleanup modal state
     setShowInternalLinkModal(false);
     setLinkSearch("");
     setLinkResults([]);
     setSelectedRangeForLink(null);
+  };
+
+  // ----------------- Auto-link Bold Text -----------------
+  // Scans editor for bold nodes and auto-links matches from DB
+  const autoLinkBoldText = async () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert("Editor not available.");
+      return;
+    }
+
+    const root = editor.root;
+    if (!root) {
+      alert("Editor root not available.");
+      return;
+    }
+
+    // gather candidate nodes: <strong>, <b>, and elements with inline font-weight >= 600
+    const nodeList = Array.from(root.querySelectorAll("strong, b, *[style*='font-weight']"));
+    const candidates = [];
+
+    nodeList.forEach((node) => {
+      // skip if already inside an anchor
+      if (node.closest && node.closest("a")) return;
+
+      // determine effective weight for style-based nodes
+      let isBold = false;
+      if (node.tagName && (node.tagName.toLowerCase() === "strong" || node.tagName.toLowerCase() === "b")) {
+        isBold = true;
+      } else {
+        try {
+          const cs = window.getComputedStyle(node);
+          const fw = cs && cs.fontWeight ? cs.fontWeight : "";
+          const num = parseInt(fw, 10);
+          if (!isNaN(num) && num >= 600) isBold = true;
+          if (fw === "bold" || fw === "bolder") isBold = true;
+        } catch (e) {
+          // ignore getComputedStyle errors
+        }
+      }
+
+      if (!isBold) return;
+
+      const text = (node.textContent || "").trim();
+      if (!text) return;
+      // skip very short tokens
+      if (text.length < 3) return;
+
+      // push candidate with node reference (we'll map later)
+      candidates.push({ text, node });
+    });
+
+    if (candidates.length === 0) {
+      alert("No bold text found to auto-link.");
+      return;
+    }
+
+    // dedupe candidate texts (case-insensitive)
+    const mapByText = new Map();
+    candidates.forEach(({ text, node }) => {
+      const key = text.trim().toLowerCase();
+      if (!mapByText.has(key)) mapByText.set(key, { text: text.trim(), nodes: [node] });
+      else mapByText.get(key).nodes.push(node);
+    });
+
+    // for each unique text, query DB (sequential to avoid spamming)
+    let linkedCount = 0;
+    for (const [key, { text, nodes }] of mapByText.entries()) {
+      try {
+        // simple substring match - case-insensitive
+        const { data, error } = await supabase
+          .from("book_summaries")
+          .select("id, title")
+          .ilike("title", `%${text}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (error || !data || !data.id) {
+          // no match -> skip
+          continue;
+        }
+
+        // wrap each matching node with anchor (only if not already inside anchor)
+        nodes.forEach((node) => {
+          try {
+            if (node.closest && node.closest("a")) return;
+            const anchor = document.createElement("a");
+            anchor.setAttribute("data-summary-id", data.id);
+            anchor.setAttribute("href", `#summary-${data.id}`); // placeholder; viewer will resolve to final slug
+            anchor.className = "internal-summary-link";
+            // move node inside anchor
+            node.parentNode && node.parentNode.replaceChild(anchor, node);
+            anchor.appendChild(node);
+            linkedCount += 1;
+          } catch (err) {
+            // If DOM operation fails for any node, try fallback via HTML paste
+            try {
+              const safeText = (node.textContent || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              // find the textual index and replace using Quill clipboard (best-effort)
+              // fallback: paste anchor HTML at node position
+              const parent = node.parentNode;
+              if (parent) {
+                parent.replaceChild(document.createTextNode(""), node);
+                parent.innerHTML = parent.innerHTML.replace(/$/, `<a data-summary-id="${data.id}" class="internal-summary-link" href="#summary-${data.id}">${safeText}</a>`);
+                linkedCount += 1;
+              }
+            } catch (e) {
+              console.warn("Auto-link fallback failed for node:", e);
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Auto-link search error for text:", text, err);
+      }
+    }
+
+    // Let Quill re-evaluate the editor DOM (best-effort)
+    try {
+      editor.update("user");
+    } catch (e) {
+      // ignore if update isn't available
+    }
+
+    alert(`Auto-linking complete — ${linkedCount} item(s) linked.`);
   };
 
   // Submit handler (create)
@@ -272,7 +420,8 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     setLoading(true);
 
     try {
-      const { data: { user } = {} } = await supabase.auth.getUser();
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user ?? null;
       if (!user) {
         setErrorMsg("You must be logged in to create a summary.");
         setLoading(false);
@@ -305,7 +454,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
               break;
             }
             counter++;
-            // safety: prevent an infinite loop in unlikely DB failure scenarios
             if (counter > 1000) {
               finalSlug = `${slug || finalSlug}-${Date.now()}`;
               break;
@@ -314,7 +462,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         }
       } catch (err) {
         console.warn("Slug collision check error:", err);
-        // continue — database/triggers can handle final uniqueness
       }
 
       // parse tags
@@ -356,7 +503,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         console.error("Insert error:", error);
         setErrorMsg(error.message || "Error creating summary.");
       } else {
-        // success
         if (typeof onNewSummary === "function") onNewSummary();
         if (typeof onClose === "function") onClose();
       }
@@ -367,7 +513,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     }
   };
 
-  // Render modal (use portal in your app if you prefer; kept simple here)
+  // Render modal (keeps same structure as your original)
   return (
     <div className="modal-overlay">
       <div className="modal-content large">
@@ -417,6 +563,15 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
           <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="business, leadership, strategy" />
 
           <label>Summary</label>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <button type="button" className="hf-btn" onClick={autoLinkBoldText}>🔗 Auto-link bold text</button>
+            <button type="button" className="hf-btn" onClick={() => { setShowInternalLinkModal(true); }}>
+              🔎 Manual link
+            </button>
+            <div style={{ color: "#6b7280", fontSize: 12, marginLeft: 8 }}>Select text then click Manual link to pick a summary.</div>
+          </div>
+
           <div className="quill-container">
             <ReactQuill
               ref={quillRef}
@@ -428,7 +583,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
             />
           </div>
 
-          <button type="submit" disabled={loading}>{loading ? "Submitting..." : "Submit Summary"}</button>
+          <button type="submit" disabled={loading} style={{ marginTop: 12 }}>{loading ? "Submitting..." : "Submit Summary"}</button>
         </form>
 
         {/* Internal Link Modal */}

@@ -82,10 +82,54 @@ body.scroll-hide-global .summary-header {
 .avg-text { font-weight:800; color:#111827; font-size:0.92rem; }
 
 /* body */
-.summary-body { line-height:1.6; color:#2b3440; font-size:0.98rem; margin-top: 8px; margin-bottom: 0; }
-.summary-body img, .summary-body picture, .summary-body figure, .summary-body iframe { max-width:100%; height:auto; display:block; margin: 12px auto; object-fit:contain; }
-.summary-body p { margin-bottom: 12px; }
-.summary-body p:last-child { margin-bottom: 0; }
+.summary-body {
+  line-height: 1.6;
+  color: #2b3440;
+  font-size: 0.98rem;
+  margin: 8px 0;
+  padding: 8px;
+
+  /* Ensure justified text */
+  text-align: justify !important;
+}
+
+.summary-body p,
+.summary-body li {
+  text-align: justify !important;
+  margin-bottom: 10px;
+}
+
+.summary-body h1,
+.summary-body h2,
+.summary-body h3,
+.summary-body h4,
+.summary-body h5,
+.summary-body h6 {
+  text-align: left !important;
+  margin-top: 1.2em;
+  margin-bottom: 0.6em;
+}
+
+/* Images & embeds */
+.summary-body img,
+.summary-body picture,
+.summary-body figure,
+.summary-body iframe {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 12px auto;
+  object-fit: contain;
+}
+
+/* Responsive tweaks for small screens */
+@media (max-width: 600px) {
+  .summary-body {
+    padding: 4px 6px;
+    font-size: 0.95rem;
+  }
+}
+
 
 /* small screens */
 @media (max-width: 780px) {

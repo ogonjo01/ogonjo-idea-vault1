@@ -311,6 +311,128 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
+  // ------------ NEW FEATURE: remove links and convert them to bold ------------
+  const removeLinksAndMakeBold = () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert('Editor not ready');
+      return;
+    }
+
+    // Use DOM approach: modify HTML then set contents via clipboard.convert
+    try {
+      const container = document.createElement('div');
+      container.innerHTML = editor.root.innerHTML;
+
+      // find all anchors that look like internal links (data-summary-id) and anchors with href starting with #summary-
+      const anchors = Array.from(container.querySelectorAll('a[data-summary-id], a[href^="#summary-"]'));
+
+      anchors.forEach(a => {
+        // preserve inner HTML but replace anchor with a <strong>wrapped node
+        const strong = document.createElement('strong');
+        // copy children (preserves inline formatting inside link)
+        strong.innerHTML = a.innerHTML;
+        a.parentNode.replaceChild(strong, a);
+      });
+
+      // set edited HTML back into editor safely (convert handles Quill delta conversion)
+      const delta = editor.clipboard.convert(container.innerHTML);
+      editor.setContents(delta, 'user');
+
+      // give feedback and update local state
+      setSummaryText(editor.root.innerHTML);
+      alert('Removed links and bolded the text. You can now run Auto-Relink.');
+    } catch (err) {
+      console.error('removeLinksAndMakeBold error', err);
+      alert('Could not remove links automatically. See console.');
+    }
+  };
+
+  // ------------ NEW FEATURE: auto link bolded phrases ------------
+  // This scans for <strong> or <b> tags in the editor, queries the DB for matches, and wraps matches in anchor with data-summary-id.
+  const autoLinkBoldedPhrases = async () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert('Editor not ready');
+      return;
+    }
+
+    try {
+      const container = document.createElement('div');
+      container.innerHTML = editor.root.innerHTML;
+
+      // find bold nodes. Quill often uses <strong>
+      const boldNodes = Array.from(container.querySelectorAll('strong, b'));
+      const phrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 30); // limit to 30
+
+      if (phrases.length === 0) {
+        alert('No bolded phrases found to auto-link.');
+        return;
+      }
+
+      // We'll run queries for each phrase (limit 1 result per phrase). This is conservative.
+      const mapping = {}; // phrase -> { id, title } or null
+
+      for (const phrase of phrases) {
+        try {
+          // use ilike to find similar titles; limit 1
+          const { data, error } = await supabase
+            .from('book_summaries')
+            .select('id, title')
+            .ilike('title', `%${phrase}%`)
+            .limit(1)
+            .maybeSingle();
+
+          if (!error && data && data.id) {
+            mapping[phrase] = { id: data.id, title: data.title };
+          } else {
+            mapping[phrase] = null;
+          }
+        } catch (e) {
+          console.warn('Auto-link lookup failed for phrase:', phrase, e);
+          mapping[phrase] = null;
+        }
+      }
+
+      // Replace matching bold nodes with anchors (wrap the same innerHTML)
+      let linkedCount = 0;
+      boldNodes.forEach(node => {
+        const text = (node.textContent || '').trim();
+        const match = mapping[text];
+        if (match && match.id) {
+          const a = document.createElement('a');
+          a.setAttribute('data-summary-id', match.id);
+          a.setAttribute('href', `#summary-${match.id}`);
+          a.className = 'internal-summary-link';
+          // keep the bold markup inside the anchor
+          a.innerHTML = node.innerHTML;
+          node.parentNode.replaceChild(a, node);
+          linkedCount++;
+        }
+      });
+
+      // set new HTML back to editor
+      const newDelta = editor.clipboard.convert(container.innerHTML);
+      editor.setContents(newDelta, 'user');
+
+      setSummaryText(editor.root.innerHTML);
+      alert(`Auto-link completed. ${linkedCount} phrase(s) linked.`);
+    } catch (err) {
+      console.error('autoLinkBoldedPhrases error', err);
+      alert('Auto-link failed. See console for details.');
+    }
+  };
+
+  // -------------- Combined flow: remove links then auto-link --------------
+  const resetAndAutoRelink = async () => {
+    // confirm
+    if (!confirm('This will remove existing internal links, bold the text, and then attempt to auto-link bolded phrases using your database. Continue?')) return;
+    removeLinksAndMakeBold();
+    // small delay to allow editor DOM update
+    await new Promise(res => setTimeout(res, 120));
+    await autoLinkBoldedPhrases();
+  };
+
   // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -492,9 +614,33 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
           {errorMsg && <div className="form-error" role="alert">{errorMsg}</div>}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
             <button className="hf-btn" type="submit" disabled={loading}>{loading ? 'Updating...' : (initialIdRef.current ? 'Save changes' : 'Create')}</button>
             <button type="button" className="hf-btn" onClick={onClose} disabled={loading}>Cancel</button>
+
+            {/* NEW: Remove links + Auto Relink controls */}
+            <button
+              type="button"
+              className="hf-btn"
+              onClick={removeLinksAndMakeBold}
+              title="Remove internal links and bold the text"
+              style={{ marginLeft: 8, background: '#f3f4f6' }}
+            >
+              Remove links & Bold
+            </button>
+
+            <button
+              type="button"
+              className="hf-btn"
+              onClick={async () => {
+                // try combined flow quickly
+                await resetAndAutoRelink();
+              }}
+              title="Remove links, bold and auto-link matching phrases from DB"
+              style={{ marginLeft: 8, background: '#eef2ff' }}
+            >
+              Reset & Auto-Relink
+            </button>
           </div>
         </form>
 

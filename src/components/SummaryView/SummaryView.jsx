@@ -104,9 +104,42 @@ const buildLightItem = (nr = {}, src = {}) => {
     tags: nr.tags || [],
     user_id: nr.user_id ?? null,
     created_at: nr.created_at ?? null,
-    difficulty_level: nr.difficulty_level || null,
+    difficulty_level: nr.difficulty_level ?? null,
   };
 };
+
+/* ---------- Loader component (simple three dots) ---------- */
+const InlineLoader = ({ label = 'Loading' }) => (
+  <div className="summary-inline-loader" aria-live="polite" aria-busy="true" role="status" style={{ textAlign: 'center', padding: 20 }}>
+    <div className="dots" aria-hidden="true" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+      <span className="dot" />
+      <span className="dot" />
+      <span className="dot" />
+    </div>
+    <div style={{ marginTop: 8, color: '#6b7280' }}>{label}…</div>
+
+    {/* local styles for the loader */}
+    <style>{`
+      .summary-inline-loader .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #2563eb;
+        display: inline-block;
+        transform: translateY(0);
+        animation: summary-dot 1s infinite ease-in-out;
+      }
+      .summary-inline-loader .dot:nth-child(2) { animation-delay: 0.12s; }
+      .summary-inline-loader .dot:nth-child(3) { animation-delay: 0.24s; }
+      @keyframes summary-dot {
+        0% { transform: translateY(0); opacity: 0.4; }
+        40% { transform: translateY(-8px); opacity: 1; }
+        80% { transform: translateY(0); opacity: 0.6; }
+        100% { transform: translateY(0); opacity: 0.4; }
+      }
+    `}</style>
+  </div>
+);
 
 /* ---------- Component ---------- */
 const SummaryView = () => {
@@ -114,6 +147,11 @@ const SummaryView = () => {
   const navigate = useNavigate();
 
   /* ---------- State ---------- */
+  // default font size reduced per your request (13). change to 12 if you prefer even smaller.
+  const [fontSize, setFontSize] = useState(13);
+  const [lineHeight, setLineHeight] = useState(1.75);
+  const [readingMode, setReadingMode] = useState(true);
+
   const [summary, setSummary] = useState(null);
   const [postId, setPostId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -136,10 +174,6 @@ const SummaryView = () => {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
 
-  // Reader UX state
-  const [fontSize, setFontSize] = useState(18);
-  const [lineHeight, setLineHeight] = useState(1.75);
-  const [readingMode, setReadingMode] = useState(true);
   const [processedSummaryHtml, setProcessedSummaryHtml] = useState('');
 
   /* ---------- refs ---------- */
@@ -162,14 +196,12 @@ const SummaryView = () => {
   /* ---------- Robust scroll to top helper ---------- */
   const scrollToTop = useCallback((behavior = 'auto') => {
     try {
-      // Prefer a dedicated main-content container (if your app uses one)
       const mainEl = document.querySelector('.main-content');
       const scrollEl = (mainEl && typeof mainEl.scrollTo === 'function')
         ? mainEl
         : (pageRef.current && typeof pageRef.current.scrollTo === 'function') ? pageRef.current
         : (document.scrollingElement || document.documentElement || document.body);
 
-      // Clear hash (prevent fragment auto-scroll)
       if (window && window.location && window.location.hash) {
         const urlNoHash = window.location.pathname + window.location.search;
         try { window.history.replaceState(null, '', urlNoHash); } catch (e) {}
@@ -180,23 +212,17 @@ const SummaryView = () => {
       } else if (typeof window.scrollTo === 'function') {
         try { window.scrollTo({ top: 0, left: 0, behavior }); } catch (e) { window.scrollTo(0, 0); }
       } else {
-        // final fallback
         if (document && document.documentElement) document.documentElement.scrollTop = 0;
         if (document && document.body) document.body.scrollTop = 0;
       }
     } catch (e) {
-      // swallow - non critical
       try { window.scrollTo(0, 0); } catch (ee) {}
     }
   }, []);
 
-  // Ensure scroll to top when the route param changes.
   useEffect(() => {
-    // immediate attempt
     scrollToTop('auto');
-    // next frame attempt (after React renders)
     requestAnimationFrame(() => scrollToTop('smooth'));
-    // small delayed fallback
     const t = setTimeout(() => scrollToTop('auto'), 120);
     return () => clearTimeout(t);
   }, [param, scrollToTop]);
@@ -458,7 +484,6 @@ const SummaryView = () => {
 
         setIsLoading(false);
 
-        // fetch followups (counts, ratings, views increment, recommendations)
         backgroundFetchFollowups(normalized.id, normalized.category, normalized.tags).catch((e) => console.debug(e));
       } catch (err) {
         console.error('Error loading minimal summary:', err);
@@ -474,7 +499,7 @@ const SummaryView = () => {
     return () => { mounted = false; };
   }, [param, navigate, backgroundFetchFollowups]);
 
-  /* ---------- Interaction handlers ---------- */
+  /* ---------- Interaction handlers (unchanged) ---------- */
   const handleLike = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -672,22 +697,16 @@ const SummaryView = () => {
     const dataSlug = a.getAttribute('data-summary-slug');
     const isExternal = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(href);
 
-    // allow external links (protocol present) to behave normally
     if (isExternal) return;
 
-    // if it's an internal link to a summary
     const isInternal = dataSlug || href.startsWith('/summary/');
     if (!isInternal) return;
 
-    // intercept and use SPA navigation
     e.preventDefault();
 
     const slug = dataSlug || href.replace(/^\/summary\//, '').split(/[/?#]/)[0] || null;
     if (slug) {
-      // navigate to new summary
       navigate(`/summary/${slug}`);
-      // force scroll to top after navigation (works as a safety fallback too)
-      // schedule a few attempts to ensure we run after the new component renders
       setTimeout(() => scrollToTop('auto'), 10);
       requestAnimationFrame(() => scrollToTop('smooth'));
       setTimeout(() => scrollToTop('auto'), 150);
@@ -696,7 +715,7 @@ const SummaryView = () => {
 
   /* ---------- Small reader controls ---------- */
   const increaseFont = () => setFontSize(s => Math.min(28, s + 2));
-  const decreaseFont = () => setFontSize(s => Math.max(14, s - 2));
+  const decreaseFont = () => setFontSize(s => Math.max(12, s - 2)); // ensure not too small
   const toggleReadingMode = () => setReadingMode(r => !r);
   const resetTypography = () => { setFontSize(18); setLineHeight(1.75); setReadingMode(true); };
 
@@ -771,46 +790,7 @@ const SummaryView = () => {
     setShowEdit(false);
   };
 
-  /* ---------- Render ---------- */
-  if (isLoading) {
-    return (
-      <div className="centered-loader-viewport" role="status" aria-live="polite">
-        <div className="centered-loader">
-          <div className="spinner" />
-          <div className="loader-text">Loading…</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!summary) return <div style={{ padding: 28 }}>Summary not found.</div>;
-
-  const youtubeId = extractYouTubeId(summary.youtube_url);
-
-  // parse affiliate defensively (kept from original)
-  let affiliateUrl = null, affiliateLabel = null, affiliateType = null;
-  const rawAffiliate = summary?.affiliate_link ?? null;
-  if (rawAffiliate) {
-    try {
-      if (typeof rawAffiliate === 'string') {
-        const parts = rawAffiliate.split('|', 2).map(p => (p || '').trim());
-        if (parts.length === 2 && parts[1]) { affiliateType = (parts[0] || '').toLowerCase(); affiliateUrl = parts[1]; }
-        else { affiliateType = 'book'; affiliateUrl = rawAffiliate.trim(); }
-      } else if (typeof rawAffiliate === 'object' && rawAffiliate !== null) {
-        if (rawAffiliate.url) { affiliateUrl = String(rawAffiliate.url); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
-        else if (rawAffiliate.link) { affiliateUrl = String(rawAffiliate.link); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
-      }
-    } catch (e) {
-      try { affiliateUrl = String(rawAffiliate); affiliateType = 'book'; } catch (ee) { affiliateUrl = null; affiliateType = null; }
-    }
-  }
-
-  if (affiliateUrl) {
-    affiliateLabel = affiliateType === 'pdf' ? 'Get PDF' : (affiliateType === 'app' ? 'Open App' : 'Get Book');
-  }
-
-  const onClickTag = (tag) => { if (!tag) return; navigate(`/explore?tag=${encodeURIComponent(tag)}`); };
-
+  /* ---------- Helper: render difficulty badge (fixed - was missing) ---------- */
   const renderDifficultyBadge = (lvl) => {
     if (!lvl) return null;
     const text = String(lvl);
@@ -818,7 +798,14 @@ const SummaryView = () => {
     return <span className={cls} aria-hidden="false">{text}</span>;
   };
 
-  // article style
+  /* ---------- Render ---------- */
+  const showLoading = Boolean(isLoading);
+  const showNotFound = !isLoading && !summary;
+
+  const headerTitle = summary?.title || (showLoading ? 'Loading…' : 'Summary not found');
+  const headerAuthor = summary?.author || '';
+  const headerImage = summary?.image_url || null;
+
   const articleStyle = {
     fontFamily: '"Times New Roman", Times, serif',
     fontSize: `${fontSize}px`,
@@ -831,15 +818,7 @@ const SummaryView = () => {
     boxShadow: readingMode ? '0 6px 20px rgba(0,0,0,0.05)' : 'none',
     color: '#0b1220',
     wordBreak: 'break-word',
-  };
-
-  const readerToolbarStyle = {
-    display: 'flex',
-    gap: 8,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    margin: '10px auto 8px',
-    maxWidth: 980,
+    minHeight: 180,
   };
 
   return (
@@ -870,31 +849,52 @@ const SummaryView = () => {
 
       <header className={`summary-header ${collapsed ? 'collapsed' : ''}`} ref={headerRef} role="banner" aria-expanded={!collapsed} style={{ background: '#fff' }}>
         <div className="summary-thumb-wrap" aria-hidden="true">
-          {summary.image_url ? (
-            <img className={`summary-thumb ${collapsed ? 'collapsed' : ''}`} src={summary.image_url} alt={summary.title} />
+          {headerImage ? (
+            <img className={`summary-thumb ${collapsed ? 'collapsed' : ''}`} src={headerImage} alt={headerTitle} />
           ) : (
             <div className={`summary-thumb placeholder ${collapsed ? 'collapsed' : ''}`} />
           )}
         </div>
 
         <div className="summary-title-left">
-          <h1 className="summary-title" title={summary.title} style={{ fontFamily: '"Times New Roman", Times, serif' }}>{summary.title}</h1>
+          <h1 className="summary-title" title={headerTitle} style={{ fontFamily: '"Times New Roman", Times, serif' }}>{headerTitle}</h1>
 
           <div className="summary-meta-row" aria-hidden="false">
-            <div className="summary-author" title={summary.author || ''}>
+            <div className="summary-author" title={headerAuthor || ''}>
               <span className="author-prefix">by&nbsp;</span>
-              <span className="author-name">{summary.author}</span>
+              <span className="author-name">{headerAuthor}</span>
             </div>
             <div className="summary-difficulty-inline">
-              {renderDifficultyBadge(summary.difficulty_level)}
+              {renderDifficultyBadge(summary?.difficulty_level)}
             </div>
           </div>
         </div>
 
         <div className="summary-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {affiliateUrl && affiliateLabel && (
-            <a className={`affiliate-btn ${affiliateType ? `affiliate-${affiliateType}` : ''}`} href={affiliateUrl} target="_blank" rel="noopener noreferrer">{affiliateLabel}</a>
-          )}
+          {(() => {
+            let affiliateUrl = null, affiliateLabel = null, affiliateType = null;
+            const rawAffiliate = summary?.affiliate_link ?? null;
+            if (rawAffiliate) {
+              try {
+                if (typeof rawAffiliate === 'string') {
+                  const parts = rawAffiliate.split('|', 2).map(p => (p || '').trim());
+                  if (parts.length === 2 && parts[1]) { affiliateType = (parts[0] || '').toLowerCase(); affiliateUrl = parts[1]; }
+                  else { affiliateType = 'book'; affiliateUrl = rawAffiliate.trim(); }
+                } else if (typeof rawAffiliate === 'object' && rawAffiliate !== null) {
+                  if (rawAffiliate.url) { affiliateUrl = String(rawAffiliate.url); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
+                  else if (rawAffiliate.link) { affiliateUrl = String(rawAffiliate.link); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
+                }
+              } catch (e) {
+                try { affiliateUrl = String(rawAffiliate); affiliateType = 'book'; } catch (ee) { affiliateUrl = null; affiliateType = null; }
+              }
+            }
+            if (affiliateUrl) {
+              affiliateLabel = affiliateType === 'pdf' ? 'Get PDF' : (affiliateType === 'app' ? 'Open App' : 'Get Book');
+            }
+            return affiliateUrl && affiliateLabel ? (
+              <a className={`affiliate-btn ${affiliateType ? `affiliate-${affiliateType}` : ''}`} href={affiliateUrl} target="_blank" rel="noopener noreferrer">{affiliateLabel}</a>
+            ) : null;
+          })()}
           {ownerId && currentUserId && ownerId === currentUserId && (
             <button className="hf-btn" type="button" onClick={() => setShowEdit(true)}>Edit</button>
           )}
@@ -914,7 +914,10 @@ const SummaryView = () => {
       </header>
 
       {/* Reader controls toolbar */}
-      <div style={readerToolbarStyle}>
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end',
+        margin: '10px auto 8px', maxWidth: 980,
+      }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="hf-btn" aria-label="Decrease font size" onClick={decreaseFont}><FaMinus /></button>
           <div style={{ minWidth: 44, textAlign: 'center' }}>{fontSize}px</div>
@@ -929,13 +932,13 @@ const SummaryView = () => {
 
       {/* optional YouTube embed */}
       <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
-        {youtubeId && (
+        {extractYouTubeId(summary?.youtube_url) && (
           <div className="youtube-embed" style={{ marginBottom: 12 }}>
             <div className="embed-inner">
               <iframe
                 className="youtube-iframe"
                 title="YouTube clip"
-                src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+                src={`https://www.youtube-nocookie.com/embed/${extractYouTubeId(summary?.youtube_url)}`}
                 frameBorder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -945,13 +948,28 @@ const SummaryView = () => {
         )}
       </div>
 
-      {/* Article: sanitized + resolved */}
-      <article
-        className="summary-body"
-        style={articleStyle}
-        onClick={onArticleClick}
-        dangerouslySetInnerHTML={{ __html: processedSummaryHtml }}
-      />
+      {/* Article: show loader / not-found / content (only this area changes) */}
+      <main style={{ maxWidth: 980, margin: '0 auto', padding: '0 18px' }}>
+        {showLoading ? (
+          <div style={articleStyle}>
+            <InlineLoader label="Loading summary" />
+          </div>
+        ) : showNotFound ? (
+          <div style={{ ...articleStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Summary not found</div>
+              <div style={{ fontSize: 14, color: '#9aa4b2' }}>We couldn't find the requested summary. It may have been removed or the link is incorrect.</div>
+            </div>
+          </div>
+        ) : (
+          <article
+            className="summary-body"
+            style={articleStyle}
+            onClick={onArticleClick}
+            dangerouslySetInnerHTML={{ __html: processedSummaryHtml }}
+          />
+        )}
+      </main>
 
       {/* Recommendations carousel */}
       {(isRecommending || (recommendedContent && recommendedContent.length > 0)) && (
@@ -978,19 +996,18 @@ const SummaryView = () => {
         <div className="rec-error" style={{ padding: '12px 16px', color: '#b45309' }}>
           {recError} <button onClick={() => {
             if (Array.isArray(summary?.tags) && summary.tags.length > 0) fetchRecommendedByTags(summary.tags, 10, summary.id);
-            else if (summary.category) fetchRecommendedByCategory(summary.category, 10, summary.id);
+            else if (summary?.category) fetchRecommendedByCategory(summary.category, 10, summary.id);
           }}>Retry</button>
         </div>
       )}
 
       <section
-  className="summary-comments"
-  style={{ width: '80%', margin: '20px auto', padding: '0 18px', boxSizing: 'border-box' }}
->
-  <h3>Comments</h3>
-  <CommentsSection postId={summary.id} />
-</section>
-
+        className="summary-comments"
+        style={{ width: '80%', margin: '20px auto', padding: '0 18px', boxSizing: 'border-box' }}
+      >
+        <h3>Comments</h3>
+        {summary?.id ? <CommentsSection postId={summary.id} /> : <div style={{ color: '#6b7280' }}>Comments will appear once the summary loads.</div>}
+      </section>
 
       {showEdit && (
         <EditSummaryForm
