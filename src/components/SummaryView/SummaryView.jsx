@@ -148,7 +148,7 @@ const SummaryView = () => {
 
   /* ---------- State ---------- */
   // default font size reduced per your request (13). change to 12 if you prefer even smaller.
-  const [fontSize, setFontSize] = useState(13);
+  const [fontSize, setFontSize] = useState(18);
   const [lineHeight, setLineHeight] = useState(1.75);
   const [readingMode, setReadingMode] = useState(true);
 
