@@ -639,3 +639,25 @@ html {
     overflow-x: hidden;
   }
 }
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .summary-body h1 {
+    font-size: 1.35rem; /* ~22px */
+  }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .summary-body h1 {
+    font-size: 1.20rem;  
+    margin: 16px 0 10px;
+  }
+}
+
+
+@media (max-width: 600px) {
+  .summary-body h1 { font-size: 1.20rem; }
+  .summary-body h2 { font-size: 1.20rem; }
+  .summary-body h3 { font-size: 1.20rem; }
+}
