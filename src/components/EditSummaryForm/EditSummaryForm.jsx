@@ -8,6 +8,7 @@ import { supabase } from '../../supabase/supabaseClient';
 import 'react-quill/dist/quill.snow.css';
 import './EditSummaryForm.css';
 
+/* ---------- Constants ---------- */
 const CATEGORIES = [
   "Apps","Business Legends","Best Books","People","Business Giants","Business Concepts",
   "Business Strategy & Systems","Courses & Learning Paths","Business Ideas",
@@ -28,8 +29,60 @@ const quillFormats = [
   'list','bullet','blockquote','code-block','link','image'
 ];
 
-const normalizeTag = (t) => (typeof t === 'string' ? t.trim().toLowerCase() : String(t).trim().toLowerCase());
+/* ---------- Utilities / scoring helpers ---------- */
+const normalize = (s = '') => String(s || '').trim().toLowerCase();
+const uniqueWords = (s = '') => Array.from(new Set(normalize(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean)));
 
+function wordMatchScore(a = '', b = '') {
+  const aw = uniqueWords(a);
+  const bw = uniqueWords(b);
+  if (aw.length === 0 || bw.length === 0) return 0;
+  const common = aw.filter((w) => bw.includes(w)).length;
+  return common / Math.max(aw.length, bw.length);
+}
+
+function longestCommonSubstringRatio(a = '', b = '') {
+  const A = String(a || '');
+  const B = String(b || '');
+  const n = A.length, m = B.length;
+  if (n === 0 || m === 0) return 0;
+  const dp = new Array(m + 1).fill(0);
+  let best = 0;
+  for (let i = 1; i <= n; i++) {
+    for (let j = m; j >= 1; j--) {
+      if (A[i - 1] === B[j - 1]) {
+        dp[j] = dp[j - 1] + 1;
+        if (dp[j] > best) best = dp[j];
+      } else {
+        dp[j] = 0;
+      }
+    }
+  }
+  const maxLen = Math.max(n, m);
+  return best / maxLen;
+}
+
+function combinedScore(candidateTitle = '', query = '') {
+  const wscore = wordMatchScore(candidateTitle, query); // 0..1
+  const lcsr = longestCommonSubstringRatio(candidateTitle, query); // 0..1
+  const starts = normalize(candidateTitle).startsWith(normalize(query)) ? 1 : 0;
+  return Math.min(1, 0.55 * wscore + 0.35 * lcsr + 0.10 * starts);
+}
+
+// single-word pluralization helpers
+const pluralVariants = (word = '') => {
+  const w = normalize(word);
+  if (!w) return [w];
+  const variants = new Set([w]);
+  // naive plural rules (add s, es)
+  if (!w.endsWith('s')) variants.add(`${w}s`);
+  if (!w.endsWith('es')) variants.add(`${w}es`);
+  // singular from trailing s
+  if (w.endsWith('s')) variants.add(w.replace(/s+$/, ''));
+  return Array.from(variants);
+};
+
+/* ---------- Affiliate parsing helper ---------- */
 const parseAffiliateValue = (raw) => {
   if (!raw) return { type: null, url: null };
   try {
@@ -47,6 +100,7 @@ const parseAffiliateValue = (raw) => {
   try { return { type: null, url: String(raw).trim() || null }; } catch (e) { return { type: null, url: null }; }
 };
 
+/* ---------- Component ---------- */
 const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {} }) => {
   // core fields
   const [title, setTitle] = useState(summary.title || '');
@@ -59,7 +113,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [affiliateLink, setAffiliateLink] = useState('');
   const [affiliateType, setAffiliateType] = useState('book');
   const [youtubeUrl, setYoutubeUrl] = useState(summary.youtube_url || '');
-  const [tags, setTags] = useState(Array.isArray(summary.tags) ? summary.tags.map(normalizeTag) : []);
+  const [tags, setTags] = useState(Array.isArray(summary.tags) ? summary.tags.map(t => String(t).trim().toLowerCase()) : []);
   const [tagInput, setTagInput] = useState('');
   const [difficulty, setDifficulty] = useState(summary.difficulty_level || '');
   const [loading, setLoading] = useState(false);
@@ -114,6 +168,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   }, []);
 
   // Tag helpers
+  const normalizeTag = (t) => (typeof t === 'string' ? t.trim().toLowerCase() : String(t).trim().toLowerCase());
   const addTagFromInput = (raw = '') => {
     const value = (raw || tagInput || '').trim();
     if (!value) return;
@@ -176,21 +231,11 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       ],
       handlers: {
         internalLink: function () {
-          // 'this' is toolbar module context; we use quillRef to get actual editor & selection
           const editor = quillRef.current?.getEditor();
-          if (!editor) {
-            // safety
-            console.error('Quill editor not ready');
-            return;
-          }
+          if (!editor) { console.error('Quill editor not ready'); return; }
           const range = editor.getSelection();
-          if (!range || range.length === 0) {
-            alert('Select the text you want to link, then click "Link to summary".');
-            return;
-          }
-          // store current range to insert later
+          if (!range || range.length === 0) { alert('Select the text you want to link, then click "Link to summary".'); return; }
           setSelectedRangeForLink(range);
-          // open modal
           setShowInternalLinkModal(true);
         }
       }
@@ -227,7 +272,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       return;
     }
 
-    // restore selection (range may be stale after modal)
     const range = selectedRangeForLink || editor.getSelection();
     if (!range) {
       alert('Unable to determine selection. Re-select text and try again.');
@@ -235,33 +279,23 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       return;
     }
 
-    // ensure editor has focus and selection
     editor.focus();
     editor.setSelection(range.index, range.length);
 
-    // get text (if none, fall back to summary title)
     const selectedText = (range.length && editor.getText(range.index, range.length).trim()) || summaryItem.title || 'link';
-
-    // delete selected range
     editor.deleteText(range.index, range.length);
 
-    // insert the text with a temporary link href; we will add data-summary-id attribute to the rendered anchor
-    // Use insertText with link format; formats param can be { link: '#summary-id' }
     editor.insertText(range.index, selectedText, { link: `#summary-${summaryItem.id}` }, 'user');
 
-    // Now locate the inserted leaf and set data-summary-id attribute on parent anchor if possible
     try {
       const [leaf] = editor.getLeaf(range.index);
       const domNode = leaf?.domNode;
-      // if the inserted text is wrapped in an <a>, domNode.parentElement should be the anchor
       const possibleAnchor = domNode?.parentElement && domNode.parentElement.tagName === 'A' ? domNode.parentElement : null;
       if (possibleAnchor) {
         possibleAnchor.setAttribute('data-summary-id', summaryItem.id);
         possibleAnchor.classList.add('internal-summary-link');
-        // keep href as placeholder (renderer will replace it later to actual /book-summary/:slug), or you can set to #summary-id
         possibleAnchor.setAttribute('href', `#summary-${summaryItem.id}`);
       } else {
-        // fallback: ensure there's an anchor by pasting anchor HTML
         const safeText = selectedText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         editor.deleteText(range.index, selectedText.length);
         editor.clipboard.dangerouslyPasteHTML(range.index, `<a data-summary-id="${summaryItem.id}" class="internal-summary-link" href="#summary-${summaryItem.id}">${safeText}</a>`);
@@ -273,128 +307,135 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       editor.clipboard.dangerouslyPasteHTML(range.index, `<a data-summary-id="${summaryItem.id}" class="internal-summary-link" href="#summary-${summaryItem.id}">${safeText}</a>`);
     }
 
-    // move cursor after inserted content
     editor.setSelection(range.index + selectedText.length, 0);
 
-    // cleanup modal state
     setShowInternalLinkModal(false);
     setLinkSearch('');
     setLinkResults([]);
     setSelectedRangeForLink(null);
   };
 
-  // copy content id helper with fallback for local dev
-  const copyContentId = async () => {
-    if (!summary.id) return;
+  /* ---------- Advanced search best-match (used by auto-link) ---------- */
+  const searchBestMatch = async (text, opts = { limitCandidates: 40, minScore: 0.50 }) => {
+    const q = String(text || '').trim();
+    if (!q) return null;
+
+    // 1) exact / strong match (case-insensitive via ilike exact pattern)
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(summary.id);
-      } else {
-        // fallback - works on http/local
-        const textArea = document.createElement('textarea');
-        textArea.value = summary.id;
-        // avoid scrolling to bottom
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-      }
-      // small UI feedback
-      try { /* prefer non-blocking feedback if you have a toast system */ } catch {}
-      alert('Content ID copied to clipboard');
+      const { data: exact, error: errExact } = await supabase
+        .from('book_summaries')
+        .select('id, title')
+        .ilike('title', q)
+        .maybeSingle();
+
+      if (!errExact && exact && exact.id) return exact;
     } catch (e) {
-      console.error('Copy failed', e);
-      alert('Failed to copy ID');
+      // pass
+    }
+
+    // 2) phrase match: title ilike %q%
+    try {
+      const { data: phrase, error: errPhrase } = await supabase
+        .from('book_summaries')
+        .select('id, title')
+        .ilike('title', `%${q}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!errPhrase && phrase && phrase.id) return phrase;
+    } catch (e) {}
+
+    // 3) tokenized candidate fetch
+    const tokens = uniqueWords(q).slice(0, 6);
+    if (tokens.length === 0) return null;
+    const orFilters = tokens.map((t) => `title.ilike.%${t}%`).join(',');
+
+    try {
+      const { data: candidates = [], error } = await supabase
+        .from('book_summaries')
+        .select('id, title')
+        .or(orFilters)
+        .limit(opts.limitCandidates);
+
+      if (error) return null;
+      if (!candidates || candidates.length === 0) return null;
+
+      // score them client-side
+      let best = null;
+      let bestScore = 0;
+      const singleWord = q.split(/\s+/).length === 1;
+      const qVariants = singleWord ? pluralVariants(q) : [normalize(q)];
+
+      candidates.forEach((c) => {
+        const score = combinedScore(c.title || '', q);
+        // if single-word, boost if candidate title contains exact word or plural variant
+        if (singleWord) {
+          const cWords = uniqueWords(c.title || '');
+          const hasVariant = qVariants.some(v => cWords.includes(v));
+          if (!hasVariant) return; // skip candidate that does not contain word/variant
+        }
+        if (score > bestScore) { bestScore = score; best = c; }
+      });
+
+      if (best && bestScore >= (opts.minScore || 0.5)) return best;
+      return best && bestScore > 0.25 ? best : null;
+    } catch (e) {
+      console.error('Candidate search exception', e);
+      return null;
     }
   };
 
-  // ------------ NEW FEATURE: remove links and convert them to bold ------------
+  /* ---------- Remove links and make them bold (DOM approach) ---------- */
   const removeLinksAndMakeBold = () => {
     const editor = quillRef.current?.getEditor();
-    if (!editor) {
-      alert('Editor not ready');
-      return;
-    }
+    if (!editor) { alert('Editor not ready'); return; }
 
-    // Use DOM approach: modify HTML then set contents via clipboard.convert
     try {
       const container = document.createElement('div');
       container.innerHTML = editor.root.innerHTML;
 
-      // find all anchors that look like internal links (data-summary-id) and anchors with href starting with #summary-
       const anchors = Array.from(container.querySelectorAll('a[data-summary-id], a[href^="#summary-"]'));
+      if (anchors.length === 0) { alert('No internal links found.'); return; }
 
       anchors.forEach(a => {
-        // preserve inner HTML but replace anchor with a <strong>wrapped node
         const strong = document.createElement('strong');
-        // copy children (preserves inline formatting inside link)
-        strong.innerHTML = a.innerHTML;
+        strong.innerHTML = a.innerHTML; // preserve inner formatting
         a.parentNode.replaceChild(strong, a);
       });
 
-      // set edited HTML back into editor safely (convert handles Quill delta conversion)
       const delta = editor.clipboard.convert(container.innerHTML);
       editor.setContents(delta, 'user');
-
-      // give feedback and update local state
       setSummaryText(editor.root.innerHTML);
-      alert('Removed links and bolded the text. You can now run Auto-Relink.');
+      alert(`Removed ${anchors.length} link(s) and bolded the text.`);
     } catch (err) {
       console.error('removeLinksAndMakeBold error', err);
       alert('Could not remove links automatically. See console.');
     }
   };
 
-  // ------------ NEW FEATURE: auto link bolded phrases ------------
-  // This scans for <strong> or <b> tags in the editor, queries the DB for matches, and wraps matches in anchor with data-summary-id.
+  /* ---------- Auto-link bolded phrases (improved accuracy) ---------- */
   const autoLinkBoldedPhrases = async () => {
     const editor = quillRef.current?.getEditor();
-    if (!editor) {
-      alert('Editor not ready');
-      return;
-    }
+    if (!editor) { alert('Editor not ready'); return; }
 
     try {
       const container = document.createElement('div');
       container.innerHTML = editor.root.innerHTML;
 
-      // find bold nodes. Quill often uses <strong>
       const boldNodes = Array.from(container.querySelectorAll('strong, b'));
-      const phrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 30); // limit to 30
+      const phrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 40);
+      if (phrases.length === 0) { alert('No bolded phrases found to auto-link.'); return; }
 
-      if (phrases.length === 0) {
-        alert('No bolded phrases found to auto-link.');
-        return;
-      }
-
-      // We'll run queries for each phrase (limit 1 result per phrase). This is conservative.
-      const mapping = {}; // phrase -> { id, title } or null
-
+      const mapping = {};
       for (const phrase of phrases) {
         try {
-          // use ilike to find similar titles; limit 1
-          const { data, error } = await supabase
-            .from('book_summaries')
-            .select('id, title')
-            .ilike('title', `%${phrase}%`)
-            .limit(1)
-            .maybeSingle();
-
-          if (!error && data && data.id) {
-            mapping[phrase] = { id: data.id, title: data.title };
-          } else {
-            mapping[phrase] = null;
-          }
+          const best = await searchBestMatch(phrase, { limitCandidates: 40, minScore: 0.5 });
+          mapping[phrase] = best || null;
         } catch (e) {
-          console.warn('Auto-link lookup failed for phrase:', phrase, e);
           mapping[phrase] = null;
         }
       }
 
-      // Replace matching bold nodes with anchors (wrap the same innerHTML)
       let linkedCount = 0;
       boldNodes.forEach(node => {
         const text = (node.textContent || '').trim();
@@ -404,17 +445,15 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           a.setAttribute('data-summary-id', match.id);
           a.setAttribute('href', `#summary-${match.id}`);
           a.className = 'internal-summary-link';
-          // keep the bold markup inside the anchor
+          // keep inner bold markup inside anchor
           a.innerHTML = node.innerHTML;
           node.parentNode.replaceChild(a, node);
           linkedCount++;
         }
       });
 
-      // set new HTML back to editor
       const newDelta = editor.clipboard.convert(container.innerHTML);
       editor.setContents(newDelta, 'user');
-
       setSummaryText(editor.root.innerHTML);
       alert(`Auto-link completed. ${linkedCount} phrase(s) linked.`);
     } catch (err) {
@@ -423,44 +462,45 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  // -------------- Combined flow: remove links then auto-link --------------
+  // Combined flow: remove links then auto-link
   const resetAndAutoRelink = async () => {
-    // confirm
-    if (!confirm('This will remove existing internal links, bold the text, and then attempt to auto-link bolded phrases using your database. Continue?')) return;
+    if (!confirm('This will remove existing internal links, make them bold, then attempt to auto-link bolded phrases using your database. Continue?')) return;
     removeLinksAndMakeBold();
-    // small delay to allow editor DOM update
-    await new Promise(res => setTimeout(res, 120));
+    await new Promise(r => setTimeout(r, 140));
     await autoLinkBoldedPhrases();
+  };
+
+  // copy content id helper (for debugging/manual linking)
+  const copyContentId = async () => {
+    if (!summary.id) return;
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(summary.id);
+      else {
+        const textArea = document.createElement('textarea');
+        textArea.value = summary.id;
+        textArea.style.position = 'fixed'; textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus(); textArea.select(); document.execCommand('copy'); document.body.removeChild(textArea);
+      }
+      alert('Content ID copied to clipboard');
+    } catch (e) { console.error('Copy failed', e); alert('Failed to copy ID'); }
   };
 
   // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const v = validate();
-    if (v) { setErrorMsg(v); return; }
-
-    setLoading(true);
-    setErrorMsg('');
+    const v = validate(); if (v) { setErrorMsg(v); return; }
+    setLoading(true); setErrorMsg('');
 
     try {
       const { data: authData } = await supabase.auth.getUser();
       const user = authData?.user ?? null;
-      if (!user) {
-        setErrorMsg('You must be signed in to update this summary.');
-        setLoading(false);
-        return;
-      }
+      if (!user) { setErrorMsg('You must be signed in to update this summary.'); setLoading(false); return; }
 
-      const affiliateValue = (affiliateLink && affiliateLink.trim())
-        ? `${(affiliateType || 'book').toLowerCase()}|${affiliateLink.trim()}`
-        : null;
-
+      const affiliateValue = (affiliateLink && affiliateLink.trim()) ? `${(affiliateType || 'book').toLowerCase()}|${affiliateLink.trim()}` : null;
       const allowedDifficulties = ['Beginner', 'Intermediate', 'Advanced'];
-      const difficultyToSave = allowedDifficulties.includes(difficulty) && difficulty.trim()
-        ? difficulty
-        : null;
+      const difficultyToSave = allowedDifficulties.includes(difficulty) && difficulty.trim() ? difficulty : null;
 
-      // Build payload WITHOUT slug for updates. slug only included when creating new content.
       const payload = {
         title: title.trim(),
         author: author.trim(),
@@ -474,12 +514,8 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         difficulty_level: difficultyToSave,
       };
 
-      // include slug only for new content (when there's no initial id)
-      if (!initialIdRef.current) {
-        payload.slug = slug || null;
-      }
+      if (!initialIdRef.current) payload.slug = slug || null;
 
-      // run update (or insert depending on presence of id)
       let resultData = null;
       if (initialIdRef.current) {
         const { data, error } = await supabase
@@ -488,26 +524,15 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           .eq('id', initialIdRef.current)
           .select()
           .maybeSingle();
-        if (error) {
-          console.error('Update error', error);
-          setErrorMsg(error.message || 'Failed to update');
-          setLoading(false);
-          return;
-        }
+        if (error) { console.error('Update error', error); setErrorMsg(error.message || 'Failed to update'); setLoading(false); return; }
         resultData = data ?? null;
       } else {
-        // create new summary
         const { data, error } = await supabase
           .from('book_summaries')
           .insert([{ ...payload }])
           .select()
           .maybeSingle();
-        if (error) {
-          console.error('Insert error', error);
-          setErrorMsg(error.message || 'Failed to create');
-          setLoading(false);
-          return;
-        }
+        if (error) { console.error('Insert error', error); setErrorMsg(error.message || 'Failed to create'); setLoading(false); return; }
         resultData = data ?? null;
       }
 
@@ -524,7 +549,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   // If portal hasn't been created yet (SSR safety), render nothing
   if (!portalElRef.current) return null;
 
-  // Modal JSX
   const modal = (
     <div className="modal-overlay" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-content edit-large" role="dialog" aria-modal="true" aria-label="Edit summary" onClick={(e) => e.stopPropagation()}>
@@ -537,7 +561,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
           <small className="slug-preview">Slug preview: <code>{slug || '(will be generated)'}</code></small>
 
-          {/* Show content ID and copy button (helpful for debugging / manual linking if desired) */}
           {summary.id && (
             <div style={{ marginTop: 6, marginBottom: 8 }}>
               <small>Content ID: <code style={{ wordBreak: 'break-all' }}>{summary.id}</code></small>{' '}
@@ -601,6 +624,14 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           </div>
 
           <label htmlFor="summaryText">Full summary</label>
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button type="button" className="hf-btn" onClick={removeLinksAndMakeBold}>✂️ Remove links & Bold</button>
+            <button type="button" className="hf-btn" onClick={autoLinkBoldedPhrases}>🔗 Auto-link bolded phrases</button>
+            <button type="button" className="hf-btn" onClick={resetAndAutoRelink} style={{ background: '#eef2ff' }}>Reset & Auto-Relink</button>
+            <div style={{ color: '#6b7280', fontSize: 12 }}>Use these to clean and relink internal references (bolded phrases only).</div>
+          </div>
+
           <div className="quill-container">
             <ReactQuill
               ref={quillRef}
@@ -617,30 +648,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
             <button className="hf-btn" type="submit" disabled={loading}>{loading ? 'Updating...' : (initialIdRef.current ? 'Save changes' : 'Create')}</button>
             <button type="button" className="hf-btn" onClick={onClose} disabled={loading}>Cancel</button>
-
-            {/* NEW: Remove links + Auto Relink controls */}
-            <button
-              type="button"
-              className="hf-btn"
-              onClick={removeLinksAndMakeBold}
-              title="Remove internal links and bold the text"
-              style={{ marginLeft: 8, background: '#f3f4f6' }}
-            >
-              Remove links & Bold
-            </button>
-
-            <button
-              type="button"
-              className="hf-btn"
-              onClick={async () => {
-                // try combined flow quickly
-                await resetAndAutoRelink();
-              }}
-              title="Remove links, bold and auto-link matching phrases from DB"
-              style={{ marginLeft: 8, background: '#eef2ff' }}
-            >
-              Reset & Auto-Relink
-            </button>
           </div>
         </form>
 

@@ -465,9 +465,9 @@ html {
 /* Clean editorial link styling (Option One) */
 .summary-body a {
   color: #1a5fb4;          /* soft editorial blue */
-  font-weight: 650;        /* normal weight */
+  font-weight: 600;        /* normal weight */
   font-style: normal;      /* no italic */
-  text-decoration: underline;   /* no underline */
+  text-decoration: none;   /* no underline */
 }
 
 .summary-body a:hover {
