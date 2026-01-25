@@ -11,7 +11,7 @@ import './EditSummaryForm.css';
 /* ---------- Constants ---------- */
 const CATEGORIES = [
   "Apps","Business Legends","Best Books","People","Business Giants","Business Concepts",
-  "Business Strategy & Systems","Courses & Learning Paths","Business Ideas",
+  "Business Strategy & Systems","Courses & Learning Paths","Business Ideas","Quotes",
   "Book Summaries","Entrepreneurship","Self-Improvement","Marketing & Sales",
   "Money & Productivity","Mindset & Motivation","Career Development","Video Insights",
   "Digital Skills & Technology","Leadership & Management","Concepts","Strategic Communication"

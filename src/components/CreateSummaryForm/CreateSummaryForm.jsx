@@ -59,6 +59,7 @@ const categories = [
   "Courses & Learning Paths",
   "Best Books",
   "People",
+  "Quotes",
   "Business Ideas",
   "Book Summaries",
   "Entrepreneurship",
