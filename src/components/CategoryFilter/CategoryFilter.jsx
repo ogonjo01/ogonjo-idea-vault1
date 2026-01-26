@@ -15,10 +15,10 @@ const CategoryFilter = ({ selectedCategory = 'For You', onSelectCategory, isHome
       setLoading(true);
       try {
         const { data, error } = await supabase
-          .from('book_summaries')
-          .select('category')
-          .not('category', 'is', null)
-          .limit(200);
+  .from('book_summaries')
+  .select('category', { distinct: true })
+  .not('category', 'is', null);
+
 
         if (error) {
           console.error('Error fetching categories', error);

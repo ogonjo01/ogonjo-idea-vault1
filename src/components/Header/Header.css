@@ -347,3 +347,166 @@
   .og-search .search-btn { padding: 6px 8px; }
   .og-search .search-input { padding: 6px 8px; font-size: 13px; }
 }
+/* SEARCH wrapper adjustments */
+.og-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 640px;
+  width: 100%;
+}
+
+/* compact input and icon layout */
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e6e7ea;
+  background: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+.search-input:focus {
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+  border-color: #2563eb;
+}
+
+.search-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* clear & submit buttons */
+.search-clear {
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.search-btn {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* DROPDOWN PANEL (anchored) */
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: block;
+  pointer-events: auto;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.search-dropdown-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e6e7ea;
+  box-shadow: 0 8px 30px rgba(11,18,32,0.08);
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+/* sections inside panel */
+.search-dropdown-section {
+  flex: 1 1 0;
+  min-width: 180px;
+}
+
+.search-dropdown-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #0b1220;
+  font-size: 13px;
+}
+
+/* category list: scrollable */
+.search-category-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 6px;
+  background: #fafafa;
+  border: 1px solid #f0f0f1;
+}
+
+/* each category pill */
+.search-category-item {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.search-category-item.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: rgba(37,99,235,0.9);
+}
+
+/* tips area */
+.search-dropdown-tips {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* RESPONSIVE: on small screens make dropdown full width with comfortable padding */
+@media (max-width: 720px) {
+  .search-dropdown-inner {
+    flex-direction: column;
+    padding: 12px;
+    gap: 10px;
+    margin: 6px;
+  }
+  .search-dropdown {
+    left: 8px;
+    right: 8px;
+    top: calc(100% + 6px);
+  }
+
+  .og-search {
+    max-width: none;
+    width: calc(100% - 24px);
+  }
+
+  .search-btn {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+}

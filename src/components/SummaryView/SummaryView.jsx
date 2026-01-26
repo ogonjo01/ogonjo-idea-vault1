@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
-import { FaHeart, FaStar, FaComment, FaEye, FaPlus, FaMinus, FaPaintBrush } from 'react-icons/fa';
+import { FaHeart, FaStar, FaComment, FaEye, FaPlus, FaMinus, FaPaintBrush, FaShareAlt } from 'react-icons/fa';
 import CommentsSection from '../CommentsSection/CommentsSection';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
@@ -147,7 +147,6 @@ const SummaryView = () => {
   const navigate = useNavigate();
 
   /* ---------- State ---------- */
-  // default font size reduced per your request (13). change to 12 if you prefer even smaller.
   const [fontSize, setFontSize] = useState(18);
   const [lineHeight, setLineHeight] = useState(1.75);
   const [readingMode, setReadingMode] = useState(true);
@@ -798,6 +797,56 @@ const SummaryView = () => {
     return <span className={cls} aria-hidden="false">{text}</span>;
   };
 
+  /* ---------- Share handler (native + clipboard fallback) ---------- */
+  const handleShare = async () => {
+    if (!summary) return;
+
+    const title = summary.title || 'Check this out on OGONJO';
+    const description = makeSafeDescription(summary.description || summary.summary || '', 140);
+
+    const shareText = `${title}
+
+${description}
+
+Read more on OGONJO:
+${pageUrl}`;
+
+    // Native mobile/desktop share (if available)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          text: description,
+          url: pageUrl
+        });
+        return;
+      } catch (e) {
+        // user cancelled or share failed — fall back to clipboard
+      }
+    }
+
+    // Clipboard fallback
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareText);
+        alert('Link + description copied to clipboard — paste it anywhere to share!');
+        return;
+      } catch (e) {
+        // fallback to prompt
+      }
+    }
+
+    // Last resort: prompt with text to copy
+    try {
+      // eslint-disable-next-line no-alert
+      window.prompt('Copy the text below to share:', shareText);
+    } catch (e) {
+      // ignore
+      // eslint-disable-next-line no-alert
+      alert('Unable to copy automatically. Please copy the URL: ' + pageUrl);
+    }
+  };
+
   /* ---------- Render ---------- */
   const showLoading = Boolean(isLoading);
   const showNotFound = !isLoading && !summary;
@@ -895,6 +944,18 @@ const SummaryView = () => {
               <a className={`affiliate-btn ${affiliateType ? `affiliate-${affiliateType}` : ''}`} href={affiliateUrl} target="_blank" rel="noopener noreferrer">{affiliateLabel}</a>
             ) : null;
           })()}
+
+          {/* Share button added */}
+          <button
+            className="hf-btn share-btn"
+            type="button"
+            onClick={handleShare}
+            title="Share"
+            aria-label="Share this summary"
+          >
+            <FaShareAlt />
+          </button>
+
           {ownerId && currentUserId && ownerId === currentUserId && (
             <button className="hf-btn" type="button" onClick={() => setShowEdit(true)}>Edit</button>
           )}
