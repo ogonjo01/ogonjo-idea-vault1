@@ -510,3 +510,221 @@
     font-size: 13px;
   }
 }
+/* ===========================
+   Mobile: Search dropdown UX
+   Paste at end of Header.css
+   =========================== */
+
+/* hide the mobile category toggle on desktop by default */
+.category-toggle { display: none; }
+
+/* ensure titles & pills wrap and don't overflow */
+.top-match-item,
+.search-category-item,
+.search-category-list,
+.search-dropdown .hf-btn {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+}
+
+/* mobile-specific overrides */
+@media (max-width: 720px) {
+
+  /* center dropdown and make it comfortably wide (mobile) */
+  .search-dropdown {
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+    width: min(96vw, 720px);
+    max-width: 96vw;
+    padding: 8px;
+    top: calc(100% + 8px);
+  }
+
+  /* stack the inner layout vertically on mobile */
+  .search-dropdown-inner {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 96vw;
+  }
+
+  /* make each section take full width (orderable) */
+  .search-dropdown-section {
+    flex: none !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* CATEGORY: show a compact toggle button and collapse the full list by default */
+  .category-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #e8eaed;
+    background: #ffffff;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .category-toggle .chev { opacity: 0.9; margin-left: 8px; }
+
+  /* hide the category grid by default (mobile) */
+  .search-category-list {
+    display: none !important;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 6px;
+    background: #fafafa;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+
+  /* when JS adds .show, reveal the category list */
+  .search-category-list.show {
+    display: flex !important;
+  }
+
+  /* TOP MATCHES: always visible under category */
+  .top-matches-section { order: 2; }
+  .category-section   { order: 1; }
+  .tips-section       { order: 3; }
+
+  .top-matches-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .top-match-item {
+    padding: 8px;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 4px 18px rgba(11,18,32,0.04);
+    box-sizing: border-box;
+    width: 100%;
+    overflow: visible;
+  }
+
+  /* ensure the button inside matches is touch-friendly and wraps */
+  .top-match-item .hf-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 6px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+
+  .top-match-item .hf-btn div { white-space: normal; word-break: break-word; }
+
+  /* TIPS moved last and smaller font */
+  .search-dropdown-tips { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  /* ensure the dropdown doesn't go off-screen vertically */
+  .search-dropdown {
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  /* small adjustments for search input inside header on mobile */
+  .og-search { margin: 0 8px; max-width: calc(100% - 16px); }
+  .search-input { font-size: 14px; padding: 8px 10px; }
+
+  /* slightly larger tappable category pill on mobile */
+  .search-category-item {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+}
+/* ===== Portal dropdown overrides & behavior ===== */
+.portal-dropdown {
+  /* basic positioning handled inline from JS; ensure stacking */
+  z-index: 99999;
+  will-change: top, left, width;
+}
+
+/* inner container (keeps close button positioned correctly) */
+.search-dropdown-inner {
+  position: relative;
+  padding: 8px;
+}
+
+/* Close button top-right inside dropdown */
+.search-dropdown-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #374151;
+  opacity: 0.65;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.search-dropdown-close:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.03);
+}
+
+/* Scrollable top-matches container */
+.top-matches-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0,0,0,0.12) transparent;
+}
+
+/* small desktop default */
+.top-matches-scroll {
+  max-height: 220px;
+}
+
+/* mobile tighter */
+@media (max-width: 640px) {
+  .top-matches-scroll { max-height: 180px; }
+}
+
+/* ensure portal dropdown is visually above other layout placeholders */
+.portal-dropdown,
+.search-dropdown {
+  box-shadow: 0 12px 36px rgba(0,0,0,0.14);
+  border-radius: 10px;
+}
+
+/* small visual tweaks for match items */
+.top-matches-list .top-match-item button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  background: transparent;
+  border-radius: 8px;
+}
+.top-matches-list .top-match-item button:hover {
+  background: rgba(0,0,0,0.03);
+}
+
+/* ensure header elements don't create a stacking context that hides portal */
+.og-header, .main-content, .summary-page, .summary-header {
+  /* don't set transform/opacity here; if you have transforms they create stacking contexts
+     and can hide the portal. If you must transform, ensure portal z-index is greater
+     than any context or remove transform usage. */
+}

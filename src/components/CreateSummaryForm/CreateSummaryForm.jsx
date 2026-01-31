@@ -141,6 +141,26 @@ function generateVariants(word) {
   return Array.from(variants);
 }
 
+// ----------------- Keywords helper (new) -----------------
+// Parse comma-separated keywords string -> normalized array (trim, lowercase, dedupe, limit)
+function parseKeywords(input, max = 8) {
+  if (!input) return [];
+  const parts = input
+    .split(",")
+    .map((k) => (k || "").trim().toLowerCase())
+    .filter(Boolean);
+  const seen = new Set();
+  const uniq = [];
+  for (const k of parts) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      uniq.push(k);
+      if (uniq.length >= max) break;
+    }
+  }
+  return uniq;
+}
+
 // ----------------- Component -----------------
 const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [title, setTitle] = useState("");
@@ -154,6 +174,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [affiliateType, setAffiliateType] = useState("book");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [tags, setTags] = useState("");
+  const [keywordsInput, setKeywordsInput] = useState(""); // <-- new
   const [difficulty, setDifficulty] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -174,6 +195,9 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     const generated = slugify(title, { lower: true, strict: true, replacement: "-" });
     setSlug(generated);
   }, [title]);
+
+  // show parsed keywords count (live) - memoized
+  const parsedKeywordsPreview = useMemo(() => parseKeywords(keywordsInput, 8), [keywordsInput]);
 
   // Quill modules (memoized) with custom handler for internalLink
   const quillModules = useMemo(
@@ -348,154 +372,374 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     setSelectedRangeForLink(null);
   };
 
-  // ----------------- Advanced search for best match with single-word narrowing -----------------
-  // Returns best candidate object { id, title } or null
-  const searchBestMatch = async (text, opts = { limitCandidates: 50, minScore: 0.6 }) => {
+  // ----------------- helper: fetch rows with title candidates for a string -----------------
+  // returns array of {id,title,keywords} (keywords may be undefined)
+  const fetchTitleCandidates = async (text, limit = 200) => {
     const q = String(text || "").trim();
-    if (!q) return null;
-
-    const tokens = uniqueWords(q);
-    const isSingleToken = tokens.length === 1;
-    const token = tokens[0] ?? "";
-
-    // 1) exact title equality check (case-sensitive first, then case-insensitive)
+    if (!q) return [];
     try {
-      const { data: exact, error: errExact } = await supabase
+      const { data, error } = await supabase
         .from("book_summaries")
-        .select("id, title")
-        .eq("title", q)
-        .maybeSingle();
-
-      if (!errExact && exact && exact.id) return exact;
-    } catch (e) {
-      console.warn("Exact match error:", e);
-    }
-
-    // 2) case-insensitive phrase match (quick)
-    try {
-      const { data: phrase, error: errPhrase } = await supabase
-        .from("book_summaries")
-        .select("id, title")
+        .select("id, title, keywords")
         .ilike("title", `%${q}%`)
-        .limit(1)
-        .maybeSingle();
-
-      if (!errPhrase && phrase && phrase.id) {
-        // If single token, only accept if phrase contains token as whole word (checked later)
-        if (!isSingleToken) return phrase;
-        // else we'll still return to deeper check later — but give it priority
-      }
-    } catch (e) {
-      console.warn("Phrase match error:", e);
-    }
-
-    // For single word queries: be conservative and prefer whole-word matches or exact variants
-    if (isSingleToken) {
-      const variants = generateVariants(token); // token, tokens with s/es/ies
-      // Try strict equality with variants (case-insensitive)
-      try {
-        for (const v of variants) {
-          const { data: eq, error: eqErr } = await supabase
-            .from("book_summaries")
-            .select("id, title")
-            .ilike("title", v)
-            .limit(1)
-            .maybeSingle();
-
-          if (!eqErr && eq && eq.id) return eq;
-        }
-      } catch (e) {
-        // ignore
-      }
-
-      // fetch candidates containing token (broad)
-      const orFilters = variants.map((t) => `title.ilike.%${t}%`).join(",");
-      try {
-        const { data: candidates = [], error } = await supabase
-          .from("book_summaries")
-          .select("id, title")
-          .or(orFilters)
-          .limit(opts.limitCandidates);
-
-        if (error) {
-          console.warn("Candidates fetch error:", error);
-          return null;
-        }
-
-        if (!candidates || candidates.length === 0) return null;
-
-        // Filter candidates: require candidate title to contain token (or its simple plural) as a whole word
-        const normalizedToken = normalize(token);
-        const tokenVariants = generateVariants(normalizedToken);
-
-        const candidateMatches = candidates.filter((c) => {
-          const candWords = uniqueWords(c.title || "");
-          // whole-word check
-          return tokenVariants.some((v) => candWords.includes(v));
-        });
-
-        // Score remaining candidates, pick best
-        let best = null;
-        let bestScore = 0;
-        candidateMatches.forEach((c) => {
-          const score = combinedScore(c.title || "", q);
-          if (score > bestScore) {
-            bestScore = score;
-            best = c;
-          }
-        });
-
-        // Require stricter threshold for single words to avoid loose matches
-        const threshold = opts.minScore != null ? opts.minScore : 0.7;
-        if (best && bestScore >= threshold) return best;
-
-        // if nothing meets threshold, return null (do not return loose matches)
-        return null;
-      } catch (e) {
-        console.error("Candidate search exception (single token):", e);
-        return null;
-      }
-    }
-
-    // For multi-word queries: previous token-based approach (less strict)
-    try {
-      const tokensForSearch = tokens.slice(0, 6);
-      if (tokensForSearch.length === 0) return null;
-      const orFilters = tokensForSearch.map((t) => `title.ilike.%${t}%`).join(",");
-
-      const { data: candidates = [], error } = await supabase
-        .from("book_summaries")
-        .select("id, title")
-        .or(orFilters)
-        .limit(opts.limitCandidates);
-
+        .limit(limit);
       if (error) {
-        console.warn("Candidates fetch error:", error);
-        return null;
+        console.warn("fetchTitleCandidates error:", error);
+        return [];
       }
-      if (!candidates || candidates.length === 0) return null;
-
-      let best = null;
-      let bestScore = 0;
-      candidates.forEach((c) => {
-        const score = combinedScore(c.title || "", q);
-        if (score > bestScore) {
-          bestScore = score;
-          best = c;
-        }
-      });
-
-      const threshold = opts.minScore != null ? opts.minScore : 0.5;
-      if (best && bestScore >= threshold) return best;
-
-      return best && bestScore > 0.25 ? best : null;
+      return data || [];
     } catch (e) {
-      console.error("Candidate search exception (multi-token):", e);
-      return null;
+      console.warn("fetchTitleCandidates exception:", e);
+      return [];
     }
   };
 
+  // ----------------- helper: fetch some rows that have keywords (small sample) -----------------
+  // We'll fetch a limited set to avoid huge loads, then filter client-side.
+  const fetchKeywordRows = async (limit = 1000) => {
+    try {
+      const { data, error } = await supabase
+        .from("book_summaries")
+        .select("id, title, keywords")
+        .not("keywords", "is", null)
+        .limit(limit);
+      if (error) {
+        console.warn("fetchKeywordRows error:", error);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      console.warn("fetchKeywordRows exception:", e);
+      return [];
+    }
+  };
+
+  // ----------------- Exact auto-link (NEW) -----------------
+  // Links only when normalized bold text exactly equals a title (or its simple plural variants)
+  const autoLinkBoldTextExact = async () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert("Editor not available.");
+      return;
+    }
+    const root = editor.root;
+    if (!root) {
+      alert("Editor root not available.");
+      return;
+    }
+
+    const nodeList = Array.from(root.querySelectorAll("strong, b, *[style*='font-weight']"));
+    const candidates = [];
+
+    nodeList.forEach((node) => {
+      if (node.closest && node.closest("a")) return; // already linked
+      let isBold = false;
+      if (node.tagName && (node.tagName.toLowerCase() === "strong" || node.tagName.toLowerCase() === "b")) {
+        isBold = true;
+      } else {
+        try {
+          const cs = window.getComputedStyle(node);
+          const fw = cs && cs.fontWeight ? cs.fontWeight : "";
+          const num = parseInt(fw, 10);
+          if (!isNaN(num) && num >= 600) isBold = true;
+          if (fw === "bold" || fw === "bolder") isBold = true;
+        } catch (e) {}
+      }
+      if (!isBold) return;
+      const text = (node.textContent || "").trim();
+      if (!text) return;
+      if (text.length < 3) return;
+      candidates.push({ text, node });
+    });
+
+    if (candidates.length === 0) {
+      alert("No bold text found to auto-link (exact).");
+      return;
+    }
+
+    // dedupe by normalized text
+    const mapByText = new Map();
+    candidates.forEach(({ text, node }) => {
+      const key = normalize(text);
+      if (!mapByText.has(key)) mapByText.set(key, { text: text.trim(), nodes: [node] });
+      else mapByText.get(key).nodes.push(node);
+    });
+
+    let linkedCount = 0;
+
+    for (const [key, { text, nodes }] of mapByText.entries()) {
+      try {
+        // fetch candidates with title containing the text (narrow)
+        const titleCandidates = await fetchTitleCandidates(text, 50);
+
+        // Filter for exact normalized equality or simple variant equality
+        const variants = generateVariants(text);
+        let matched = null;
+        for (const c of titleCandidates) {
+          try {
+            if (!c || !c.title) continue;
+            const nt = normalize(c.title || "");
+            if (nt === normalize(text) || variants.includes(nt)) {
+              matched = c;
+              break;
+            }
+          } catch (e) {}
+        }
+
+        // If not found, as a fallback, try a more exhaustive pass: fetch small keyword sample and check normalized title equality
+        if (!matched) {
+          const sample = await fetchKeywordRows(500); // smaller sample
+          for (const c of sample) {
+            try {
+              if (!c || !c.title) continue;
+              const nt = normalize(c.title || "");
+              if (nt === normalize(text) || variants.includes(nt)) {
+                matched = c;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+
+        if (!matched || !matched.id) continue;
+
+        // link all nodes (same as existing logic)
+        nodes.forEach((node) => {
+          try {
+            if (node.closest && node.closest("a")) return;
+            const anchor = document.createElement("a");
+            anchor.setAttribute("data-summary-id", matched.id);
+            anchor.setAttribute("href", `#summary-${matched.id}`);
+            anchor.className = "internal-summary-link";
+            node.parentNode && node.parentNode.replaceChild(anchor, node);
+            anchor.appendChild(node);
+            linkedCount += 1;
+          } catch (err) {
+            try {
+              const safeText = (node.textContent || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              const parent = node.parentNode;
+              if (parent) {
+                parent.replaceChild(document.createTextNode(""), node);
+                parent.innerHTML = parent.innerHTML.replace(
+                  /$/,
+                  `<a data-summary-id="${matched.id}" class="internal-summary-link" href="#summary-${matched.id}">${safeText}</a>`
+                );
+                linkedCount += 1;
+              }
+            } catch (e) {
+              console.warn("Exact auto-link fallback failed for node:", e);
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Exact auto-link error for text:", text, err);
+      }
+    }
+
+    try {
+      if (editor.update) editor.update("user");
+    } catch (e) {}
+
+    try {
+      setSummaryText(editor.root.innerHTML);
+    } catch (e) {}
+
+    alert(`Exact auto-link complete — ${linkedCount} item(s) linked.`);
+  };
+
+  // ----------------- Keyword+Title auto-link (NEW) -----------------
+  // Uses both title matches and keywords array. Scores candidates and picks best.
+  const autoLinkBoldTextKeywords = async () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert("Editor not available.");
+      return;
+    }
+    const root = editor.root;
+    if (!root) {
+      alert("Editor root not available.");
+      return;
+    }
+
+    const nodeList = Array.from(root.querySelectorAll("strong, b, *[style*='font-weight']"));
+    const candidates = [];
+
+    nodeList.forEach((node) => {
+      if (node.closest && node.closest("a")) return; // already linked
+      let isBold = false;
+      if (node.tagName && (node.tagName.toLowerCase() === "strong" || node.tagName.toLowerCase() === "b")) {
+        isBold = true;
+      } else {
+        try {
+          const cs = window.getComputedStyle(node);
+          const fw = cs && cs.fontWeight ? cs.fontWeight : "";
+          const num = parseInt(fw, 10);
+          if (!isNaN(num) && num >= 600) isBold = true;
+          if (fw === "bold" || fw === "bolder") isBold = true;
+        } catch (e) {}
+      }
+      if (!isBold) return;
+      const text = (node.textContent || "").trim();
+      if (!text) return;
+      if (text.length < 3) return;
+      candidates.push({ text, node });
+    });
+
+    if (candidates.length === 0) {
+      alert("No bold text found to auto-link (keywords).");
+      return;
+    }
+
+    // dedupe by normalized text
+    const mapByText = new Map();
+    candidates.forEach(({ text, node }) => {
+      const key = normalize(text);
+      if (!mapByText.has(key)) mapByText.set(key, { text: text.trim(), nodes: [node] });
+      else mapByText.get(key).nodes.push(node);
+    });
+
+    // We'll fetch a sample of keyworded rows to evaluate keyword matches
+    let keywordRowsSample = [];
+    try {
+      keywordRowsSample = await fetchKeywordRows(800); // adjust if needed
+    } catch (e) {
+      keywordRowsSample = [];
+    }
+
+    let linkedCount = 0;
+
+    for (const [key, { text, nodes }] of mapByText.entries()) {
+      try {
+        // 1) Title candidates (narrow)
+        const titleCandidates = await fetchTitleCandidates(text, 200);
+
+        // 2) Also include keywordRowsSample candidates that mention the token(s)
+        const tokens = uniqueWords(text);
+        const normalizedTokens = tokens.map((t) => normalize(t));
+
+        const keywordCandidates = keywordRowsSample.filter((r) => {
+          try {
+            if (!r || !r.keywords) return false;
+            const kw = (r.keywords || []).map((k) => normalize(String(k || "")));
+            // if any token fully appears inside any keyword OR full text matches a keyword
+            return normalizedTokens.some((t) => kw.includes(t) || kw.some((k) => k.includes(t)));
+          } catch (e) {
+            return false;
+          }
+        });
+
+        // Merge candidates deduped by id
+        const byId = new Map();
+        titleCandidates.forEach((c) => {
+          if (c && c.id) byId.set(c.id, c);
+        });
+        keywordCandidates.forEach((c) => {
+          if (c && c.id && !byId.has(c.id)) byId.set(c.id, c);
+        });
+        const mergedCandidates = Array.from(byId.values());
+
+        if (mergedCandidates.length === 0) {
+          // no candidates - skip
+          continue;
+        }
+
+        // Score each candidate:
+        // baseScore = combinedScore(title, text)  (0..1)
+        // if exact normalized title eq text => +1.0 (make it dominant)
+        // if candidate.keywords contains normalized full text => +0.6
+        // if candidate.keywords contains any token => +0.35 per matching token (capped)
+        // final score capped at 1
+        let best = null;
+        let bestScore = 0;
+        for (const c of mergedCandidates) {
+          try {
+            const title = c.title || "";
+            let score = combinedScore(title, text); // 0..1
+
+            const nt = normalize(title);
+            if (nt === normalize(text)) {
+              score = Math.max(score, 0.95); // near-certain priority
+            }
+
+            if (c.keywords && Array.isArray(c.keywords)) {
+              const kws = c.keywords.map((k) => normalize(String(k || "")));
+              if (kws.includes(normalize(text))) {
+                score = Math.max(score, score + 0.6);
+              } else {
+                // add partial score for token matches
+                const tokenMatches = normalizedTokens.filter((t) => kws.some((k) => k === t || k.includes(t))).length;
+                if (tokenMatches > 0) {
+                  score = score + Math.min(0.35, 0.12 * tokenMatches); // small boost
+                }
+              }
+            }
+
+            // clamp
+            if (score > 1) score = 1;
+            if (score > bestScore) {
+              bestScore = score;
+              best = c;
+            }
+          } catch (e) {
+            // ignore candidate
+          }
+        }
+
+        // Decide threshold: require reasonable confidence
+        // If exact normalized title -> allow (already boosted).
+        // If score >= 0.65 -> accept; else skip.
+        if (!best || !best.id) continue;
+        if (bestScore < 0.65) {
+          // skip low-confidence matches to keep it safer than the fuzzy auto-link
+          continue;
+        }
+
+        // link all nodes
+        nodes.forEach((node) => {
+          try {
+            if (node.closest && node.closest("a")) return;
+            const anchor = document.createElement("a");
+            anchor.setAttribute("data-summary-id", best.id);
+            anchor.setAttribute("href", `#summary-${best.id}`);
+            anchor.className = "internal-summary-link";
+            node.parentNode && node.parentNode.replaceChild(anchor, node);
+            anchor.appendChild(node);
+            linkedCount += 1;
+          } catch (err) {
+            try {
+              const safeText = (node.textContent || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              const parent = node.parentNode;
+              if (parent) {
+                parent.replaceChild(document.createTextNode(""), node);
+                parent.innerHTML = parent.innerHTML.replace(
+                  /$/,
+                  `<a data-summary-id="${best.id}" class="internal-summary-link" href="#summary-${best.id}">${safeText}</a>`
+                );
+                linkedCount += 1;
+              }
+            } catch (e) {
+              console.warn("Keyword auto-link fallback failed for node:", e);
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Keyword auto-link error for text:", text, err);
+      }
+    }
+
+    try {
+      if (editor.update) editor.update("user");
+    } catch (e) {}
+
+    try {
+      setSummaryText(editor.root.innerHTML);
+    } catch (e) {}
+
+    alert(`Keyword auto-link complete — ${linkedCount} item(s) linked.`);
+  };
+
   // ----------------- Auto-link Bold Text (narrower single-word behavior) -----------------
+  // (existing similarity-based engine — left intact)
   const autoLinkBoldText = async () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) {
@@ -736,6 +980,10 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         .map((t) => t.trim().toLowerCase())
         .filter(Boolean);
 
+      // Parse keywords (new): optional. If empty => null
+      const parsedKeywords = parseKeywords(keywordsInput, 8);
+      const keywordsToSave = parsedKeywords.length ? parsedKeywords : null;
+
       const affiliateValue = affiliateLink && affiliateLink.trim() ? `${affiliateType}|${affiliateLink.trim()}` : null;
 
       const allowedDifficulties = ["Beginner", "Intermediate", "Advanced"];
@@ -756,6 +1004,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         affiliate_link: affiliateValue,
         youtube_url: youtubeUrl || null,
         tags: parsedTags,
+        keywords: keywordsToSave, // <-- added field
         slug: finalSlug || null,
         difficulty_level: difficultyToSave,
       }]);
@@ -825,16 +1074,33 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
           <label>Tags (comma separated)</label>
           <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="business, leadership, strategy" />
 
+          <label>Keywords (optional, comma separated)</label>
+          <input
+            type="text"
+            value={keywordsInput}
+            onChange={(e) => setKeywordsInput(e.target.value)}
+            placeholder="e.g. business strategy, growth, productivity"
+          />
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
+            <span>{parsedKeywordsPreview.length} / 8 keywords</span>
+            <span style={{ marginLeft: 8 }}>Paste comma-separated keywords — they will be normalized, deduped, and limited to 8.</span>
+          </div>
+
           <label>Summary</label>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: 'wrap' }}>
             <button type="button" className="hf-btn" onClick={autoLinkBoldText}>🔗 Auto-link bold text</button>
+
+            {/* NEW buttons */}
+            <button type="button" className="hf-btn" onClick={autoLinkBoldTextExact}>🎯 Exact auto-link</button>
+            <button type="button" className="hf-btn" onClick={autoLinkBoldTextKeywords}>🧠 Keyword auto-link</button>
+
             <button type="button" className="hf-btn" onClick={removeInternalLinksAndBold}>✂️ Remove links & bold</button>
             <button type="button" className="hf-btn" onClick={() => { setShowInternalLinkModal(true); }}>
               🔎 Manual link
             </button>
             <div style={{ color: "#6b7280", fontSize: 12, marginLeft: 8 }}>
-              Only bold text is auto-linked. Single-word bold tokens are matched strictly (exact/plural variants only).
+              Only bold text is auto-linked. Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
             </div>
           </div>
 

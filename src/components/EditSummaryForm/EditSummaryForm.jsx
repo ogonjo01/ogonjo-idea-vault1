@@ -100,6 +100,26 @@ const parseAffiliateValue = (raw) => {
   try { return { type: null, url: String(raw).trim() || null }; } catch (e) { return { type: null, url: null }; }
 };
 
+/* ---------- Keywords helper (new) ---------- */
+// Keep parseKeywords for any situations where a CSV string is needed
+function parseKeywords(input, max = 8) {
+  if (!input) return [];
+  const parts = input
+    .split(',')
+    .map((k) => (k || '').trim().toLowerCase())
+    .filter(Boolean);
+  const seen = new Set();
+  const uniq = [];
+  for (const k of parts) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      uniq.push(k);
+      if (uniq.length >= max) break;
+    }
+  }
+  return uniq;
+}
+
 /* ---------- Component ---------- */
 const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {} }) => {
   // core fields
@@ -115,6 +135,12 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [youtubeUrl, setYoutubeUrl] = useState(summary.youtube_url || '');
   const [tags, setTags] = useState(Array.isArray(summary.tags) ? summary.tags.map(t => String(t).trim().toLowerCase()) : []);
   const [tagInput, setTagInput] = useState('');
+  // keywords state: array of normalized keywords shown as chips
+  const [keywords, setKeywords] = useState(Array.isArray(summary.keywords) ? (summary.keywords || []).map(k => String(k || '').trim().toLowerCase()) : []);
+  const [keywordInput, setKeywordInput] = useState('');
+  // track whether user actually edited keywords (so we don't overwrite existing keywords unless user intends to)
+  const [editedKeywords, setEditedKeywords] = useState(false);
+
   const [difficulty, setDifficulty] = useState(summary.difficulty_level || '');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -132,7 +158,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [linkResults, setLinkResults] = useState([]);
   const [selectedRangeForLink, setSelectedRangeForLink] = useState(null);
 
-  // parse affiliate initial
+  // keep affiliate and difficulty in sync with incoming summary
   useEffect(() => {
     const parsed = parseAffiliateValue(summary.affiliate_link);
     if (parsed && parsed.url) { setAffiliateLink(parsed.url); setAffiliateType(parsed.type || 'book'); }
@@ -140,6 +166,16 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   }, [summary.affiliate_link]);
 
   useEffect(() => { setDifficulty(summary.difficulty_level || ''); }, [summary.difficulty_level]);
+
+  // keep keywords in sync if summary changes (e.g. modal reopened for a different item)
+  useEffect(() => {
+    const incoming = Array.isArray(summary.keywords) ? (summary.keywords || []).map(k => String(k || '').trim().toLowerCase()) : [];
+    // dedupe and limit to 8
+    const uniq = Array.from(new Set(incoming)).slice(0, 8);
+    setKeywords(uniq);
+    setKeywordInput('');            // clear any transient input
+    setEditedKeywords(false);       // no local edits yet
+  }, [summary.keywords]);
 
   // SLUG generation: only generate for NEW content (do NOT overwrite on edit)
   useEffect(() => {
@@ -185,6 +221,51 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     else if (e.key === 'Backspace' && !tagInput) { setTags(prev => (prev && prev.length ? prev.slice(0, -1) : [])); }
   };
   const removeTag = (t) => setTags(prev => (prev || []).filter(x => x !== t));
+
+  // Keywords UI helpers (chips + input)
+  const KEYWORDS_LIMIT = 8;
+  const addKeywordFromInput = (raw = '') => {
+    const value = (raw || keywordInput || '').trim();
+    if (!value) return;
+    // allow comma-separated additions
+    const parts = value.split(',').map(p => (p || '').trim().toLowerCase()).filter(Boolean);
+    setKeywords(prev => {
+      const s = new Set(prev || []);
+      for (const p of parts) {
+        if (s.size >= KEYWORDS_LIMIT) break;
+        s.add(p);
+      }
+      const out = Array.from(s);
+      // mark edited as true if anything changed
+      if (JSON.stringify(out) !== JSON.stringify(prev || [])) setEditedKeywords(true);
+      return out;
+    });
+    setKeywordInput('');
+  };
+  const handleKeywordKey = (e) => {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addKeywordFromInput(); }
+    else if (e.key === 'Backspace' && !keywordInput) {
+      setKeywords(prev => {
+        if (!prev || prev.length === 0) return [];
+        const out = prev.slice(0, -1);
+        setEditedKeywords(true);
+        return out;
+      });
+    } else {
+      // mark edited when user types inside keyword input (intent to edit)
+      if (!editedKeywords) setEditedKeywords(true);
+    }
+  };
+  const removeKeyword = (k) => {
+    setKeywords(prev => {
+      const out = (prev || []).filter(x => x !== k);
+      setEditedKeywords(true);
+      return out;
+    });
+  };
+
+  // parsed keywords preview derived from keywords array
+  const parsedKeywordsPreview = useMemo(() => (Array.isArray(keywords) ? keywords.slice(0, KEYWORDS_LIMIT) : []), [keywords]);
 
   const validate = () => {
     setErrorMsg('');
@@ -315,7 +396,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     setSelectedRangeForLink(null);
   };
 
-  /* ---------- Advanced search best-match (used by auto-link) ---------- */
+  /* ---------- Advanced search best-match (used by fuzzy auto-link) ---------- */
   const searchBestMatch = async (text, opts = { limitCandidates: 40, minScore: 0.50 }) => {
     const q = String(text || '').trim();
     if (!q) return null;
@@ -413,7 +494,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  /* ---------- Auto-link bolded phrases (improved accuracy) ---------- */
+  /* ---------- Existing fuzzy auto-link bolded phrases ---------- */
   const autoLinkBoldedPhrases = async () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) { alert('Editor not ready'); return; }
@@ -462,7 +543,229 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  // Combined flow: remove links then auto-link
+  // ----------------- helper: fetch rows with title candidates for a string -----------------
+  // returns array of {id,title,keywords}
+  const fetchTitleCandidates = async (text, limit = 200) => {
+    const q = String(text || '').trim();
+    if (!q) return [];
+    try {
+      const { data, error } = await supabase
+        .from('book_summaries')
+        .select('id, title, keywords')
+        .ilike('title', `%${q}%`)
+        .limit(limit);
+      if (error) {
+        console.warn('fetchTitleCandidates error:', error);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      console.warn('fetchTitleCandidates exception:', e);
+      return [];
+    }
+  };
+
+  // ----------------- helper: fetch some rows that have keywords (sample) -----------------
+  const fetchKeywordRows = async (limit = 800) => {
+    try {
+      const { data, error } = await supabase
+        .from('book_summaries')
+        .select('id, title, keywords')
+        .not('keywords', 'is', null)
+        .limit(limit);
+      if (error) {
+        console.warn('fetchKeywordRows error:', error);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      console.warn('fetchKeywordRows exception:', e);
+      return [];
+    }
+  };
+
+  /* ---------- Exact auto-link (NEW) ---------- */
+  const autoLinkBoldExact = async () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) { alert('Editor not ready'); return; }
+
+    try {
+      const container = document.createElement('div');
+      container.innerHTML = editor.root.innerHTML;
+
+      const boldNodes = Array.from(container.querySelectorAll('strong, b'));
+      const phrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 200);
+      if (phrases.length === 0) { alert('No bolded phrases found to exact-auto-link.'); return; }
+
+      // build mapping for exact matches
+      let linkedCount = 0;
+      for (const phrase of phrases) {
+        try {
+          // fetch candidates with title containing phrase (narrow)
+          const tCandidates = await fetchTitleCandidates(phrase, 200);
+          const variants = pluralVariants(phrase);
+          let matched = null;
+          for (const c of tCandidates) {
+            if (!c || !c.title) continue;
+            const nt = normalize(c.title || '');
+            if (nt === normalize(phrase) || variants.includes(nt)) {
+              matched = c;
+              break;
+            }
+          }
+
+          if (!matched) {
+            // fallback: small keyword rows check for exact title equality
+            const sample = await fetchKeywordRows(400);
+            for (const c of sample) {
+              if (!c || !c.title) continue;
+              const nt = normalize(c.title || '');
+              if (nt === normalize(phrase) || variants.includes(nt)) {
+                matched = c;
+                break;
+              }
+            }
+          }
+
+          if (!matched || !matched.id) continue;
+
+          // link all DOM nodes matching this phrase (exact normalized text)
+          boldNodes.forEach(node => {
+            const text = (node.textContent || '').trim();
+            if (normalize(text) !== normalize(phrase)) return;
+            try {
+              if (node.closest && node.closest('a')) return;
+              const a = document.createElement('a');
+              a.setAttribute('data-summary-id', matched.id);
+              a.setAttribute('href', `#summary-${matched.id}`);
+              a.className = 'internal-summary-link';
+              a.innerHTML = node.innerHTML;
+              node.parentNode.replaceChild(a, node);
+              linkedCount++;
+            } catch (err) {
+              // fallback handled later
+            }
+          });
+
+        } catch (err) {
+          console.error('autoLinkBoldExact error for phrase', phrase, err);
+        }
+      }
+
+      // apply changes back to editor
+      const newDelta = editor.clipboard.convert(container.innerHTML);
+      editor.setContents(newDelta, 'user');
+      setSummaryText(editor.root.innerHTML);
+      alert(`Exact auto-link complete — ${linkedCount} item(s) linked.`);
+    } catch (err) {
+      console.error('autoLinkBoldExact failed', err);
+      alert('Exact auto-link failed. See console.');
+    }
+  };
+
+  /* ---------- Keyword+Title auto-link (NEW) ---------- */
+  const autoLinkBoldKeywords = async () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) { alert('Editor not ready'); return; }
+
+    try {
+      const container = document.createElement('div');
+      container.innerHTML = editor.root.innerHTML;
+
+      const boldNodes = Array.from(container.querySelectorAll('strong, b'));
+      const uniquePhrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 200);
+      if (uniquePhrases.length === 0) { alert('No bolded phrases found to keyword-auto-link.'); return; }
+
+      // preload keyword rows sample
+      let keywordSample = [];
+      try { keywordSample = await fetchKeywordRows(800); } catch (e) { keywordSample = []; }
+
+      let linkedCount = 0;
+
+      for (const phrase of uniquePhrases) {
+        try {
+          const tokens = uniqueWords(phrase);
+          const normalizedTokens = tokens.map(t => normalize(t));
+          // 1) title candidates
+          const titleCandidates = await fetchTitleCandidates(phrase, 200);
+
+          // 2) keyword candidates from sample
+          const keywordCandidates = keywordSample.filter((r) => {
+            try {
+              if (!r || !r.keywords) return false;
+              const kws = (r.keywords || []).map(k => normalize(String(k || '')));
+              // match if any full keyword equals phrase or contains/equals any token
+              return normalizedTokens.some(t => kws.includes(t) || kws.some(k => k.includes(t))) || kws.includes(normalize(phrase));
+            } catch (e) { return false; }
+          });
+
+          // merge candidates
+          const byId = new Map();
+          titleCandidates.forEach(c => { if (c && c.id) byId.set(c.id, c); });
+          keywordCandidates.forEach(c => { if (c && c.id && !byId.has(c.id)) byId.set(c.id, c); });
+          const merged = Array.from(byId.values());
+          if (merged.length === 0) continue;
+
+          // scoring
+          let best = null;
+          let bestScore = 0;
+          for (const c of merged) {
+            try {
+              const t = c.title || '';
+              let score = combinedScore(t, phrase);
+              const nt = normalize(t);
+              if (nt === normalize(phrase)) score = Math.max(score, 0.95);
+              if (c.keywords && Array.isArray(c.keywords)) {
+                const kws = c.keywords.map(k => normalize(String(k || '')));
+                if (kws.includes(normalize(phrase))) score = Math.max(score, score + 0.6);
+                else {
+                  const tokenMatches = normalizedTokens.filter(tk => kws.some(k => k === tk || k.includes(tk))).length;
+                  if (tokenMatches > 0) score = score + Math.min(0.35, 0.12 * tokenMatches);
+                }
+              }
+              if (score > 1) score = 1;
+              if (score > bestScore) { bestScore = score; best = c; }
+            } catch (e) {}
+          }
+
+          if (!best || !best.id) continue;
+          if (bestScore < 0.65) continue; // require decent confidence
+
+          // link nodes that exactly match the phrase text (normalized)
+          boldNodes.forEach(node => {
+            const text = (node.textContent || '').trim();
+            if (normalize(text) !== normalize(phrase)) return;
+            try {
+              if (node.closest && node.closest('a')) return;
+              const a = document.createElement('a');
+              a.setAttribute('data-summary-id', best.id);
+              a.setAttribute('href', `#summary-${best.id}`);
+              a.className = 'internal-summary-link';
+              a.innerHTML = node.innerHTML;
+              node.parentNode.replaceChild(a, node);
+              linkedCount++;
+            } catch (err) {
+              // ignore for node
+            }
+          });
+
+        } catch (err) {
+          console.error('autoLinkBoldKeywords error for phrase', phrase, err);
+        }
+      }
+
+      // apply changes back to editor
+      const newDelta = editor.clipboard.convert(container.innerHTML);
+      editor.setContents(newDelta, 'user');
+      setSummaryText(editor.root.innerHTML);
+      alert(`Keyword auto-link complete — ${linkedCount} item(s) linked.`);
+    } catch (err) {
+      console.error('autoLinkBoldKeywords failed', err);
+      alert('Keyword auto-link failed. See console.');
+    }
+  };
+
+  // Combined flow: remove links then auto-link (keeps existing behavior)
   const resetAndAutoRelink = async () => {
     if (!confirm('This will remove existing internal links, make them bold, then attempt to auto-link bolded phrases using your database. Continue?')) return;
     removeLinksAndMakeBold();
@@ -513,6 +816,18 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         tags: Array.isArray(tags) ? tags.filter(Boolean) : [],
         difficulty_level: difficultyToSave,
       };
+
+      // keywords: include only when creating OR when the user actually edited keywords
+      if (!initialIdRef.current) {
+        // create flow: include keywords (or null)
+        const pk = (keywords && keywords.length) ? keywords.slice(0, KEYWORDS_LIMIT) : [];
+        payload.keywords = pk.length ? pk : null;
+      } else if (editedKeywords) {
+        // edit flow: user changed keywords explicitly
+        const pk = (keywords && keywords.length) ? keywords.slice(0, KEYWORDS_LIMIT) : [];
+        payload.keywords = pk.length ? pk : null;
+      }
+      // else: editing but user did not touch keywords -> do NOT include payload.keywords (preserve existing DB value)
 
       if (!initialIdRef.current) payload.slug = slug || null;
 
@@ -623,13 +938,50 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
             ))}
           </div>
 
+          {/* ---------------- Keywords (chips + input) ---------------- */}
+          <label htmlFor="keywords">Keywords (optional)</label>
+          <div className="keywords-row" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <input
+              id="keywords"
+              type="text"
+              value={keywordInput}
+              onChange={e => { setKeywordInput(e.target.value); if (!editedKeywords) setEditedKeywords(true); }}
+              onKeyDown={handleKeywordKey}
+              placeholder="type keyword then Enter or comma — e.g. growth,productivity"
+              style={{ flex: '1 1 220px', minWidth: 0, padding: '8px 10px' }}
+            />
+            <button type="button" className="hf-btn" onClick={() => addKeywordFromInput(keywordInput)}>Add</button>
+            <button type="button" className="hf-btn" onClick={() => { setKeywords([]); setEditedKeywords(true); setKeywordInput(''); }}>Clear</button>
+          </div>
+
+          <div className="keywords-list" style={{ marginBottom: 8 }}>
+            {parsedKeywordsPreview.map(k => (
+              <button key={k} type="button" className="tag-chip" onClick={() => removeKeyword(k)} title="Click to remove keyword" style={{ marginRight: 6 }}>
+                {k} <span aria-hidden>✕</span>
+              </button>
+            ))}
+            {parsedKeywordsPreview.length === 0 && <div style={{ color: '#666', fontSize: 13 }}>No keywords yet</div>}
+          </div>
+
+          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
+            <span>{parsedKeywordsPreview.length} / {KEYWORDS_LIMIT} keywords</span>
+            <span style={{ marginLeft: 8 }}>Click the ✕ on a keyword to remove it. Leaving keywords untouched will preserve them on save.</span>
+          </div>
+
           <label htmlFor="summaryText">Full summary</label>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <button type="button" className="hf-btn" onClick={removeLinksAndMakeBold}>✂️ Remove links & Bold</button>
             <button type="button" className="hf-btn" onClick={autoLinkBoldedPhrases}>🔗 Auto-link bolded phrases</button>
+
+            {/* NEW buttons */}
+            <button type="button" className="hf-btn" onClick={autoLinkBoldExact}>🎯 Exact auto-link</button>
+            <button type="button" className="hf-btn" onClick={autoLinkBoldKeywords}>🧠 Keyword auto-link</button>
+
             <button type="button" className="hf-btn" onClick={resetAndAutoRelink} style={{ background: '#eef2ff' }}>Reset & Auto-Relink</button>
-            <div style={{ color: '#6b7280', fontSize: 12 }}>Use these to clean and relink internal references (bolded phrases only).</div>
+            <div style={{ color: '#6b7280', fontSize: 12 }}>
+              Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
+            </div>
           </div>
 
           <div className="quill-container">
