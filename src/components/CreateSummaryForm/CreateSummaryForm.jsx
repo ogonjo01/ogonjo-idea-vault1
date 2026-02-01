@@ -174,7 +174,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   const [affiliateType, setAffiliateType] = useState("book");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [tags, setTags] = useState("");
-  const [keywordsInput, setKeywordsInput] = useState(""); // <-- new
+  const [keywordsInput, setKeywordsInput] = useState(""); // <-- NEW
   const [difficulty, setDifficulty] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -428,7 +428,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       return;
     }
 
-    const nodeList = Array.from(root.querySelectorAll("strong, b, *[style*='font-weight']"));
+    const nodeList = Array.from(root.querySelectorAll("strong, b, .ql-bold, *[style*='font-weight']"));
     const candidates = [];
 
     nodeList.forEach((node) => {
@@ -561,7 +561,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       return;
     }
 
-    const nodeList = Array.from(root.querySelectorAll("strong, b, *[style*='font-weight']"));
+    const nodeList = Array.from(root.querySelectorAll("strong, b, .ql-bold, *[style*='font-weight']"));
     const candidates = [];
 
     nodeList.forEach((node) => {
@@ -872,6 +872,153 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     alert(`Auto-linking complete — ${linkedCount} item(s) linked.`);
   };
 
+  // ----------------- Advanced search for best match with single-word narrowing -----------------
+  // Returns best candidate object { id, title } or null
+  const searchBestMatch = async (text, opts = { limitCandidates: 50, minScore: 0.6 }) => {
+    const q = String(text || "").trim();
+    if (!q) return null;
+
+    const tokens = uniqueWords(q);
+    const isSingleToken = tokens.length === 1;
+    const token = tokens[0] ?? "";
+
+    // 1) exact title equality check (case-sensitive first, then case-insensitive)
+    try {
+      const { data: exact, error: errExact } = await supabase
+        .from("book_summaries")
+        .select("id, title")
+        .eq("title", q)
+        .maybeSingle();
+
+      if (!errExact && exact && exact.id) return exact;
+    } catch (e) {
+      console.warn("Exact match error:", e);
+    }
+
+    // 2) case-insensitive phrase match (quick)
+    try {
+      const { data: phrase, error: errPhrase } = await supabase
+        .from("book_summaries")
+        .select("id, title")
+        .ilike("title", `%${q}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (!errPhrase && phrase && phrase.id) {
+        // If single token, only accept if phrase contains token as whole word (checked later)
+        if (!isSingleToken) return phrase;
+        // else we'll still return to deeper check later — but give it priority
+      }
+    } catch (e) {
+      console.warn("Phrase match error:", e);
+    }
+
+    // For single word queries: be conservative and prefer whole-word matches or exact variants
+    if (isSingleToken) {
+      const variants = generateVariants(token); // token, tokens with s/es/ies
+      // Try strict equality with variants (case-insensitive)
+      try {
+        for (const v of variants) {
+          const { data: eq, error: eqErr } = await supabase
+            .from("book_summaries")
+            .select("id, title")
+            .ilike("title", v)
+            .limit(1)
+            .maybeSingle();
+
+          if (!eqErr && eq && eq.id) return eq;
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      // fetch candidates containing token (broad)
+      const orFilters = variants.map((t) => `title.ilike.%${t}%`).join(",");
+      try {
+        const { data: candidates = [], error } = await supabase
+          .from("book_summaries")
+          .select("id, title")
+          .or(orFilters)
+          .limit(opts.limitCandidates);
+
+        if (error) {
+          console.warn("Candidates fetch error:", error);
+          return null;
+        }
+
+        if (!candidates || candidates.length === 0) return null;
+
+        // Filter candidates: require candidate title to contain token (or its simple plural) as a whole word
+        const normalizedToken = normalize(token);
+        const tokenVariants = generateVariants(normalizedToken);
+
+        const candidateMatches = candidates.filter((c) => {
+          const candWords = uniqueWords(c.title || "");
+          // whole-word check
+          return tokenVariants.some((v) => candWords.includes(v));
+        });
+
+        // Score remaining candidates, pick best
+        let best = null;
+        let bestScore = 0;
+        candidateMatches.forEach((c) => {
+          const score = combinedScore(c.title || "", q);
+          if (score > bestScore) {
+            bestScore = score;
+            best = c;
+          }
+        });
+
+        // Require stricter threshold for single words to avoid loose matches
+        const threshold = opts.minScore != null ? opts.minScore : 0.7;
+        if (best && bestScore >= threshold) return best;
+
+        // if nothing meets threshold, return null (do not return loose matches)
+        return null;
+      } catch (e) {
+        console.error("Candidate search exception (single token):", e);
+        return null;
+      }
+    }
+
+    // For multi-word queries: previous token-based approach (less strict)
+    try {
+      const tokensForSearch = tokens.slice(0, 6);
+      if (tokensForSearch.length === 0) return null;
+      const orFilters = tokensForSearch.map((t) => `title.ilike.%${t}%`).join(",");
+
+      const { data: candidates = [], error } = await supabase
+        .from("book_summaries")
+        .select("id, title")
+        .or(orFilters)
+        .limit(opts.limitCandidates);
+
+      if (error) {
+        console.warn("Candidates fetch error:", error);
+        return null;
+      }
+      if (!candidates || candidates.length === 0) return null;
+
+      let best = null;
+      let bestScore = 0;
+      candidates.forEach((c) => {
+        const score = combinedScore(c.title || "", q);
+        if (score > bestScore) {
+          bestScore = score;
+          best = c;
+        }
+      });
+
+      const threshold = opts.minScore != null ? opts.minScore : 0.5;
+      if (best && bestScore >= threshold) return best;
+
+      return best && bestScore > 0.25 ? best : null;
+    } catch (e) {
+      console.error("Candidate search exception (multi-token):", e);
+      return null;
+    }
+  };
+
   // ----------------- Remove internal links and bold text replacement -----------------
   // Finds anchors with data-summary-id and replaces them with <strong>text</strong>
   const removeInternalLinksAndBold = () => {
@@ -1004,7 +1151,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         affiliate_link: affiliateValue,
         youtube_url: youtubeUrl || null,
         tags: parsedTags,
-        keywords: keywordsToSave, // <-- added field
+        keywords: keywordsToSave, // <-- NEW: save keywords if provided
         slug: finalSlug || null,
         difficulty_level: difficultyToSave,
       }]);
