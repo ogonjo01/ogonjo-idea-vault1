@@ -10,7 +10,10 @@ const ITEMS_PER_CAROUSEL = 12;
 const CATEGORY_BATCH = 3;
 const MIN_LOAD_MS = 350;
 
-// Lightweight select for feed (use description instead of full summary)
+/*
+  NOTE: LIGHT_SELECT now includes lightweight aggregate aliases so the
+  fast placeholder queries also return likes/views/comments counts.
+*/
 const LIGHT_SELECT = `
   id,
   created_at,
@@ -24,10 +27,13 @@ const LIGHT_SELECT = `
   affiliate_link,
   avg_rating,
   slug,
-  difficulty_level
+  difficulty_level,
+  likes_count:likes!likes_post_id_fkey(count),
+  views_count:views!views_post_id_fkey(count),
+  comments_count:comments!comments_post_id_fkey(count)
 `;
 
-// Select with aggregates for heavier queries
+// heavier select (kept for fallback / broader queries)
 const SELECT_WITH_COUNTS = `
   id,
   created_at,
@@ -104,7 +110,6 @@ const normalizeRow = (r = {}) => {
     avg_rating: Number(avg_rating || 0),
     rating_count: Number(rating_count || 0),
     created_at: r.created_at ?? null,
-    // propagate difficulty_level from DB into normalized row
     difficulty_level: r.difficulty_level ?? null,
   };
 };
@@ -113,30 +118,60 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 /* ---------------- RPC / fallback fetch ---------------- */
 const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, category = null } = {}) => {
+  const isAmbiguousRpcError = (err) => {
+    if (!err) return false;
+    const msg = (err.message || err.error || String(err)).toString();
+    return msg.includes('Could not choose the best candidate function') || msg.includes('could not choose the best candidate');
+  };
+
+  // helper that sorts rows defensively
+  const sortRows = (rows) => {
+    const copy = (rows || []).slice();
+    if (rpcName.includes('new')) copy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    else if (rpcName.includes('liked')) copy.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+    else if (rpcName.includes('rated')) copy.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0));
+    else if (rpcName.includes('view')) copy.sort((a, b) => (b.views_count || 0) - (a.views_count || 0));
+    return copy.slice(0, limit);
+  };
+
+  // 1) try RPC
   try {
     const args = { p_limit: limit };
     if (category) args.p_category = category;
     const rpcRes = await supabase.rpc(rpcName, args);
     if (!rpcRes.error && rpcRes.data) {
-      return safeData(rpcRes.data).map(normalizeRow);
+      const rows = safeData(rpcRes.data).map(normalizeRow);
+      return sortRows(rows);
+    }
+    if (rpcRes.error) {
+      if (isAmbiguousRpcError(rpcRes.error)) {
+        console.warn(`[RPC] ${rpcName} ambiguous function signature - falling back to server query`);
+      } else {
+        console.warn(`[RPC] ${rpcName} error - falling back`, rpcRes.error);
+      }
     }
   } catch (e) {
     console.warn(`[rpc] ${rpcName} threw`, e?.message || e);
   }
 
+  // 2) fallback: server-side selective queries (use SELECT_WITH_COUNTS)
   try {
-    let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS);
+    // 'new' we can rely on ordering server-side
+    if (rpcName.includes('new')) {
+      let q = supabase.from('book_summaries').select(LIGHT_SELECT).order('created_at', { ascending: false }).limit(limit);
+      if (category) q = q.eq('category', category);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []).map(normalizeRow);
+    }
+
+    // for others request a larger page then sort client-side
+    let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS).limit(500);
     if (category) q = q.eq('category', category);
-    q = q.limit(500);
     const { data, error } = await q;
     if (error) throw error;
     const rows = (data || []).map(normalizeRow);
-    let sorted = rows.slice();
-    if (rpcName.includes('new')) sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    else if (rpcName.includes('liked')) sorted.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
-    else if (rpcName.includes('rated')) sorted.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0));
-    else if (rpcName.includes('view')) sorted.sort((a, b) => (b.views_count || 0) - (a.views_count || 0));
-    return sorted.slice(0, limit);
+    return sortRows(rows);
   } catch (err) {
     console.error('[fallback] fetch error', err);
     return [];
@@ -167,7 +202,6 @@ const fetchTopCategories = async (limit = 50) => {
 /* ---------------- lightweight search scoring ---------------- */
 const normalizeText = (s = '') => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
 
-// original similarityScore kept as a strong-signal scorer
 const similarityScore = (item, query) => {
   const q = normalizeText(query);
   if (!q) return 0;
@@ -222,67 +256,49 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
   const mountedRef = useRef(true);
   const fastCacheRef = useRef(new Map());
 
+  // generationRef prevents stale async runs from writing state (strict-mode safe)
+  const generationRef = useRef(0);
+
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  // EFFECT A: ensure SPA navigation always starts at top of page AFTER route change (fallback)
+  // ensure SPA navigation always starts at top of page AFTER route change (fallback)
   useEffect(() => {
     try {
       window.scrollTo({ top: 0, behavior: 'auto' });
-      // also reset document scroll positions
       if (document && document.documentElement) document.documentElement.scrollTop = 0;
       if (document && document.body) document.body.scrollTop = 0;
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) { /* ignore */ }
   }, [location.pathname]);
 
-  // EFFECT B: attach a click-capture handler to the feed root that scrolls to top BEFORE navigation
-  // This prevents cases where the browser preserves scroll or the next page renders and scroll lands middle/end.
+  // click-capture scroll guard
   useEffect(() => {
     const root = rootRef.current || document;
     if (!root) return;
-
     const onLinkClickCapture = (e) => {
       try {
-        // only run for primary button clicks (ignore modifiers)
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-
         const a = e.target && e.target.closest && e.target.closest('a');
         if (!a) return;
-
         const href = a.getAttribute('href') || a.href;
         if (!href) return;
-
-        // Make absolute URL
         let url;
         try { url = new URL(href, window.location.origin); } catch (err) { return; }
-
-        // Only internal app routes
         if (url.origin !== window.location.origin) return;
-
-        // If the destination is a summary page (change to your route if different), scroll to top immediately
         if (url.pathname.startsWith('/summary/')) {
           window.scrollTo({ top: 0, behavior: 'auto' });
           if (document && document.documentElement) document.documentElement.scrollTop = 0;
           if (document && document.body) document.body.scrollTop = 0;
         }
-      } catch (err) {
-        // swallow
-      }
+      } catch (err) { /* swallow */ }
     };
-
-    root.addEventListener('click', onLinkClickCapture, true); // capture phase
-    return () => {
-      root.removeEventListener('click', onLinkClickCapture, true);
-    };
+    root.addEventListener('click', onLinkClickCapture, true);
+    return () => root.removeEventListener('click', onLinkClickCapture, true);
   }, []);
 
-  // effectiveQuery mirrors incoming prop (trimmed). We will scope DB queries to selectedCategory,
-  // but do not auto-clear the effectiveQuery (keeps user intent stable while navigating).
   const [effectiveQuery, setEffectiveQuery] = useState((searchQuery || '').trim());
   useEffect(() => { setEffectiveQuery((searchQuery || '').trim()); }, [searchQuery]);
 
-  // Scroll-to-top when category or effectiveQuery changes (feed-specific)
+  // scroll-to-top when category or effectiveQuery changes (feed-specific)
   useEffect(() => {
     const scrollToFeedTop = () => {
       try {
@@ -317,11 +333,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         const set = new Set();
         (data || []).forEach(row => {
           const arr = row?.tags || [];
-          if (Array.isArray(arr)) {
-            arr.forEach(t => {
-              if (t && typeof t === 'string') set.add(t.trim().toLowerCase());
-            });
-          }
+          if (Array.isArray(arr)) arr.forEach(t => { if (t && typeof t === 'string') set.add(t.trim().toLowerCase()); });
         });
         const list = Array.from(set).sort();
         if (mountedRef.current) {
@@ -338,7 +350,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     })();
   }, [selectedCategory, tagsReloadKey]);
 
-  // FAST lightweight fetch
+  // FAST lightweight fetch (now returns counts because LIGHT_SELECT includes them)
   const fastFetchList = useCallback(async (limit = ITEMS_PER_CAROUSEL, category = null) => {
     const cacheKey = category ? `cat:${category}` : `global`;
     const cache = fastCacheRef.current.get(cacheKey);
@@ -455,44 +467,58 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     }
   }, [categoryQueue, loadingCategories, fetchContentBlock, fastFetchList, replaceCategoryBlock]);
 
-  // MAIN orchestration
+  // MAIN orchestration (generationRef prevents stale writes)
   useEffect(() => {
+    let cancelled = false;
     (async () => {
+      generationRef.current += 1;
+      const gen = generationRef.current;
+      const isStale = () => gen !== generationRef.current || cancelled || !mountedRef.current;
+
+      console.debug('🔍 [MAIN] Effect fired. selectedCategory=', selectedCategory, 'effectiveQuery=', effectiveQuery);
+
+      // clear fast cache synchronously for this run (no extra render)
+      fastCacheRef.current.clear();
+      console.debug('🔍 [CACHE] fastCacheRef cleared (sync).');
+
+      // helper merge setter (only if still current generation)
+      const safeSetGlobalContent = (updater) => {
+        if (isStale()) return;
+        setGlobalContent((prev) => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          return { ...prev, ...next };
+        });
+      };
+
       setLoadingGlobal(true);
       setLoadedCategoryBlocks([]);
       setCategoryQueue([]);
       setHasMoreCategories(false);
-      setGlobalContent({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
       setSearchResults([]);
       setSearchRelated([]);
 
-      // SEARCH mode (scoped to category if selectedCategory is specific)
+      // SEARCH mode
       if (effectiveQuery && effectiveQuery.trim()) {
         const start = Date.now();
         try {
-          // show fast placeholders scoped to category for UX
           const scopeCategory = (selectedCategory && selectedCategory !== 'For You' && selectedCategory !== 'All') ? selectedCategory : null;
           const fast = await fastFetchList(ITEMS_PER_CAROUSEL, scopeCategory);
-          if (mountedRef.current) {
-            setGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
-          }
+          if (isStale()) return;
+          safeSetGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
 
-          // fetch a broad set (scoped to category if applicable)
           let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS).limit(1200);
           if (scopeCategory) q = q.eq('category', scopeCategory);
           const { data, error } = await q;
+          if (isStale()) return;
           if (error) throw error;
           const rows = safeData(data).map(normalizeRow);
 
-          // normalized query and tokens
           const qnorm = normalizeText(effectiveQuery);
           const tokens = qnorm.split(/\s+/).filter(Boolean);
 
-          // score with original strong scorer, then token-based fallback scoring
           const scored = rows
             .map(r => {
               const strong = similarityScore(r, qnorm);
-              // token matches add smaller boosts (helps multi-word queries)
               let tokenBoost = 0;
               if (tokens.length) {
                 const title = normalizeText(r.title || '');
@@ -508,7 +534,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             .filter(r => r._score > 0)
             .sort((a, b) => b._score - a._score);
 
-          // If no scored matches, perform a fallback broader match
           let primary = scored.slice(0, ITEMS_PER_CAROUSEL);
           if (primary.length === 0) {
             const fallback = rows.filter(r => {
@@ -520,34 +545,29 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             primary = fallback;
           }
 
-          // Related: prefer tag overlap or same category OR token overlap (excluding primary)
           const primaryIds = new Set(primary.map(p => p.id));
           const primaryTags = new Set(primary.flatMap(p => p.tags || []));
           let related = rows.filter(r => {
             if (primaryIds.has(r.id)) return false;
-            // tag overlap
             if (Array.isArray(r.tags) && r.tags.some(t => primaryTags.has(t))) return true;
-            // same category as top primary
             if (primary[0] && primary[0].category && r.category === primary[0].category) return true;
-            // token overlap fallback
             const title = normalizeText(r.title || '');
             const desc = normalizeText(r.description || '');
             if (tokens.some(tok => title.includes(tok) || desc.includes(tok))) return true;
             return false;
           }).slice(0, ITEMS_PER_CAROUSEL);
 
-          // final assignment
-          if (mountedRef.current) {
-            setSearchResults(primary || []);
-            setSearchRelated(related || []);
-            setTagsReloadKey(k => k + 1);
-          }
+          if (isStale()) return;
+          setSearchResults(primary || []);
+          setSearchRelated(related || []);
+          setTagsReloadKey(k => k + 1);
         } catch (err) {
           console.error('search error', err);
         } finally {
           const elapsed = Date.now() - start;
           if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-          if (mountedRef.current) setLoadingGlobal(false);
+          if (isStale()) return;
+          setLoadingGlobal(false);
         }
         return;
       }
@@ -558,14 +578,16 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         const start = Date.now();
         try {
           const placeholder = await fastFetchList(ITEMS_PER_CAROUSEL, selectedCategory);
-          if (mountedRef.current) {
-            setLoadedCategoryBlocks([{ category: selectedCategory, newest: placeholder, mostLiked: placeholder, highestRated: placeholder, mostViewed: placeholder }]);
-          }
+          if (isStale()) return;
+          setLoadedCategoryBlocks([{ category: selectedCategory, newest: placeholder, mostLiked: placeholder, highestRated: placeholder, mostViewed: placeholder }]);
+
           (async () => {
             try {
               const block = await fetchContentBlock(selectedCategory);
-              if (!mountedRef.current) return;
-              setLoadedCategoryBlocks((block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length) ? [block] : []);
+              if (isStale()) return;
+              if ((block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length)) {
+                setLoadedCategoryBlocks([block]);
+              }
               setTagsReloadKey(k => k + 1);
             } catch (err) {
               console.error('specific category background fetch error', err);
@@ -576,23 +598,33 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         } finally {
           const elapsed = Date.now() - start;
           if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-          if (mountedRef.current) setLoadingGlobal(false);
+          if (isStale()) return;
+          setLoadingGlobal(false);
         }
         return;
       }
 
-      // DEFAULT For You flow (no search, no specific category)
+      // DEFAULT For You flow
       const start = Date.now();
       try {
         const fast = await fastFetchList(ITEMS_PER_CAROUSEL);
-        if (!mountedRef.current) return;
-        setGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
+        if (isStale()) return;
+        // set placeholders (merge)
+        safeSetGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
 
         (async () => {
           try {
             const [globalBlock, cats] = await Promise.all([fetchContentBlock(), fetchTopCategories(200)]);
-            if (!mountedRef.current) return;
-            setGlobalContent(globalBlock);
+            if (isStale()) return;
+
+            // selective merge: only replace arrays that returned non-empty results
+            safeSetGlobalContent((prev) => ({
+              newest: (globalBlock.newest && globalBlock.newest.length) ? globalBlock.newest : prev.newest,
+              mostLiked: (globalBlock.mostLiked && globalBlock.mostLiked.length) ? globalBlock.mostLiked : prev.mostLiked,
+              highestRated: (globalBlock.highestRated && globalBlock.highestRated.length) ? globalBlock.highestRated : prev.highestRated,
+              mostViewed: (globalBlock.mostViewed && globalBlock.mostViewed.length) ? globalBlock.mostViewed : prev.mostViewed,
+            }));
+
             setTagsReloadKey(k => k + 1);
             setCategoryQueue(cats);
             setHasMoreCategories(cats.length > 0);
@@ -608,7 +640,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
                 mostViewed: items,
               })));
               const placeholders = await Promise.all(placeholderPromises);
-              if (!mountedRef.current) return;
+              if (isStale()) return;
               setLoadedCategoryBlocks(placeholders);
               setCategoryQueue(rest);
               setHasMoreCategories(rest.length > 0);
@@ -616,7 +648,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
               (async () => {
                 try {
                   const blocks = await Promise.all(initialBatch.map((c) => fetchContentBlock(c)));
-                  if (!mountedRef.current) return;
+                  if (isStale()) return;
                   const nonEmpty = blocks.filter(b => (b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length));
                   nonEmpty.forEach((blk) => replaceCategoryBlock(blk));
                 } catch (err) {
@@ -633,9 +665,12 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       } finally {
         const elapsed = Date.now() - start;
         if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-        if (mountedRef.current) setLoadingGlobal(false);
+        if (isStale()) return;
+        setLoadingGlobal(false);
       }
     })();
+
+    return () => { cancelled = true; generationRef.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory, effectiveQuery, fastFetchList, fetchContentBlock, replaceCategoryBlock]);
 
@@ -669,7 +704,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     }
   }, []);
 
-  // helper: buildViewAllLink (encode params safely)
+  // helper: buildViewAllLink
   const buildViewAllLink = (sortKey = 'newest', category = null, tag = null, fields = 'id,title,description,author,created_at,tags') => {
     const params = new URLSearchParams();
     if (sortKey) params.set('sort', sortKey);
@@ -683,7 +718,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return s ? `/explore?${s}` : '/explore';
   };
 
-  // Build CTA copy
   const buildSeeMoreText = ({ sortKey = 'newest', category = null, tag = null } = {}) => {
     const sortMap = {
       newest: 'Newest Content',
@@ -697,7 +731,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return `Explore More From ${base}`;
   };
 
-  // CTA button
   const SeeMoreCTA = ({ href, text }) => {
     if (!href) return null;
     return (
@@ -732,7 +765,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return () => { mounted = false; };
   }, [selectedTags, selectedCategory, fetchTaggedContent]);
 
-  // tag toggle
   const toggleTag = (tag) => {
     const lower = tag.toLowerCase();
     setSelectedTags(prev => {
@@ -744,19 +776,14 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   const clearTags = () => setSelectedTags([]);
 
-  // renderCards: mode === 'search' => render in given order (do not re-rank).
-  // otherwise use rankItemsWithBoost with provided sortKey (default 'newest').
+  // renderCards
   const renderCards = (items, mode = 'newest') => {
     if (!items || !Array.isArray(items)) return null;
-
-    // search mode: do not re-sort — preserve search ranking order
     if (mode === 'search') {
       return items.map((summary) => (
         <BookSummaryCard key={String(summary.id ?? summary.slug)} summary={summary} onEdit={onEdit} onDelete={onDelete} />
       ));
     }
-
-    // otherwise apply boosting/ranking logic for the feed
     const ranked = rankItemsWithBoost(items, selectedTags, mode);
     return (ranked || []).map((summary) => (
       <BookSummaryCard key={String(summary.id ?? summary.slug)} summary={summary} onEdit={onEdit} onDelete={onDelete} />
@@ -765,7 +792,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   const isForYou = selectedCategory === 'For You' || selectedCategory === 'All';
 
-  /* ---------- Simple SEO updates (SPA-friendly) ---------- */
+  /* ---------- Simple SEO updates ---------- */
   useEffect(() => {
     try {
       const baseTitle = 'OGONJO — Business Knowledge for Builders';
@@ -789,9 +816,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         document.head.appendChild(meta);
       }
       meta.setAttribute('content', description);
-    } catch (e) {
-      // ignore in non-browser or CSP-restricted envs
-    }
+    } catch (e) { /* ignore */ }
   }, [effectiveQuery, selectedCategory]);
 
   return (
@@ -887,7 +912,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
       {/* SPECIFIC CATEGORY (no search) */}
       {(!isForYou && !effectiveQuery) && loadedCategoryBlocks.length > 0 && (
-        <div key={loadedCategoryBlocks[0].category}>
+        <div key={`${loadedCategoryBlocks[0].category}-single`}>
           {['newest', 'mostLiked', 'highestRated', 'mostViewed'].map((k) => {
             const titleMap = {
               newest: `Newest in ${loadedCategoryBlocks[0].category}`,
@@ -945,8 +970,8 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             <SeeMoreCTA href={buildViewAllLink('views', null)} text={buildSeeMoreText({ sortKey: 'views' })} />
           </section>
 
-          {loadedCategoryBlocks.map((block) => (
-            <section className="category-block" key={block.category}>
+          {loadedCategoryBlocks.map((block, i) => (
+            <section className="category-block" key={`${String(block.category)}-${i}`}>
               <div className="category-block-header"><h3 className="cat-title">{block.category}</h3></div>
 
               <section className="feed-section">
