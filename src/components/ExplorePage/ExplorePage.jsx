@@ -1,5 +1,5 @@
 // src/pages/ExplorePage.jsx
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../../supabase/supabaseClient";
 import BookSummaryCard from "../BookSummaryCard/BookSummaryCard";
@@ -36,7 +36,7 @@ const normalizeRow = (r) => {
     author: r.author || "",
     description: text,
     excerpt: text.length > 240 ? text.slice(0, 237).trim() + "…" : text,
-    tags: Array.isArray(r.tags) ? r.tags.map((t) => t.toLowerCase()) : [],
+    tags: Array.isArray(r.tags) ? r.tags.map((t) => String(t).toLowerCase()) : [],
     avg_rating: Number(r.avg_rating || 0),
     likes_count: r.likes_count?.[0]?.count || 0,
     views_count: r.views_count?.[0]?.count || 0,
@@ -71,8 +71,21 @@ const ExplorePage = () => {
 
   const searchTerm = (query.get("q") || "").trim();
   const category = query.get("category");
-  const tag = query.get("tag");
   const sort = (query.get("sort") || "newest").toLowerCase();
+
+  // Support both ?tag=single and ?tags=comma,separated list
+  const rawTagsParam = query.get("tags");
+  const rawTagSingle = query.get("tag");
+
+  const tagList = useMemo(() => {
+    const source =
+      rawTagsParam && rawTagsParam.length ? decodeURIComponent(rawTagsParam) : (rawTagSingle || "");
+    if (!source) return [];
+    return source
+      .split(",")
+      .map((t) => String(t || "").trim().toLowerCase())
+      .filter(Boolean);
+  }, [rawTagsParam, rawTagSingle]);
 
   const [items, setItems] = useState([]);
   const [related, setRelated] = useState([]);
@@ -84,12 +97,7 @@ const ExplorePage = () => {
   const fetchingRef = useRef(false);
 
   /* ---------------------------------- */
-  /* Main search / feed fetch (keyword-aware, title-priority)
-     Strategy:
-     - For requested page (start, size) we fetch a pool from titles and keywords,
-       merge with title-first priority, dedupe, then slice(page).
-     - To keep pagination stable we request a pool of (start + size) from each source
-       and then slice. This keeps behavior deterministic and preserves "titles first".
+  /* Main search / feed fetch          */
   /* ---------------------------------- */
 
   const fetchItems = useCallback(
@@ -104,10 +112,20 @@ const ExplorePage = () => {
         let titleCandidates = [];
         let keywordCandidates = [];
 
-        // build base filters function to apply category/tag
+        // build base filters function to apply category/tag(s)
         const applyFilters = (qb) => {
+          if (!qb) return qb;
           if (category) qb = qb.eq("category", category);
-          if (tag) qb = qb.contains("tags", [tag]);
+
+          // Choose contains for single tag (exact match) — matches ContentFeed behavior
+          if (tagList && tagList.length > 0) {
+            if (tagList.length === 1) {
+              qb = qb.contains("tags", [tagList[0]]);
+            } else {
+              // overlaps matches any of the provided tags
+              qb = qb.overlaps("tags", tagList);
+            }
+          }
           return qb;
         };
 
@@ -118,19 +136,22 @@ const ExplorePage = () => {
             supabase
               .from("book_summaries")
               .select(SELECT)
-              .or(
-                `title.ilike.${pattern},author.ilike.${pattern},description.ilike.${pattern}`
-              )
+              .or(`title.ilike.${pattern},author.ilike.${pattern},description.ilike.${pattern}`)
               .order("created_at", { ascending: false })
               .range(0, need - 1)
           );
 
-          const titleRes = await titleQb;
-          if (!titleRes.error && Array.isArray(titleRes.data)) {
-            titleCandidates = titleRes.data;
-          } else {
+          try {
+            const titleRes = await titleQb;
+            if (!titleRes.error && Array.isArray(titleRes.data)) {
+              titleCandidates = titleRes.data;
+            } else {
+              titleCandidates = [];
+              if (titleRes?.error) console.warn("title fetch error", titleRes.error);
+            }
+          } catch (err) {
+            console.warn("title fetch exception", err);
             titleCandidates = [];
-            if (titleRes.error) console.warn("title fetch error", titleRes.error);
           }
 
           // 2) keyword-based fetch: use overlaps on keywords array
@@ -144,16 +165,19 @@ const ExplorePage = () => {
                 .order("created_at", { ascending: false })
                 .range(0, need - 1);
 
+              // apply same category/tag filters to keyword query too
               if (category) kwQb = kwQb.eq("category", category);
-              if (tag) kwQb = kwQb.contains("tags", [tag]);
+              if (tagList && tagList.length > 0) {
+                if (tagList.length === 1) kwQb = kwQb.contains("tags", [tagList[0]]);
+                else kwQb = kwQb.overlaps("tags", tagList);
+              }
 
               const kwRes = await kwQb;
               if (!kwRes.error && Array.isArray(kwRes.data)) {
-                // keep keywords for scoring if needed later
                 keywordCandidates = kwRes.data;
               } else {
                 keywordCandidates = [];
-                if (kwRes.error) console.warn("keyword fetch error", kwRes.error);
+                if (kwRes?.error) console.warn("keyword fetch error", kwRes.error);
               }
             } catch (e) {
               console.warn("keyword fetch exception", e);
@@ -190,8 +214,12 @@ const ExplorePage = () => {
         } else {
           // No search term: regular feed (category/tag filtered)
           let qb = supabase.from("book_summaries").select(SELECT);
+
           if (category) qb = qb.eq("category", category);
-          if (tag) qb = qb.contains("tags", [tag]);
+          if (tagList && tagList.length > 0) {
+            if (tagList.length === 1) qb = qb.contains("tags", [tagList[0]]);
+            else qb = qb.overlaps("tags", tagList);
+          }
 
           if (sort === "views") qb = qb.order("views_count", { ascending: false });
           else if (sort === "likes") qb = qb.order("likes_count", { ascending: false });
@@ -214,15 +242,11 @@ const ExplorePage = () => {
         setLoading(false);
       }
     },
-    [searchTerm, category, tag, sort]
+    [searchTerm, category, tagList, sort]
   );
 
   /* ---------------------------------- */
   /* Related content (keyword-aware)    */
-  /* - If there's a searchTerm, find related by:
-  /*   1) title phrase matches (strong)
-  /*   2) keyword overlaps (use keywords array)
-  /*   3) sort by title-match boost + shared-keyword-count
   /* ---------------------------------- */
 
   const fetchRelated = useCallback(async () => {
@@ -236,14 +260,18 @@ const ExplorePage = () => {
       const pattern = `%${searchTerm}%`;
 
       // 1) title-based strong matches
-      const titleQb = supabase
+      let titleQb = supabase
         .from("book_summaries")
         .select(SELECT + ", keywords")
         .ilike("title", pattern)
         .order("created_at", { ascending: false })
         .limit(8);
 
-      if (category) titleQb.eq("category", category);
+      if (category) titleQb = titleQb.eq("category", category);
+      if (tagList && tagList.length > 0) {
+        if (tagList.length === 1) titleQb = titleQb.contains("tags", [tagList[0]]);
+        else titleQb = titleQb.overlaps("tags", tagList);
+      }
 
       const titleRes = await titleQb;
       const titleMatches = titleRes.error ? [] : titleRes.data || [];
@@ -259,6 +287,10 @@ const ExplorePage = () => {
           .limit(40);
 
         if (category) kwQb = kwQb.eq("category", category);
+        if (tagList && tagList.length > 0) {
+          if (tagList.length === 1) kwQb = kwQb.contains("tags", [tagList[0]]);
+          else kwQb = kwQb.overlaps("tags", tagList);
+        }
 
         const kwRes = await kwQb;
         keywordMatches = kwRes.error ? [] : kwRes.data || [];
@@ -285,7 +317,7 @@ const ExplorePage = () => {
         if (!r || !r.id) return;
         if (seen.has(r.id)) return;
         seen.add(r.id);
-        combined.push({ row: r, score: scoreCandidate(r) + 1 }); // ensure title matches keep edge
+        combined.push({ row: r, score: scoreCandidate(r) + 1 });
       });
 
       // Add keyword matches (if not already added)
@@ -310,7 +342,7 @@ const ExplorePage = () => {
       console.error("fetchRelated error", err);
       setRelated([]);
     }
-  }, [searchTerm, category]);
+  }, [searchTerm, category, tagList]);
 
   /* ---------------------------------- */
   /* Effects                            */
@@ -341,17 +373,16 @@ const ExplorePage = () => {
   /* Render                             */
   /* ---------------------------------- */
 
-  const showEmptySearch =
-    searchTerm && !loading && items.length === 0;
+  const showEmptySearch = searchTerm && !loading && items.length === 0;
 
   return (
     <div className="explore-page">
       <h2>
         {searchTerm
           ? `Results for “${searchTerm}”`
-          : category
-          ? category
-          : "Explore"}
+          : (tagList && tagList.length > 0)
+          ? `Tag: ${tagList.join(", ")}`
+          : (category ? category : "Explore")}
       </h2>
 
       {/* SEARCH RESULTS */}

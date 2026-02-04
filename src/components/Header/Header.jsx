@@ -9,12 +9,13 @@ import "./Header.css";
 /**
  * Header component - compact header + expandable search dropdown with dynamic categories
  *
- * Notes:
+ * FIXED:
+ * - Search priority: Exact title matches → Related title matches → Keyword matches
+ * - Default search category is ALWAYS "all" (searches entire database) unless manually changed
  * - clearSearch no longer navigates (only clears input + closes dropdown + focuses input).
  * - clear-search global event listener clears UI only (no navigation).
  * - Dropdown is rendered into document.body (portal) with wide desktop width and near-full on mobile.
  * - Top matches area is scrollable.
- * - Auto-close on scroll-to-bottom has been REMOVED (per your request).
  * - Dropdown closes via: X (top-right), clicking outside, Escape, or when selecting a suggestion.
  */
 
@@ -48,13 +49,16 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 320, maxWidth: 640 });
 
   /* --------------------------
-     Sync q & category from URL
+     Sync q from URL but ALWAYS default category to "all"
+     (Only change category if user manually selects it in dropdown)
   -------------------------- */
   useEffect(() => {
     const urlq = searchParams.get("q") || "";
-    const urlCategory = searchParams.get("category") || "all";
+    // We sync the query but NOT the category from URL
+    // Category stays "all" unless user manually changes it
     setQ(String(urlq || ""));
-    setCategory(urlCategory || "all");
+    // Don't sync category from URL - always defaults to "all"
+    // setCategory remains "all" unless user clicks a category button
   }, [searchParams]);
 
   /* --------------------------
@@ -323,79 +327,148 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
   };
 
   /* --------------------------
-     Helpers for suggestion fetching (unchanged)
+     NEW: Improved suggestion fetching with proper priority ranking
+     Priority: Exact title match → Related title match → Keyword match
   -------------------------- */
   const tokenize = (s = "") => {
     return (String(s || "").trim().toLowerCase().split(/\s+/).map(t => t.replace(/[^\w-]/g, '')).filter(Boolean));
   };
 
-  const fetchTitleMatches = async (query, limit = 6) => {
+  /**
+   * Fetch exact title matches (highest priority)
+   * These are titles that contain the exact search query
+   */
+  const fetchExactTitleMatches = async (query, limit = 10) => {
     if (!query || !query.trim()) return [];
     try {
-      let qb = supabase
+      // IMPORTANT: Always search ALL categories for suggestions (ignore current category filter)
+      const { data, error } = await supabase
         .from("book_summaries")
         .select("id, title, slug, category")
         .ilike("title", `%${query}%`)
         .limit(limit);
 
-      if (category && category !== "all") qb = qb.eq("category", category);
-
-      const { data, error } = await qb;
       if (error) {
-        console.warn("fetchTitleMatches error", error);
+        console.warn("fetchExactTitleMatches error", error);
         return [];
       }
-      return data || [];
+      
+      // Mark these as exact matches for priority sorting
+      return (data || []).map(item => ({ ...item, matchType: 'exact_title', priority: 1 }));
     } catch (e) {
-      console.warn("fetchTitleMatches exception", e);
+      console.warn("fetchExactTitleMatches exception", e);
       return [];
     }
   };
 
+  /**
+   * Fetch related title matches (medium priority)
+   * These are titles that contain words from the search query
+   */
+  const fetchRelatedTitleMatches = async (query, limit = 10) => {
+    const tokens = tokenize(query);
+    if (tokens.length === 0) return [];
+    
+    try {
+      // IMPORTANT: Always search ALL categories for suggestions
+      const { data, error } = await supabase
+        .from("book_summaries")
+        .select("id, title, slug, category")
+        .limit(limit * 2); // Get more to filter
+
+      if (error) {
+        console.warn("fetchRelatedTitleMatches error", error);
+        return [];
+      }
+
+      // Filter titles that contain at least one token but aren't exact matches
+      const queryLower = query.toLowerCase();
+      const related = (data || [])
+        .filter(item => {
+          const titleLower = (item.title || '').toLowerCase();
+          // Exclude exact matches (they're already in exact_title)
+          if (titleLower.includes(queryLower)) return false;
+          // Include if title contains any search token
+          return tokens.some(token => titleLower.includes(token));
+        })
+        .slice(0, limit)
+        .map(item => ({ ...item, matchType: 'related_title', priority: 2 }));
+
+      return related;
+    } catch (e) {
+      console.warn("fetchRelatedTitleMatches exception", e);
+      return [];
+    }
+  };
+
+  /**
+   * Fetch keyword matches (lowest priority)
+   * These match based on keywords but not necessarily the title
+   */
   const fetchKeywordMatches = async (query, limit = 12) => {
     const tokens = tokenize(query);
     if (tokens.length === 0) return [];
     try {
-      let qb = supabase
+      // IMPORTANT: Always search ALL categories for suggestions
+      const { data, error } = await supabase
         .from("book_summaries")
         .select("id, title, slug, keywords, category")
         .overlaps("keywords", tokens)
         .limit(limit);
 
-      if (category && category !== "all") qb = qb.eq("category", category);
-
-      const { data, error } = await qb;
       if (error) {
-        console.warn("fetchKeywordMatches overlaps error, falling back:", error);
+        console.warn("fetchKeywordMatches overlaps error:", error);
         return [];
       }
-      return data || [];
+      
+      // Mark these as keyword matches (lowest priority)
+      return (data || []).map(item => ({ ...item, matchType: 'keyword', priority: 3 }));
     } catch (e) {
       console.warn("fetchKeywordMatches exception", e);
       return [];
     }
   };
 
-  const mergeSuggestions = (titleResults = [], keywordResults = []) => {
+  /**
+   * Merge and sort suggestions by priority
+   * Priority order: exact_title (1) → related_title (2) → keyword (3)
+   */
+  const mergeSuggestionsByPriority = (exactTitles = [], relatedTitles = [], keywordResults = []) => {
     const byId = new Map();
     const out = [];
-    for (const it of titleResults) {
-      if (!it || !it.id) continue;
-      byId.set(it.id, true);
-      out.push(it);
-    }
-    for (const it of (keywordResults || [])) {
+    
+    // Add exact title matches first (highest priority)
+    for (const it of exactTitles) {
       if (!it || !it.id) continue;
       if (!byId.has(it.id)) {
         byId.set(it.id, true);
         out.push(it);
       }
     }
+    
+    // Add related title matches second (medium priority)
+    for (const it of relatedTitles) {
+      if (!it || !it.id) continue;
+      if (!byId.has(it.id)) {
+        byId.set(it.id, true);
+        out.push(it);
+      }
+    }
+    
+    // Add keyword matches last (lowest priority)
+    for (const it of keywordResults) {
+      if (!it || !it.id) continue;
+      if (!byId.has(it.id)) {
+        byId.set(it.id, true);
+        out.push(it);
+      }
+    }
+    
     return out;
   };
 
   /* --------------------------
-     Debounced live suggestions effect
+     Debounced live suggestions effect with proper priority
   -------------------------- */
   useEffect(() => {
     if (suggestionsTimerRef.current) {
@@ -416,23 +489,28 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
       return;
     }
 
-    const titleLimit = isMobile ? 5 : 7;
-    const keywordLimit = isMobile ? 8 : 12;
-    const displayCap = isMobile ? 5 : 7;
+    const exactLimit = isMobile ? 4 : 6;
+    const relatedLimit = isMobile ? 3 : 5;
+    const keywordLimit = isMobile ? 3 : 6;
+    const displayCap = isMobile ? 8 : 12;
 
     suggestionsTimerRef.current = setTimeout(async () => {
       lastQueryRef.current = trimmed;
       setSuggestionsLoading(true);
       try {
-        const [titleRes, keywordRes] = await Promise.allSettled([
-          fetchTitleMatches(trimmed, titleLimit),
+        // Fetch all three types in parallel
+        const [exactRes, relatedRes, keywordRes] = await Promise.allSettled([
+          fetchExactTitleMatches(trimmed, exactLimit),
+          fetchRelatedTitleMatches(trimmed, relatedLimit),
           fetchKeywordMatches(trimmed, keywordLimit),
         ]);
 
-        const titles = titleRes.status === "fulfilled" ? (titleRes.value || []) : [];
+        const exactTitles = exactRes.status === "fulfilled" ? (exactRes.value || []) : [];
+        const relatedTitles = relatedRes.status === "fulfilled" ? (relatedRes.value || []) : [];
         const keywords = keywordRes.status === "fulfilled" ? (keywordRes.value || []) : [];
 
-        const merged = mergeSuggestions(titles, keywords);
+        // Merge with proper priority ranking
+        const merged = mergeSuggestionsByPriority(exactTitles, relatedTitles, keywords);
 
         if (lastQueryRef.current === trimmed) {
           setSuggestions(merged.slice(0, displayCap));
@@ -455,7 +533,7 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
         suggestionsTimerRef.current = null;
       }
     };
-  }, [q, category, dropdownOpen, isMobile]);
+  }, [q, dropdownOpen, isMobile]); // Removed category dependency - always search all
 
   const goToSummary = (item) => {
     if (!item) return;
@@ -465,12 +543,6 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
     setDropdownOpen(false);
     setShowCategoriesMobile(false);
   };
-
-  /* --------------------------
-     (Auto-close-on-scroll-to-bottom REMOVED)
-     We no longer auto-close when user scrolls to the end.
-     Users can close via X, outside click, Escape, or by selecting an item.
-  -------------------------- */
 
   /* --------------------------
      Portal dropdown content
@@ -568,7 +640,7 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
           </div>
         </div>
 
-        {/* Top matches (SCROLLABLE) */}
+        {/* Top matches (SCROLLABLE) - now shows priority-ranked results */}
         <div className="search-dropdown-section top-matches-section" style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
           <div className="search-dropdown-title">Top matches</div>
           <div style={{ minHeight: 32, paddingTop: 6 }}>
@@ -595,7 +667,15 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
                         onClick={() => goToSummary(s)}
                         style={{ width: "100%", textAlign: "left", padding: "8px", background: "transparent", border: "none", cursor: "pointer" }}
                       >
-                        <div style={{ fontWeight: 600, overflowWrap: "break-word" }}>{s.title}</div>
+                        <div style={{ fontWeight: 600, overflowWrap: "break-word", display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {s.title}
+                          {/* Show badge for match type (for debugging/clarity) */}
+                          {s.matchType === 'exact_title' && (
+                            <span style={{ fontSize: 10, padding: '2px 6px', background: '#10b981', color: 'white', borderRadius: 4, fontWeight: 500 }}>
+                              Exact
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 12, color: "#666" }}>{s.category || "Uncategorized"}</div>
                       </button>
                     </li>
@@ -610,8 +690,9 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
         <div className="search-dropdown-section tips-section" style={{ paddingTop: 8, borderTop: "1px solid #eee" }}>
           <div className="search-dropdown-title">Tips</div>
           <div className="search-dropdown-tips" style={{ fontSize: 12, color: "#666", paddingTop: 6 }}>
-            <div>• Select a category to narrow results.</div>
-            <div>• Leave category as All to search everything.</div>
+            <div>• Suggestions search all content (not filtered by category)</div>
+            <div>• Select a category to filter search results after pressing Search</div>
+            <div>• Leave category as All to search everything</div>
           </div>
         </div>
       </div>

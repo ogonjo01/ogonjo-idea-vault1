@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
-import { FaHeart, FaStar, FaComment, FaEye, FaPlus, FaMinus, FaPaintBrush, FaShareAlt } from 'react-icons/fa';
+import { FaHeart, FaStar, FaComment, FaEye, FaPlus, FaMinus, FaPaintBrush, FaShareAlt, FaArrowLeft } from 'react-icons/fa';
 import CommentsSection from '../CommentsSection/CommentsSection';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
@@ -109,7 +109,7 @@ const buildLightItem = (nr = {}, src = {}) => {
 };
 
 /* ---------- Loader component (simple three dots) ---------- */
-const InlineLoader = ({ label = 'Loading' }) => (
+const InlineLoader = ({ label = 'Loading content' }) => (
   <div className="summary-inline-loader" aria-live="polite" aria-busy="true" role="status" style={{ textAlign: 'center', padding: 20 }}>
     <div className="dots" aria-hidden="true" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
       <span className="dot" />
@@ -226,7 +226,7 @@ const SummaryView = () => {
     return () => clearTimeout(t);
   }, [param, scrollToTop]);
 
-  /* ---------- Recommendation functions (unchanged) ---------- */
+  /* ---------- Recommendation functions ---------- */
   const fetchRecommendedByTags = useCallback(async (tags = [], limit = 10, resolvedPostId = null) => {
     setIsRecommending(true);
     setRecError(null);
@@ -485,7 +485,7 @@ const SummaryView = () => {
 
         backgroundFetchFollowups(normalized.id, normalized.category, normalized.tags).catch((e) => console.debug(e));
       } catch (err) {
-        console.error('Error loading minimal summary:', err);
+        console.error('Error loading content:', err);
         if (mounted) {
           setIsLoading(false);
           setSummary(null);
@@ -498,12 +498,12 @@ const SummaryView = () => {
     return () => { mounted = false; };
   }, [param, navigate, backgroundFetchFollowups]);
 
-  /* ---------- Interaction handlers (unchanged) ---------- */
+  /* ---------- Interaction handlers ---------- */
   const handleLike = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { alert('Please sign in to like summaries.'); return; }
-      if (!postId) { alert('Post not ready. Please try again.'); return; }
+      if (!user) { alert('Please sign in to like content.'); return; }
+      if (!postId) { alert('Content not ready. Please try again.'); return; }
 
       if (userHasLiked) {
         const { error } = await supabase.from('likes').delete().eq('post_id', postId).eq('user_id', user.id);
@@ -526,7 +526,7 @@ const SummaryView = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { alert('Please sign in to rate'); return false; }
-      if (!postId) { alert('Post not ready. Try again later.'); return false; }
+      if (!postId) { alert('Content not ready. Try again later.'); return false; }
 
       setSavingRating(true);
       const { data, error } = await supabase.rpc('rate_post', {
@@ -587,6 +587,28 @@ const SummaryView = () => {
       );
     }
     return arr;
+  };
+
+  /* ---------- Back to previous article handler ---------- */
+  const handleBackToArticle = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/explore');
+    }
+  };
+
+  /* ---------- Explore more related content handler (uses same logic as recommendations) ---------- */
+  const handleExploreRelated = () => {
+    // Get the first tag if available, otherwise use category for navigation
+    const tagsArr = Array.isArray(summary?.tags) ? summary.tags.map(t => (t || '').trim()).filter(Boolean) : [];
+    if (tagsArr.length > 0) {
+      navigate(`/explore?tag=${encodeURIComponent(tagsArr[0])}`);
+    } else if (summary?.category) {
+      navigate(`/explore?category=${encodeURIComponent(summary.category)}`);
+    } else {
+      navigate('/explore');
+    }
   };
 
   /* ---------- Link resolution: resolve data-summary-id => slug (batch + cache) ---------- */
@@ -679,7 +701,7 @@ const SummaryView = () => {
         const resolved = await resolveInternalLinksInHtml(summary.summary);
         if (!cancelled) setProcessedSummaryHtml(resolved);
       } catch (e) {
-        console.error('Could not process summary HTML', e);
+        console.error('Could not process content HTML', e);
         if (!cancelled) setProcessedSummaryHtml(DOMPurify.sanitize(summary.summary));
       }
     };
@@ -714,7 +736,7 @@ const SummaryView = () => {
 
   /* ---------- Small reader controls ---------- */
   const increaseFont = () => setFontSize(s => Math.min(28, s + 2));
-  const decreaseFont = () => setFontSize(s => Math.max(12, s - 2)); // ensure not too small
+  const decreaseFont = () => setFontSize(s => Math.max(12, s - 2));
   const toggleReadingMode = () => setReadingMode(r => !r);
   const resetTypography = () => { setFontSize(18); setLineHeight(1.75); setReadingMode(true); };
 
@@ -765,8 +787,8 @@ const SummaryView = () => {
         "@type": "BreadcrumbList",
         "itemListElement": [
           { "@type": "ListItem", "position": 1, "name": "Home", "item": `${origin || ''}/` },
-          { "@type": "ListItem", "position": 2, "name": "Summaries", "item": `${origin || ''}/explore` },
-          { "@type": "ListItem", "position": 3, "name": summary?.title || "Summary", "item": pageUrl }
+          { "@type": "ListItem", "position": 2, "name": "Library", "item": `${origin || ''}/explore` },
+          { "@type": "ListItem", "position": 3, "name": summary?.title || "Content", "item": pageUrl }
         ]
       };
     } catch(e) {}
@@ -789,7 +811,7 @@ const SummaryView = () => {
     setShowEdit(false);
   };
 
-  /* ---------- Helper: render difficulty badge (fixed - was missing) ---------- */
+  /* ---------- Helper: render difficulty badge ---------- */
   const renderDifficultyBadge = (lvl) => {
     if (!lvl) return null;
     const text = String(lvl);
@@ -851,7 +873,7 @@ ${pageUrl}`;
   const showLoading = Boolean(isLoading);
   const showNotFound = !isLoading && !summary;
 
-  const headerTitle = summary?.title || (showLoading ? 'Loading…' : 'Summary not found');
+  const headerTitle = summary?.title || (showLoading ? 'Loading…' : 'Content Under Development');
   const headerAuthor = summary?.author || '';
   const headerImage = summary?.image_url || null;
 
@@ -897,130 +919,190 @@ ${pageUrl}`;
       <div className="summary-top-spacer" aria-hidden="true" />
 
       <header className={`summary-header ${collapsed ? 'collapsed' : ''}`} ref={headerRef} role="banner" aria-expanded={!collapsed} style={{ background: '#fff' }}>
-        <div className="summary-thumb-wrap" aria-hidden="true">
-          {headerImage ? (
-            <img className={`summary-thumb ${collapsed ? 'collapsed' : ''}`} src={headerImage} alt={headerTitle} />
-          ) : (
-            <div className={`summary-thumb placeholder ${collapsed ? 'collapsed' : ''}`} />
-          )}
-        </div>
+          <div className="summary-thumb-wrap" aria-hidden="true">
+            {headerImage ? (
+              <img className={`summary-thumb ${collapsed ? 'collapsed' : ''}`} src={headerImage} alt={headerTitle} />
+            ) : (
+              <div className={`summary-thumb placeholder ${collapsed ? 'collapsed' : ''}`} />
+            )}
+          </div>
 
-        <div className="summary-title-left">
-          <h1 className="summary-title" title={headerTitle} style={{ fontFamily: '"Times New Roman", Times, serif' }}>{headerTitle}</h1>
+          <div className="summary-title-left">
+            <h1 className="summary-title" title={headerTitle} style={{ fontFamily: '"Times New Roman", Times, serif' }}>{headerTitle}</h1>
 
-          <div className="summary-meta-row" aria-hidden="false">
-            <div className="summary-author" title={headerAuthor || ''}>
-              <span className="author-prefix">by&nbsp;</span>
-              <span className="author-name">{headerAuthor}</span>
-            </div>
-            <div className="summary-difficulty-inline">
-              {renderDifficultyBadge(summary?.difficulty_level)}
+            <div className="summary-meta-row" aria-hidden="false">
+              <div className="summary-author" title={headerAuthor || ''}>
+                <span className="author-prefix">by&nbsp;</span>
+                <span className="author-name">{headerAuthor}</span>
+              </div>
+              <div className="summary-difficulty-inline">
+                {renderDifficultyBadge(summary?.difficulty_level)}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="summary-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {(() => {
-            let affiliateUrl = null, affiliateLabel = null, affiliateType = null;
-            const rawAffiliate = summary?.affiliate_link ?? null;
-            if (rawAffiliate) {
-              try {
-                if (typeof rawAffiliate === 'string') {
-                  const parts = rawAffiliate.split('|', 2).map(p => (p || '').trim());
-                  if (parts.length === 2 && parts[1]) { affiliateType = (parts[0] || '').toLowerCase(); affiliateUrl = parts[1]; }
-                  else { affiliateType = 'book'; affiliateUrl = rawAffiliate.trim(); }
-                } else if (typeof rawAffiliate === 'object' && rawAffiliate !== null) {
-                  if (rawAffiliate.url) { affiliateUrl = String(rawAffiliate.url); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
-                  else if (rawAffiliate.link) { affiliateUrl = String(rawAffiliate.link); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
+          <div className="summary-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {(() => {
+              let affiliateUrl = null, affiliateLabel = null, affiliateType = null;
+              const rawAffiliate = summary?.affiliate_link ?? null;
+              if (rawAffiliate) {
+                try {
+                  if (typeof rawAffiliate === 'string') {
+                    const parts = rawAffiliate.split('|', 2).map(p => (p || '').trim());
+                    if (parts.length === 2 && parts[1]) { affiliateType = (parts[0] || '').toLowerCase(); affiliateUrl = parts[1]; }
+                    else { affiliateType = 'book'; affiliateUrl = rawAffiliate.trim(); }
+                  } else if (typeof rawAffiliate === 'object' && rawAffiliate !== null) {
+                    if (rawAffiliate.url) { affiliateUrl = String(rawAffiliate.url); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
+                    else if (rawAffiliate.link) { affiliateUrl = String(rawAffiliate.link); affiliateType = (rawAffiliate.type || 'book').toLowerCase(); }
+                  }
+                } catch (e) {
+                  try { affiliateUrl = String(rawAffiliate); affiliateType = 'book'; } catch (ee) { affiliateUrl = null; affiliateType = null; }
                 }
-              } catch (e) {
-                try { affiliateUrl = String(rawAffiliate); affiliateType = 'book'; } catch (ee) { affiliateUrl = null; affiliateType = null; }
               }
-            }
-            if (affiliateUrl) {
-              affiliateLabel = affiliateType === 'pdf' ? 'Get PDF' : (affiliateType === 'app' ? 'Open App' : 'Get Book');
-            }
-            return affiliateUrl && affiliateLabel ? (
-              <a className={`affiliate-btn ${affiliateType ? `affiliate-${affiliateType}` : ''}`} href={affiliateUrl} target="_blank" rel="noopener noreferrer">{affiliateLabel}</a>
-            ) : null;
-          })()}
+              if (affiliateUrl) {
+                affiliateLabel = affiliateType === 'pdf' ? 'Get PDF' : (affiliateType === 'app' ? 'Open App' : 'Get Book');
+              }
+              return affiliateUrl && affiliateLabel ? (
+                <a className={`affiliate-btn ${affiliateType ? `affiliate-${affiliateType}` : ''}`} href={affiliateUrl} target="_blank" rel="noopener noreferrer">{affiliateLabel}</a>
+              ) : null;
+            })()}
 
-          {/* Share button added */}
-          <button
-            className="hf-btn share-btn"
-            type="button"
-            onClick={handleShare}
-            title="Share"
-            aria-label="Share this summary"
-          >
-            <FaShareAlt />
-          </button>
+            {/* Share button */}
+            <button
+              className="hf-btn share-btn"
+              type="button"
+              onClick={handleShare}
+              title="Share"
+              aria-label="Share this content"
+            >
+              <FaShareAlt />
+            </button>
 
-          {ownerId && currentUserId && ownerId === currentUserId && (
-            <button className="hf-btn" type="button" onClick={() => setShowEdit(true)}>Edit</button>
-          )}
-        </div>
-
-        <div className="summary-engagement" role="group" aria-label="Engagement">
-          <button className={`eng-btn like-btn ${userHasLiked ? 'liked' : ''}`} onClick={handleLike} aria-pressed={userHasLiked} title="Like">
-            <FaHeart /> <span>{likes ?? 0}</span>
-          </button>
-          <div className="eng-item" title="Comments"><FaComment /> <span>{commentsCount ?? 0}</span></div>
-          <div className="eng-item" title="Views"><FaEye /> <span>{views ?? 0}</span></div>
-          <div className="rating-block" title={`Average rating ${avgRating || 0}`}>
-            <div className="rating-stars">{renderStars('md')}</div>
-            <div className="avg-text">{avgRating ? Number(avgRating).toFixed(1) : '0.0'}</div>
+            {ownerId && currentUserId && ownerId === currentUserId && (
+              <button className="hf-btn" type="button" onClick={() => setShowEdit(true)}>Edit</button>
+            )}
           </div>
-        </div>
-      </header>
+
+          <div className="summary-engagement" role="group" aria-label="Engagement">
+            <button className={`eng-btn like-btn ${userHasLiked ? 'liked' : ''}`} onClick={handleLike} aria-pressed={userHasLiked} title="Like">
+              <FaHeart /> <span>{likes ?? 0}</span>
+            </button>
+            <div className="eng-item" title="Comments"><FaComment /> <span>{commentsCount ?? 0}</span></div>
+            <div className="eng-item" title="Views"><FaEye /> <span>{views ?? 0}</span></div>
+            <div className="rating-block" title={`Average rating ${avgRating || 0}`}>
+              <div className="rating-stars">{renderStars('md')}</div>
+              <div className="avg-text">{avgRating ? Number(avgRating).toFixed(1) : '0.0'}</div>
+            </div>
+          </div>
+        </header>
 
       {/* Reader controls toolbar */}
-      <div style={{
-        display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end',
-        margin: '10px auto 8px', maxWidth: 980,
-      }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="hf-btn" aria-label="Decrease font size" onClick={decreaseFont}><FaMinus /></button>
-          <div style={{ minWidth: 44, textAlign: 'center' }}>{fontSize}px</div>
-          <button className="hf-btn" aria-label="Increase font size" onClick={increaseFont}><FaPlus /></button>
-        </div>
+      {!showLoading && (
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end',
+          margin: '10px auto 8px', maxWidth: 980,
+        }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button className="hf-btn" aria-label="Decrease font size" onClick={decreaseFont}><FaMinus /></button>
+            <div style={{ minWidth: 44, textAlign: 'center' }}>{fontSize}px</div>
+            <button className="hf-btn" aria-label="Increase font size" onClick={increaseFont}><FaPlus /></button>
+          </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="hf-btn" title="Toggle reading mode" onClick={toggleReadingMode}><FaPaintBrush /></button>
-          <button className="hf-btn" title="Reset typography" onClick={resetTypography}>Reset</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button className="hf-btn" title="Toggle reading mode" onClick={toggleReadingMode}><FaPaintBrush /></button>
+            <button className="hf-btn" title="Reset typography" onClick={resetTypography}>Reset</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* optional YouTube embed */}
-      <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
-        {extractYouTubeId(summary?.youtube_url) && (
-          <div className="youtube-embed" style={{ marginBottom: 12 }}>
-            <div className="embed-inner">
-              <iframe
-                className="youtube-iframe"
-                title="YouTube clip"
-                src={`https://www.youtube-nocookie.com/embed/${extractYouTubeId(summary?.youtube_url)}`}
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+      {!showLoading && (
+        <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
+          {extractYouTubeId(summary?.youtube_url) && (
+            <div className="youtube-embed" style={{ marginBottom: 12 }}>
+              <div className="embed-inner">
+                <iframe
+                  className="youtube-iframe"
+                  title="YouTube clip"
+                  src={`https://www.youtube-nocookie.com/embed/${extractYouTubeId(summary?.youtube_url)}`}
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* Article: show loader / not-found / content (only this area changes) */}
+      {/* Article: show loader / not-found / content */}
       <main style={{ maxWidth: 980, margin: '0 auto', padding: '0 18px' }}>
         {showLoading ? (
           <div style={articleStyle}>
-            <InlineLoader label="Loading summary" />
+            <InlineLoader label="Loading content" />
           </div>
         ) : showNotFound ? (
-          <div style={{ ...articleStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }}>Summary not found</div>
-              <div style={{ fontSize: 14, color: '#9aa4b2' }}>We couldn't find the requested summary. It may have been removed or the link is incorrect.</div>
+          <div style={{ ...articleStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6b7280', textAlign: 'center', padding: '40px 32px' }}>
+            <div style={{ fontSize: 42, marginBottom: 16, opacity: 0.7 }}>📖</div>
+            <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 10, color: '#0b1220' }}>Content Under Development</div>
+            <div style={{ fontSize: 15, lineHeight: 1.6, color: '#4b5563', marginBottom: 6, maxWidth: 480 }}>
+              This resource is being carefully curated to ensure the highest quality insights.
             </div>
+            <div style={{ fontSize: 14, lineHeight: 1.6, color: '#6b7280', marginBottom: 6, maxWidth: 460 }}>
+              We prioritize depth and accuracy over speed.
+            </div>
+             {/* Action Buttons Side by Side */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+              {/* Back to Article Button */}
+              <button
+                onClick={handleBackToArticle}
+                className="hf-btn"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 24px',
+                  fontSize: 15,
+                  fontWeight: 500,
+                  backgroundColor: '#2563eb',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#1d4ed8';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 4px 8px rgba(37, 99, 235, 0.3)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = '#2563eb';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 4px rgba(37, 99, 235, 0.2)';
+                }}
+              >
+                <FaArrowLeft />
+                Back to Article
+              </button>
+            </div>
+            <div
+  style={{
+    fontSize: 14,
+    lineHeight: 1.6,
+    color: '#22c55e',
+    fontWeight: 700,      // bold
+    marginTop: 16,        // space at top
+    marginBottom: 24,
+    maxWidth: 460,
+  }}
+>
+  Explore related content below while we expand our library.
+</div>
+
+            
+           
           </div>
         ) : (
           <article
@@ -1039,7 +1121,8 @@ ${pageUrl}`;
           items={recommendedContent}
           loading={isRecommending}
           skeletonCount={4}
-          viewAllLink={viewAllLinkForTags}
+          tag={summary?.tags && summary.tags.length > 0 ? summary.tags[0] : null}
+          sortKey="views"
         >
           {recommendedContent.map(item => (
             <BookSummaryCard key={String(item.id || item.slug)} summary={item} />
@@ -1062,12 +1145,13 @@ ${pageUrl}`;
         </div>
       )}
 
+      {/* Comments section */}
       <section
         className="summary-comments"
         style={{ width: '80%', margin: '20px auto', padding: '0 18px', boxSizing: 'border-box' }}
       >
         <h3>Comments</h3>
-        {summary?.id ? <CommentsSection postId={summary.id} /> : <div style={{ color: '#6b7280' }}>Comments will appear once the summary loads.</div>}
+        {summary?.id ? <CommentsSection postId={summary.id} /> : <div style={{ color: '#6b7280' }}>Comments will appear once the content loads.</div>}
       </section>
 
       {showEdit && (

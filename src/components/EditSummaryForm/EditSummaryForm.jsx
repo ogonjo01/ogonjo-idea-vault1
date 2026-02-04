@@ -29,6 +29,8 @@ const quillFormats = [
   'list','bullet','blockquote','code-block','link','image'
 ];
 
+const KEYWORDS_LIMIT = 8;
+
 /* ---------- Utilities / scoring helpers ---------- */
 const normalize = (s = '') => String(s || '').trim().toLowerCase();
 const uniqueWords = (s = '') => Array.from(new Set(normalize(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean)));
@@ -74,10 +76,8 @@ const pluralVariants = (word = '') => {
   const w = normalize(word);
   if (!w) return [w];
   const variants = new Set([w]);
-  // naive plural rules (add s, es)
   if (!w.endsWith('s')) variants.add(`${w}s`);
   if (!w.endsWith('es')) variants.add(`${w}es`);
-  // singular from trailing s
   if (w.endsWith('s')) variants.add(w.replace(/s+$/, ''));
   return Array.from(variants);
 };
@@ -100,11 +100,10 @@ const parseAffiliateValue = (raw) => {
   try { return { type: null, url: String(raw).trim() || null }; } catch (e) { return { type: null, url: null }; }
 };
 
-/* ---------- Keywords helper (new) ---------- */
-// Keep parseKeywords for any situations where a CSV string is needed
-function parseKeywords(input, max = 8) {
+/* ---------- Keywords helper (for CSV input) ---------- */
+function parseKeywordsCSV(input, max = KEYWORDS_LIMIT) {
   if (!input) return [];
-  const parts = input
+  const parts = String(input)
     .split(',')
     .map((k) => (k || '').trim().toLowerCase())
     .filter(Boolean);
@@ -122,7 +121,7 @@ function parseKeywords(input, max = 8) {
 
 /* ---------- Component ---------- */
 const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {} }) => {
-  // core fields
+  // core fields (init from summary, and we also sync when summary changes)
   const [title, setTitle] = useState(summary.title || '');
   const [slug, setSlug] = useState(summary.slug || '');
   const [author, setAuthor] = useState(summary.author || '');
@@ -135,18 +134,35 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [youtubeUrl, setYoutubeUrl] = useState(summary.youtube_url || '');
   const [tags, setTags] = useState(Array.isArray(summary.tags) ? summary.tags.map(t => String(t).trim().toLowerCase()) : []);
   const [tagInput, setTagInput] = useState('');
-  // keywords state: array of normalized keywords shown as chips
-  const [keywords, setKeywords] = useState(Array.isArray(summary.keywords) ? (summary.keywords || []).map(k => String(k || '').trim().toLowerCase()) : []);
+  // keywords: array + visible input. We show existing keywords in the input so they are visible on edit.
+  const [keywords, setKeywords] = useState([]);
   const [keywordInput, setKeywordInput] = useState('');
-  // track whether user actually edited keywords (so we don't overwrite existing keywords unless user intends to)
+  // track whether user actually edited keywords (so we don't overwrite unless intended)
   const [editedKeywords, setEditedKeywords] = useState(false);
 
   const [difficulty, setDifficulty] = useState(summary.difficulty_level || '');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // stable id ref (truth if editing)
-  const initialIdRef = useRef(summary.id || null);
+  // stable id ref (truth if editing) — start null and sync to incoming summary id to avoid stale values
+  const initialIdRef = useRef(null);
+  useEffect(() => {
+    initialIdRef.current = summary?.id || null;
+  }, [summary?.id]);
+
+  // sync core fields when summary prop changes (useful if modal is reused)
+  useEffect(() => {
+    setTitle(summary.title || '');
+    setSlug(summary.slug || '');
+    setAuthor(summary.author || '');
+    setDescription(summary.description || '');
+    setSummaryText(summary.summary || '');
+    setCategory(summary.category || CATEGORIES[0]);
+    setImageUrl(summary.image_url || '');
+    setYoutubeUrl(summary.youtube_url || '');
+    setTags(Array.isArray(summary.tags) ? summary.tags.map(t => String(t).trim().toLowerCase()) : []);
+    // affiliate sync handled below
+  }, [summary.id]); // only when summary identity changes
 
   // portal and quill refs
   const portalElRef = useRef(null);
@@ -167,15 +183,49 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
   useEffect(() => { setDifficulty(summary.difficulty_level || ''); }, [summary.difficulty_level]);
 
-  // keep keywords in sync if summary changes (e.g. modal reopened for a different item)
+  // keep keywords in sync if summary changes (robust parsing)
+  // IMPORTANT: this ensures keywords are visible on edit and not lost unless user explicitly edits them.
   useEffect(() => {
-    const incoming = Array.isArray(summary.keywords) ? (summary.keywords || []).map(k => String(k || '').trim().toLowerCase()) : [];
-    // dedupe and limit to 8
-    const uniq = Array.from(new Set(incoming)).slice(0, 8);
+    const raw = summary?.keywords;
+    let incoming = [];
+
+    try {
+      if (Array.isArray(raw)) {
+        incoming = raw.map(k => String(k || '').trim().toLowerCase()).filter(Boolean);
+      } else if (raw == null) {
+        incoming = [];
+      } else if (typeof raw === 'string') {
+        // attempt JSON parse first (in case DB returned JSON-string), else CSV split
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) incoming = parsed.map(k => String(k || '').trim().toLowerCase()).filter(Boolean);
+          else incoming = String(raw).split(',').map(k => (k || '').trim().toLowerCase()).filter(Boolean);
+        } catch (e) {
+          incoming = String(raw).split(',').map(k => (k || '').trim().toLowerCase()).filter(Boolean);
+        }
+      } else {
+        // other types (e.g. object) — attempt to extract array-like
+        if (typeof raw === 'object' && raw !== null) {
+          // try to read keys that are arrays
+          if (Array.isArray(raw)) incoming = raw.map(k => String(k || '').trim().toLowerCase()).filter(Boolean);
+          else incoming = [];
+        } else {
+          incoming = [];
+        }
+      }
+    } catch (e) {
+      incoming = [];
+    }
+
+    // dedupe and limit
+    const uniq = Array.from(new Set(incoming)).slice(0, KEYWORDS_LIMIT);
+
+    // set into state
     setKeywords(uniq);
-    setKeywordInput('');            // clear any transient input
-    setEditedKeywords(false);       // no local edits yet
-  }, [summary.keywords]);
+    // show them in the input so the user sees existing values immediately
+    setKeywordInput(uniq.length ? uniq.join(', ') : '');
+    setEditedKeywords(false); // no local edits yet
+  }, [summary?.keywords, summary?.id]); // depend on both keywords and id to catch fetch updates
 
   // SLUG generation: only generate for NEW content (do NOT overwrite on edit)
   useEffect(() => {
@@ -183,7 +233,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     if (!title) { setSlug(''); return; }
     const generated = slugify(title, { lower: true, replacement: '-', strict: true });
     setSlug(generated);
-  }, [title]);
+  }, [title, initialIdRef.current]);
 
   // create portal element on mount and cleanup
   useEffect(() => {
@@ -223,7 +273,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const removeTag = (t) => setTags(prev => (prev || []).filter(x => x !== t));
 
   // Keywords UI helpers (chips + input)
-  const KEYWORDS_LIMIT = 8;
   const addKeywordFromInput = (raw = '') => {
     const value = (raw || keywordInput || '').trim();
     if (!value) return;
@@ -236,7 +285,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         s.add(p);
       }
       const out = Array.from(s);
-      // mark edited as true if anything changed
       if (JSON.stringify(out) !== JSON.stringify(prev || [])) setEditedKeywords(true);
       return out;
     });
@@ -252,7 +300,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         return out;
       });
     } else {
-      // mark edited when user types inside keyword input (intent to edit)
+      // user typed — mark intention to edit keywords
       if (!editedKeywords) setEditedKeywords(true);
     }
   };
@@ -401,7 +449,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     const q = String(text || '').trim();
     if (!q) return null;
 
-    // 1) exact / strong match (case-insensitive via ilike exact pattern)
     try {
       const { data: exact, error: errExact } = await supabase
         .from('book_summaries')
@@ -410,11 +457,8 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         .maybeSingle();
 
       if (!errExact && exact && exact.id) return exact;
-    } catch (e) {
-      // pass
-    }
+    } catch (e) {}
 
-    // 2) phrase match: title ilike %q%
     try {
       const { data: phrase, error: errPhrase } = await supabase
         .from('book_summaries')
@@ -426,7 +470,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       if (!errPhrase && phrase && phrase.id) return phrase;
     } catch (e) {}
 
-    // 3) tokenized candidate fetch
     const tokens = uniqueWords(q).slice(0, 6);
     if (tokens.length === 0) return null;
     const orFilters = tokens.map((t) => `title.ilike.%${t}%`).join(',');
@@ -441,7 +484,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       if (error) return null;
       if (!candidates || candidates.length === 0) return null;
 
-      // score them client-side
       let best = null;
       let bestScore = 0;
       const singleWord = q.split(/\s+/).length === 1;
@@ -449,11 +491,10 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
       candidates.forEach((c) => {
         const score = combinedScore(c.title || '', q);
-        // if single-word, boost if candidate title contains exact word or plural variant
         if (singleWord) {
           const cWords = uniqueWords(c.title || '');
           const hasVariant = qVariants.some(v => cWords.includes(v));
-          if (!hasVariant) return; // skip candidate that does not contain word/variant
+          if (!hasVariant) return;
         }
         if (score > bestScore) { bestScore = score; best = c; }
       });
@@ -466,7 +507,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  /* ---------- Remove links and make them bold (DOM approach) ---------- */
+  /* ---------- DOM utilities for link operations ---------- */
   const removeLinksAndMakeBold = () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) { alert('Editor not ready'); return; }
@@ -526,7 +567,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           a.setAttribute('data-summary-id', match.id);
           a.setAttribute('href', `#summary-${match.id}`);
           a.className = 'internal-summary-link';
-          // keep inner bold markup inside anchor
           a.innerHTML = node.innerHTML;
           node.parentNode.replaceChild(a, node);
           linkedCount++;
@@ -543,8 +583,54 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  // ----------------- helper: fetch rows with title candidates for a string -----------------
-  // returns array of {id,title,keywords}
+  // ----------------- Slug-based auto-link (NO DB, future-proof) -----------------
+  // Converts bold text into slug links of the form /summary/<slug>
+  const autoLinkBoldToSlug = () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert('Editor not ready');
+      return;
+    }
+
+    try {
+      const container = document.createElement('div');
+      container.innerHTML = editor.root.innerHTML;
+
+      const boldNodes = Array.from(container.querySelectorAll('strong, b'));
+      if (boldNodes.length === 0) { alert('No bold text found.'); return; }
+
+      let linked = 0;
+      boldNodes.forEach(node => {
+        try {
+          const text = (node.textContent || '').trim();
+          if (!text) return;
+          if (node.closest && node.closest('a')) return; // skip already linked
+
+          const slug = slugify(text, { lower: true, strict: true, replacement: '-' });
+          if (!slug) return;
+
+          const a = document.createElement('a');
+          a.setAttribute('href', `/summary/${slug}`);
+          a.className = 'slug-summary-link';
+          a.innerHTML = node.outerHTML;
+          node.parentNode.replaceChild(a, node);
+          linked++;
+        } catch (err) {
+          // ignore node
+        }
+      });
+
+      const newDelta = editor.clipboard.convert(container.innerHTML);
+      editor.setContents(newDelta, 'user');
+      setSummaryText(editor.root.innerHTML);
+      alert(`Slug auto-link complete — ${linked} item(s) linked.`);
+    } catch (err) {
+      console.error('autoLinkBoldToSlug failed', err);
+      alert('Slug auto-link failed. See console.');
+    }
+  };
+
+  /* ---------- Exact auto-link (NEW) ---------- */
   const fetchTitleCandidates = async (text, limit = 200) => {
     const q = String(text || '').trim();
     if (!q) return [];
@@ -565,7 +651,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  // ----------------- helper: fetch some rows that have keywords (sample) -----------------
   const fetchKeywordRows = async (limit = 800) => {
     try {
       const { data, error } = await supabase
@@ -584,8 +669,8 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  /* ---------- Exact auto-link (NEW) ---------- */
   const autoLinkBoldExact = async () => {
+    // (kept similar to your previous implementation; uses fetchTitleCandidates + fetchKeywordRows)
     const editor = quillRef.current?.getEditor();
     if (!editor) { alert('Editor not ready'); return; }
 
@@ -597,39 +682,29 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       const phrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 200);
       if (phrases.length === 0) { alert('No bolded phrases found to exact-auto-link.'); return; }
 
-      // build mapping for exact matches
       let linkedCount = 0;
       for (const phrase of phrases) {
         try {
-          // fetch candidates with title containing phrase (narrow)
           const tCandidates = await fetchTitleCandidates(phrase, 200);
           const variants = pluralVariants(phrase);
           let matched = null;
           for (const c of tCandidates) {
             if (!c || !c.title) continue;
             const nt = normalize(c.title || '');
-            if (nt === normalize(phrase) || variants.includes(nt)) {
-              matched = c;
-              break;
-            }
+            if (nt === normalize(phrase) || variants.includes(nt)) { matched = c; break; }
           }
 
           if (!matched) {
-            // fallback: small keyword rows check for exact title equality
             const sample = await fetchKeywordRows(400);
             for (const c of sample) {
               if (!c || !c.title) continue;
               const nt = normalize(c.title || '');
-              if (nt === normalize(phrase) || variants.includes(nt)) {
-                matched = c;
-                break;
-              }
+              if (nt === normalize(phrase) || variants.includes(nt)) { matched = c; break; }
             }
           }
 
           if (!matched || !matched.id) continue;
 
-          // link all DOM nodes matching this phrase (exact normalized text)
           boldNodes.forEach(node => {
             const text = (node.textContent || '').trim();
             if (normalize(text) !== normalize(phrase)) return;
@@ -642,9 +717,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
               a.innerHTML = node.innerHTML;
               node.parentNode.replaceChild(a, node);
               linkedCount++;
-            } catch (err) {
-              // fallback handled later
-            }
+            } catch (err) {}
           });
 
         } catch (err) {
@@ -652,7 +725,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         }
       }
 
-      // apply changes back to editor
       const newDelta = editor.clipboard.convert(container.innerHTML);
       editor.setContents(newDelta, 'user');
       setSummaryText(editor.root.innerHTML);
@@ -676,37 +748,30 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       const uniquePhrases = Array.from(new Set(boldNodes.map(n => (n.textContent || '').trim()).filter(s => s.length >= 2 && s.length <= 200))).slice(0, 200);
       if (uniquePhrases.length === 0) { alert('No bolded phrases found to keyword-auto-link.'); return; }
 
-      // preload keyword rows sample
       let keywordSample = [];
       try { keywordSample = await fetchKeywordRows(800); } catch (e) { keywordSample = []; }
 
       let linkedCount = 0;
-
       for (const phrase of uniquePhrases) {
         try {
           const tokens = uniqueWords(phrase);
           const normalizedTokens = tokens.map(t => normalize(t));
-          // 1) title candidates
           const titleCandidates = await fetchTitleCandidates(phrase, 200);
 
-          // 2) keyword candidates from sample
           const keywordCandidates = keywordSample.filter((r) => {
             try {
               if (!r || !r.keywords) return false;
               const kws = (r.keywords || []).map(k => normalize(String(k || '')));
-              // match if any full keyword equals phrase or contains/equals any token
               return normalizedTokens.some(t => kws.includes(t) || kws.some(k => k.includes(t))) || kws.includes(normalize(phrase));
             } catch (e) { return false; }
           });
 
-          // merge candidates
           const byId = new Map();
           titleCandidates.forEach(c => { if (c && c.id) byId.set(c.id, c); });
           keywordCandidates.forEach(c => { if (c && c.id && !byId.has(c.id)) byId.set(c.id, c); });
           const merged = Array.from(byId.values());
           if (merged.length === 0) continue;
 
-          // scoring
           let best = null;
           let bestScore = 0;
           for (const c of merged) {
@@ -729,9 +794,8 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
           }
 
           if (!best || !best.id) continue;
-          if (bestScore < 0.65) continue; // require decent confidence
+          if (bestScore < 0.65) continue;
 
-          // link nodes that exactly match the phrase text (normalized)
           boldNodes.forEach(node => {
             const text = (node.textContent || '').trim();
             if (normalize(text) !== normalize(phrase)) return;
@@ -744,9 +808,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
               a.innerHTML = node.innerHTML;
               node.parentNode.replaceChild(a, node);
               linkedCount++;
-            } catch (err) {
-              // ignore for node
-            }
+            } catch (err) {}
           });
 
         } catch (err) {
@@ -754,7 +816,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         }
       }
 
-      // apply changes back to editor
       const newDelta = editor.clipboard.convert(container.innerHTML);
       editor.setContents(newDelta, 'user');
       setSummaryText(editor.root.innerHTML);
@@ -823,7 +884,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         const pk = (keywords && keywords.length) ? keywords.slice(0, KEYWORDS_LIMIT) : [];
         payload.keywords = pk.length ? pk : null;
       } else if (editedKeywords) {
-        // edit flow: user changed keywords explicitly
+        // edit flow: user changed keywords explicitly -> include (allow empty -> null to clear)
         const pk = (keywords && keywords.length) ? keywords.slice(0, KEYWORDS_LIMIT) : [];
         payload.keywords = pk.length ? pk : null;
       }
@@ -851,6 +912,19 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
         resultData = data ?? null;
       }
 
+      // After successful save, sync local state from returned data (important so UI reflects DB)
+      if (resultData) {
+        // If keywords were not included in payload (edit without touching keywords), resultData.keywords should still contain DB value.
+        const dbKeywords = Array.isArray(resultData.keywords)
+          ? resultData.keywords.map(k => String(k || '').trim().toLowerCase()).filter(Boolean)
+          : (typeof resultData.keywords === 'string' ? parseKeywordsCSV(resultData.keywords) : []);
+
+        const uniq = Array.from(new Set(dbKeywords)).slice(0, KEYWORDS_LIMIT);
+        setKeywords(uniq);
+        setKeywordInput(uniq.length ? uniq.join(', ') : '');
+        setEditedKeywords(false);
+      }
+
       setLoading(false);
       if (typeof onUpdate === 'function') onUpdate(resultData);
       if (typeof onClose === 'function') onClose();
@@ -866,9 +940,9 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
   const modal = (
     <div className="modal-overlay" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-content edit-large" role="dialog" aria-modal="true" aria-label="Edit summary" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content edit-large" role="dialog" aria-modal="true" aria-label="Edit Summary" onClick={(e) => e.stopPropagation()}>
         <button className="close-button" onClick={onClose} aria-label="Close">&times;</button>
-        <h2>Edit Summary</h2>
+        <h2>{initialIdRef.current ? 'Edit Summary' : 'Create Summary'}</h2>
 
         <form onSubmit={handleSubmit} className="summary-form">
           <label htmlFor="title">Title</label>
@@ -974,13 +1048,16 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
             <button type="button" className="hf-btn" onClick={removeLinksAndMakeBold}>✂️ Remove links & Bold</button>
             <button type="button" className="hf-btn" onClick={autoLinkBoldedPhrases}>🔗 Auto-link bolded phrases</button>
 
+            {/* NEW slug-only button (does not call DB) */}
+            <button type="button" className="hf-btn" onClick={autoLinkBoldToSlug}>🔗 Bold → Slug Link</button>
+
             {/* NEW buttons */}
             <button type="button" className="hf-btn" onClick={autoLinkBoldExact}>🎯 Exact auto-link</button>
             <button type="button" className="hf-btn" onClick={autoLinkBoldKeywords}>🧠 Keyword auto-link</button>
 
             <button type="button" className="hf-btn" onClick={resetAndAutoRelink} style={{ background: '#eef2ff' }}>Reset & Auto-Relink</button>
             <div style={{ color: '#6b7280', fontSize: 12 }}>
-              Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
+              Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches. Use Bold → Slug Link to deterministically create /summary/&lt;slug&gt; links.
             </div>
           </div>
 

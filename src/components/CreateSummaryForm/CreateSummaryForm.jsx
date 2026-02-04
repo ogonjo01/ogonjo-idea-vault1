@@ -414,6 +414,74 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     }
   };
 
+  // ----------------- Slug-based auto-link (NO DB, future-proof) -----------------
+  // Converts bold text into slug links of the form /summary/<slug>
+  const autoLinkBoldTextBySlug = () => {
+    const editor = quillRef.current?.getEditor();
+    if (!editor) {
+      alert("Editor not available.");
+      return;
+    }
+
+    const root = editor.root;
+    if (!root) {
+      alert("Editor root not available.");
+      return;
+    }
+
+    const nodeList = Array.from(root.querySelectorAll("strong, b, .ql-bold, *[style*='font-weight']"));
+    let linkedCount = 0;
+
+    nodeList.forEach((node) => {
+      try {
+        if (node.closest && node.closest("a")) return; // already linked
+
+        let isBold = false;
+        if (node.tagName && (node.tagName.toLowerCase() === "strong" || node.tagName.toLowerCase() === "b")) {
+          isBold = true;
+        } else {
+          try {
+            const cs = window.getComputedStyle(node);
+            const fw = cs && cs.fontWeight ? cs.fontWeight : "";
+            const num = parseInt(fw, 10);
+            if (!isNaN(num) && num >= 600) isBold = true;
+            if (fw === "bold" || fw === "bolder") isBold = true;
+          } catch (e) {}
+        }
+        if (!isBold) return;
+
+        const text = (node.textContent || "").trim();
+        if (!text) return;
+        if (text.length < 2) return;
+
+        const generatedSlug = slugify(text, { lower: true, strict: true, replacement: "-" });
+        if (!generatedSlug) return;
+
+        const anchor = document.createElement("a");
+        anchor.setAttribute("href", `/summary/${generatedSlug}`);
+        anchor.className = "slug-summary-link";
+
+        if (node.parentNode) {
+          node.parentNode.replaceChild(anchor, node);
+          anchor.appendChild(node);
+          linkedCount++;
+        }
+      } catch (err) {
+        console.warn("Slug auto-link failed for node:", err);
+      }
+    });
+
+    try {
+      if (editor.update) editor.update("user");
+    } catch (e) {}
+
+    try {
+      setSummaryText(editor.root.innerHTML);
+    } catch (e) {}
+
+    alert(`Slug auto-link complete — ${linkedCount} item(s) linked.`);
+  };
+
   // ----------------- Exact auto-link (NEW) -----------------
   // Links only when normalized bold text exactly equals a title (or its simple plural variants)
   const autoLinkBoldTextExact = async () => {
@@ -1236,6 +1304,9 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
           <label>Summary</label>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: 'wrap' }}>
+            {/* NEW slug-only button (does not call DB) */}
+            <button type="button" className="hf-btn" onClick={autoLinkBoldTextBySlug}>🔗 Slug-link bold text</button>
+
             <button type="button" className="hf-btn" onClick={autoLinkBoldText}>🔗 Auto-link bold text</button>
 
             {/* NEW buttons */}
@@ -1247,7 +1318,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
               🔎 Manual link
             </button>
             <div style={{ color: "#6b7280", fontSize: 12, marginLeft: 8 }}>
-              Only bold text is auto-linked. Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
+              Only bold text is auto-linked. Use the slug button to always create /summary/&lt;slug&gt; links (no DB). Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
             </div>
           </div>
 
