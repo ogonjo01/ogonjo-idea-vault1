@@ -464,8 +464,8 @@ html {
 
 /* Clean editorial link styling (Option One) */
 .summary-body a {
-  color: #1a5fb4;          /* soft editorial blue */
-  font-weight: 600;        /* normal weight */
+  color:#0645ad;          /* soft editorial blue */
+  font-weight: 530;        /* normal weight */
   font-style: normal;      /* no italic */
   text-decoration: none;   /* no underline */
 }
