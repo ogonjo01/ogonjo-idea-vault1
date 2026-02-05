@@ -148,7 +148,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [author, setAuthor] = useState(summary.author || '');
   const [description, setDescription] = useState(summary.description || '');
   const [summaryText, setSummaryText] = useState(summary.summary || '');
-  const [category, setCategory] = useState(summary.category || CATEGORIES[0]);
+  const [category, setCategory] = useState(summary.category || categories[0]);
   const [imageUrl, setImageUrl] = useState(summary.image_url || '');
   const [affiliateLink, setAffiliateLink] = useState('');
   const [affiliateType, setAffiliateType] = useState('book');
@@ -178,7 +178,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     setAuthor(summary.author || '');
     setDescription(summary.description || '');
     setSummaryText(summary.summary || '');
-    setCategory(summary.category || CATEGORIES[0]);
+    setCategory(summary.category || categories[0]);
     setImageUrl(summary.image_url || '');
     setYoutubeUrl(summary.youtube_url || '');
     setTags(Array.isArray(summary.tags) ? summary.tags.map(t => String(t).trim().toLowerCase()) : []);
@@ -604,8 +604,9 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     }
   };
 
-  // ----------------- Slug-based auto-link (NO DB, future-proof) -----------------
-  // Converts bold text into slug links of the form /summary/<slug>
+  // ----------------- Slug-based auto-link (NO DB, selection-based) -----------------
+  // NOW: Links only the currently selected text to /summary/<slug>.
+  // If nothing is selected, warns the user and does nothing.
   const autoLinkBoldToSlug = () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) {
@@ -613,42 +614,87 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       return;
     }
 
-    try {
-      const container = document.createElement('div');
-      container.innerHTML = editor.root.innerHTML;
-
-      const boldNodes = Array.from(container.querySelectorAll('strong, b'));
-      if (boldNodes.length === 0) { alert('No bold text found.'); return; }
-
-      let linked = 0;
-      boldNodes.forEach(node => {
-        try {
-          const text = (node.textContent || '').trim();
-          if (!text) return;
-          if (node.closest && node.closest('a')) return; // skip already linked
-
-          const slug = slugify(text, { lower: true, strict: true, replacement: '-' });
-          if (!slug) return;
-
-          const a = document.createElement('a');
-          a.setAttribute('href', `/summary/${slug}`);
-          a.className = 'slug-summary-link';
-          a.innerHTML = node.outerHTML;
-          node.parentNode.replaceChild(a, node);
-          linked++;
-        } catch (err) {
-          // ignore node
-        }
-      });
-
-      const newDelta = editor.clipboard.convert(container.innerHTML);
-      editor.setContents(newDelta, 'user');
-      setSummaryText(editor.root.innerHTML);
-      alert(`Slug auto-link complete — ${linked} item(s) linked.`);
-    } catch (err) {
-      console.error('autoLinkBoldToSlug failed', err);
-      alert('Slug auto-link failed. See console.');
+    const range = editor.getSelection();
+    if (!range || range.length === 0) {
+      alert("Please select the text you want to link before clicking 'Bold → Slug Link'.");
+      return;
     }
+
+    let selectedText = '';
+    try {
+      selectedText = editor.getText(range.index, range.length).trim();
+    } catch (e) {
+      console.error('Could not read selection text:', e);
+    }
+
+    if (!selectedText) {
+      alert('Selected text is empty. Please select valid text to link.');
+      return;
+    }
+
+    const generatedSlug = slugify(selectedText, { lower: true, strict: true, replacement: '-' });
+    if (!generatedSlug) {
+      alert('Could not generate slug from the selected text.');
+      return;
+    }
+
+    try {
+      editor.focus();
+      // replace selection with text that has link attribute
+      editor.deleteText(range.index, range.length);
+      editor.insertText(range.index, selectedText, { link: `/summary/${generatedSlug}` }, 'user');
+    } catch (e) {
+      console.error('Insert text failed:', e);
+    }
+
+    // Try to attach class/data attributes to the created anchor element.
+    const tryAttachDataAttr = (attempt = 0) => {
+      try {
+        const [leaf] = editor.getLeaf(range.index);
+        const domNode = leaf?.domNode;
+        const anchor =
+          domNode?.parentElement && domNode.parentElement.tagName === 'A'
+            ? domNode.parentElement
+            : null;
+
+        if (anchor) {
+          anchor.classList.add('slug-summary-link');
+          anchor.setAttribute('href', `/summary/${generatedSlug}`);
+          anchor.setAttribute('data-slug', generatedSlug);
+          return true;
+        }
+      } catch (err) {
+        // swallow and retry
+      }
+
+      if (attempt < 4) {
+        setTimeout(() => tryAttachDataAttr(attempt + 1), 30 * (attempt + 1));
+        return false;
+      }
+
+      // final fallback: paste an actual anchor HTML
+      try {
+        const safeText = selectedText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        try { editor.deleteText(range.index, selectedText.length); } catch (e) {}
+        editor.clipboard.dangerouslyPasteHTML(range.index, `<a class="slug-summary-link" data-slug="${generatedSlug}" href="/summary/${generatedSlug}">${safeText}</a>`);
+        return true;
+      } catch (err) {
+        console.warn('Fallback paste failed:', err);
+        return false;
+      }
+    };
+
+    tryAttachDataAttr(0);
+
+    try {
+      editor.setSelection(range.index + selectedText.length, 0);
+    } catch (e) {}
+
+    try {
+      setSummaryText(editor.root.innerHTML);
+    } catch (e) {}
+
+    alert(`Linked selection to /summary/${generatedSlug}`);
   };
 
   /* ---------- Exact auto-link (NEW) ---------- */
@@ -843,7 +889,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       alert(`Keyword auto-link complete — ${linkedCount} item(s) linked.`);
     } catch (err) {
       console.error('autoLinkBoldKeywords failed', err);
-      alert('Keyword auto-link failed. See console.');
+      alert('Keyword auto-link failed. See console.' );
     }
   };
 
@@ -983,7 +1029,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
           <label htmlFor="category">Category</label>
           <select id="category" value={category} onChange={e => setCategory(e.target.value)} required>
-            {CATEGORIES.map(c => <option value={c} key={c}>{c}</option>)}
+            {categories.map(c => <option value={c} key={c}>{c}</option>)}
           </select>
 
           <label htmlFor="difficulty">Difficulty level (optional)</label>

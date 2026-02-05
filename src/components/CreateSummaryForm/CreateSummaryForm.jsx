@@ -418,8 +418,9 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     }
   };
 
-  // ----------------- Slug-based auto-link (NO DB, future-proof) -----------------
-  // Converts bold text into slug links of the form /summary/<slug>
+  // ----------------- Slug-based auto-link (NO DB, selection-based) -----------------
+  // NOW: Links only the currently selected text to /summary/<slug>.
+  // If nothing is selected, warns the user and does nothing.
   const autoLinkBoldTextBySlug = () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) {
@@ -427,63 +428,94 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       return;
     }
 
-    const root = editor.root;
-    if (!root) {
-      alert("Editor root not available.");
+    const range = editor.getSelection();
+    if (!range || range.length === 0) {
+      alert("Please select the text you want to link before clicking 'Slug-link bold text'.");
       return;
     }
 
-    const nodeList = Array.from(root.querySelectorAll("strong, b, .ql-bold, *[style*='font-weight']"));
-    let linkedCount = 0;
+    let selectedText = "";
+    try {
+      selectedText = editor.getText(range.index, range.length).trim();
+    } catch (e) {
+      console.error("Could not read selection text:", e);
+    }
 
-    nodeList.forEach((node) => {
-      try {
-        if (node.closest && node.closest("a")) return; // already linked
+    if (!selectedText) {
+      alert("Selected text is empty. Please select valid text to link.");
+      return;
+    }
 
-        let isBold = false;
-        if (node.tagName && (node.tagName.toLowerCase() === "strong" || node.tagName.toLowerCase() === "b")) {
-          isBold = true;
-        } else {
-          try {
-            const cs = window.getComputedStyle(node);
-            const fw = cs && cs.fontWeight ? cs.fontWeight : "";
-            const num = parseInt(fw, 10);
-            if (!isNaN(num) && num >= 600) isBold = true;
-            if (fw === "bold" || fw === "bolder") isBold = true;
-          } catch (e) {}
-        }
-        if (!isBold) return;
-
-        const text = (node.textContent || "").trim();
-        if (!text) return;
-        if (text.length < 2) return;
-
-        const generatedSlug = slugify(text, { lower: true, strict: true, replacement: "-" });
-        if (!generatedSlug) return;
-
-        const anchor = document.createElement("a");
-        anchor.setAttribute("href", `/summary/${generatedSlug}`);
-        anchor.className = "slug-summary-link";
-
-        if (node.parentNode) {
-          node.parentNode.replaceChild(anchor, node);
-          anchor.appendChild(node);
-          linkedCount++;
-        }
-      } catch (err) {
-        console.warn("Slug auto-link failed for node:", err);
-      }
-    });
+    const generatedSlug = slugify(selectedText, { lower: true, strict: true, replacement: "-" });
+    if (!generatedSlug) {
+      alert("Could not generate slug from the selected text.");
+      return;
+    }
 
     try {
-      if (editor.update) editor.update("user");
+      editor.focus();
+      // Replace the selection with the same text but with a link attribute
+      editor.deleteText(range.index, range.length);
+      editor.insertText(range.index, selectedText, { link: `/summary/${generatedSlug}` }, "user");
+    } catch (e) {
+      console.error("Insert text failed:", e);
+    }
+
+    // Try to attach class/data attributes to the created anchor element.
+    const tryAttachDataAttr = (attempt = 0) => {
+      try {
+        const [leaf] = editor.getLeaf(range.index);
+        const domNode = leaf?.domNode;
+        const anchor =
+          domNode?.parentElement && domNode.parentElement.tagName === "A"
+            ? domNode.parentElement
+            : null;
+
+        if (anchor) {
+          anchor.classList.add("slug-summary-link");
+          anchor.setAttribute("href", `/summary/${generatedSlug}`);
+          anchor.setAttribute("data-slug", generatedSlug);
+          return true;
+        }
+      } catch (err) {
+        // swallow and retry
+      }
+
+      if (attempt < 4) {
+        setTimeout(() => tryAttachDataAttr(attempt + 1), 30 * (attempt + 1));
+        return false;
+      }
+
+      // final fallback: paste an actual anchor HTML
+      try {
+        const safeText = selectedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        // remove what we inserted (safe length)
+        try {
+          editor.deleteText(range.index, selectedText.length);
+        } catch (e) {}
+        editor.clipboard.dangerouslyPasteHTML(
+          range.index,
+          `<a class="slug-summary-link" data-slug="${generatedSlug}" href="/summary/${generatedSlug}">${safeText}</a>`
+        );
+        return true;
+      } catch (err) {
+        console.warn("Fallback paste failed:", err);
+        return false;
+      }
+    };
+
+    tryAttachDataAttr(0);
+
+    try {
+      editor.setSelection(range.index + selectedText.length, 0);
     } catch (e) {}
 
     try {
       setSummaryText(editor.root.innerHTML);
     } catch (e) {}
 
-    alert(`Slug auto-link complete — ${linkedCount} item(s) linked.`);
+    // Inform the user (single link created)
+    alert(`Linked selection to /summary/${generatedSlug}`);
   };
 
   // ----------------- Exact auto-link (NEW) -----------------
