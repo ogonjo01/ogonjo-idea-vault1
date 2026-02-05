@@ -9,13 +9,34 @@ import 'react-quill/dist/quill.snow.css';
 import './EditSummaryForm.css';
 
 /* ---------- Constants ---------- */
-const CATEGORIES = [
-  "Apps","Business Legends","Best Books","People","Business Giants","Business Concepts",
-  "Business Strategy & Systems","Courses & Learning Paths","Business Ideas","Quotes",
-  "Book Summaries","Entrepreneurship","Self-Improvement","Marketing & Sales",
-  "Money & Productivity","Mindset & Motivation","Career Development","Video Insights",
-  "Digital Skills & Technology","Leadership & Management","Concepts","Strategic Communication"
+const categories = [
+  "Apps",
+  "Best Books",
+  "Book Summaries",
+  "Business Concepts",
+  "Business Giants",
+  "Business Ideas",
+  "Business Legends",
+  "Business Strategy & Systems",
+  "Career Development",
+  "Companies & Organizations",
+  "Concepts",
+  "Courses & Learning Paths",
+  "Digital Skills & Technology",
+  "Entrepreneurship",
+  "Leadership & Management",
+  "Marketing & Sales",
+  "Markets & Geography",
+  "Mindset & Motivation",
+  "Money & Productivity",
+  "People",
+  "Quotes",
+  "Self-Improvement",
+  "Strategic Communication",
+  "Tools & Software",
+  "Video Insights"
 ];
+
 
 const DIFFICULTIES = [
   { value: "", label: "Not specified (optional)" },
