@@ -21,6 +21,7 @@ const categories = [
   "Career Development",
   "Companies & Organizations",
   "Concepts",
+  "Concepts Abbreviations",
   "Courses & Learning Paths",
   "Digital Skills & Technology",
   "Entrepreneurship",
