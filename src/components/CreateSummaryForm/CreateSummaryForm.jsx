@@ -420,7 +420,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
   };
 
   // ----------------- Slug-based auto-link (NO DB, selection-based) -----------------
-  // NOW: Links only the currently selected text to /summary/<slug>.
+  // NOW: Links only the currently selected text to /library/<slug>.
   // If nothing is selected, warns the user and does nothing.
   const autoLinkBoldTextBySlug = () => {
     const editor = quillRef.current?.getEditor();
@@ -457,7 +457,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
       editor.focus();
       // Replace the selection with the same text but with a link attribute
       editor.deleteText(range.index, range.length);
-      editor.insertText(range.index, selectedText, { link: `/summary/${generatedSlug}` }, "user");
+      editor.insertText(range.index, selectedText, { link: `/library/${generatedSlug}` }, "user");
     } catch (e) {
       console.error("Insert text failed:", e);
     }
@@ -474,7 +474,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
 
         if (anchor) {
           anchor.classList.add("slug-summary-link");
-          anchor.setAttribute("href", `/summary/${generatedSlug}`);
+          anchor.setAttribute("href", `/library/${generatedSlug}`);
           anchor.setAttribute("data-slug", generatedSlug);
           return true;
         }
@@ -496,7 +496,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         } catch (e) {}
         editor.clipboard.dangerouslyPasteHTML(
           range.index,
-          `<a class="slug-summary-link" data-slug="${generatedSlug}" href="/summary/${generatedSlug}">${safeText}</a>`
+          `<a class="slug-summary-link" data-slug="${generatedSlug}" href="/library/${generatedSlug}">${safeText}</a>`
         );
         return true;
       } catch (err) {
@@ -516,7 +516,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
     } catch (e) {}
 
     // Inform the user (single link created)
-    alert(`Linked selection to /summary/${generatedSlug}`);
+    alert(`Linked selection to /library/${generatedSlug}`);
   };
 
   // ----------------- Exact auto-link (NEW) -----------------
@@ -1289,7 +1289,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
         <form onSubmit={handleSubmit} className="summary-form">
           <label>Title</label>
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} required />
-          {slug && <small className="slug-preview">Generated slug: <code>/summary/{slug}</code></small>}
+          {slug && <small className="slug-preview">Generated slug: <code>/library/{slug}</code></small>}
 
           <label>Author</label>
           <input type="text" value={author} onChange={e => setAuthor(e.target.value)} required />
@@ -1355,7 +1355,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary }) => {
               🔎 Manual link
             </button>
             <div style={{ color: "#6b7280", fontSize: 12, marginLeft: 8 }}>
-              Only bold text is auto-linked. Use the slug button to always create /summary/&lt;slug&gt; links (no DB). Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
+              Only bold text is auto-linked. Use the slug button to always create /library/&lt;slug&gt; links (no DB). Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches.
             </div>
           </div>
 

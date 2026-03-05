@@ -1,5 +1,4 @@
-// src/components/HorizontalCarousel/HorizontalCarousel.jsx
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import './HorizontalCarousel.css';
 
 const CardSkeleton = () => (
@@ -15,7 +14,6 @@ const CardSkeleton = () => (
 
 /**
  * HorizontalCarousel
- * 
  * Props:
  *  - title: string
  *  - children: React nodes (rendered items)
@@ -48,13 +46,13 @@ const HorizontalCarousel = ({
     s.scrollBy({ left: delta, behavior: 'smooth' });
   }, []);
 
-  // Build explore link EXACTLY like ContentFeed does
-  const buildViewAllLink = useCallback((sortKey = 'newest', category = null, tag = null, fields = 'id,title,description,author,created_at,tags') => {
+  // Build explore link (same as ContentFeed)
+  const buildViewAllLink = useCallback((sk = 'newest', cat = null, tg = null, fields = 'id,title,description,author,created_at,tags') => {
     const params = new URLSearchParams();
-    if (sortKey) params.set('sort', sortKey);
-    if (category) params.set('category', category);
-    if (tag) {
-      params.set('tag', tag);
+    if (sk) params.set('sort', sk);
+    if (cat) params.set('category', cat);
+    if (tg) {
+      params.set('tag', tg);
       params.set('tag_only', '1');
     }
     if (fields) params.set('fields', fields);
@@ -62,7 +60,6 @@ const HorizontalCarousel = ({
     return s ? `/explore?${s}` : '/explore';
   }, []);
 
-  // Build text EXACTLY like ContentFeed does
   const buildSeeMoreText = useCallback(({ sortKey = 'newest', category = null, tag = null } = {}) => {
     const sortMap = {
       newest: 'Newest Content',
@@ -76,7 +73,6 @@ const HorizontalCarousel = ({
     return `Explore More From ${base}`;
   }, []);
 
-  // Render CTA EXACTLY like ContentFeed does
   const SeeMoreCTA = ({ href, text }) => {
     if (!href) return null;
     return (
@@ -87,14 +83,11 @@ const HorizontalCarousel = ({
   };
 
   const hasItems = Array.isArray(items) && items.length > 0;
-
-  // Generate href and text for "See More" button
-  const seeMoreHref = viewAllLink || buildViewAllLink(sortKey, category, tag);
-  const seeMoreText = buildSeeMoreText({ sortKey, category, tag });
+  const seeMoreHref = useMemo(() => viewAllLink || buildViewAllLink(sortKey, category, tag), [viewAllLink, buildViewAllLink, sortKey, category, tag]);
+  const seeMoreText = useMemo(() => buildSeeMoreText({ sortKey, category, tag }), [buildSeeMoreText, sortKey, category, tag]);
 
   return (
     <section className="hf-carousel" aria-roledescription="carousel" aria-label={title}>
-      {/* Header */}
       <div className="hf-carousel-header">
         <h3 className="hf-title">{title}</h3>
         <div className="hf-actions" role="toolbar" aria-label={`${title} controls`}>
@@ -119,7 +112,6 @@ const HorizontalCarousel = ({
         </div>
       </div>
 
-      {/* Scroller */}
       <div className="hf-scroller-wrapper">
         <div
           className="hf-scroller"
@@ -150,7 +142,6 @@ const HorizontalCarousel = ({
           )}
         </div>
 
-        {/* Bottom "Explore more" CTA - ALWAYS shown when items exist */}
         {hasItems && (
           <SeeMoreCTA href={seeMoreHref} text={seeMoreText} />
         )}

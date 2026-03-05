@@ -606,7 +606,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   };
 
   // ----------------- Slug-based auto-link (NO DB, selection-based) -----------------
-  // NOW: Links only the currently selected text to /summary/<slug>.
+  // NOW: Links only the currently selected text to /library/<slug>.
   // If nothing is selected, warns the user and does nothing.
   const autoLinkBoldToSlug = () => {
     const editor = quillRef.current?.getEditor();
@@ -643,7 +643,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       editor.focus();
       // replace selection with text that has link attribute
       editor.deleteText(range.index, range.length);
-      editor.insertText(range.index, selectedText, { link: `/summary/${generatedSlug}` }, 'user');
+      editor.insertText(range.index, selectedText, { link: `/library/${generatedSlug}` }, 'user');
     } catch (e) {
       console.error('Insert text failed:', e);
     }
@@ -660,7 +660,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
         if (anchor) {
           anchor.classList.add('slug-summary-link');
-          anchor.setAttribute('href', `/summary/${generatedSlug}`);
+          anchor.setAttribute('href', `/library/${generatedSlug}`);
           anchor.setAttribute('data-slug', generatedSlug);
           return true;
         }
@@ -677,7 +677,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       try {
         const safeText = selectedText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         try { editor.deleteText(range.index, selectedText.length); } catch (e) {}
-        editor.clipboard.dangerouslyPasteHTML(range.index, `<a class="slug-summary-link" data-slug="${generatedSlug}" href="/summary/${generatedSlug}">${safeText}</a>`);
+        editor.clipboard.dangerouslyPasteHTML(range.index, `<a class="slug-summary-link" data-slug="${generatedSlug}" href="/library/${generatedSlug}">${safeText}</a>`);
         return true;
       } catch (err) {
         console.warn('Fallback paste failed:', err);
@@ -695,7 +695,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       setSummaryText(editor.root.innerHTML);
     } catch (e) {}
 
-    alert(`Linked selection to /summary/${generatedSlug}`);
+    alert(`Linked selection to /library/${generatedSlug}`);
   };
 
   /* ---------- Exact auto-link (NEW) ---------- */
@@ -1125,7 +1125,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
             <button type="button" className="hf-btn" onClick={resetAndAutoRelink} style={{ background: '#eef2ff' }}>Reset & Auto-Relink</button>
             <div style={{ color: '#6b7280', fontSize: 12 }}>
-              Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches. Use Bold → Slug Link to deterministically create /summary/&lt;slug&gt; links.
+              Use 🎯 for strict exact-title linking, 🧠 to prioritize keywords+title, and 🔗 for fuzzy matches. Use Bold → Slug Link to deterministically create /library/&lt;slug&gt; links.
             </div>
           </div>
 

@@ -129,7 +129,8 @@ const AppInner = ({ session }) => {
           } />
           <Route path="/auth" element={!session ? <AuthForm /> : <p className="logged-in-message">You are already logged in!</p>} />
           <Route path="/profile/:userId" element={<UserProfile onEdit={handleEdit} onDelete={handleDelete} />} />
-          <Route path="/summary/:param" element={<SummaryView />} />
+          <Route path="/library/:param" element={<SummaryView />} />
+<Route path="/summary/:param" element={<SummaryView />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/features" element={<Features />} />
           <Route path="/contact" element={<Contact />} />

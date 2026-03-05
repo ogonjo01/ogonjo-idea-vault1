@@ -1,5 +1,6 @@
-// src/components/ContentFeed/ContentFeed.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useState, useEffect, useCallback, useRef, useMemo
+} from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
@@ -10,10 +11,6 @@ const ITEMS_PER_CAROUSEL = 12;
 const CATEGORY_BATCH = 3;
 const MIN_LOAD_MS = 350;
 
-/*
-  NOTE: LIGHT_SELECT now includes lightweight aggregate aliases so the
-  fast placeholder queries also return likes/views/comments counts.
-*/
 const LIGHT_SELECT = `
   id,
   created_at,
@@ -33,7 +30,6 @@ const LIGHT_SELECT = `
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
-// heavier select (kept for fallback / broader queries)
 const SELECT_WITH_COUNTS = `
   id,
   created_at,
@@ -124,7 +120,6 @@ const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, categor
     return msg.includes('Could not choose the best candidate function') || msg.includes('could not choose the best candidate');
   };
 
-  // helper that sorts rows defensively
   const sortRows = (rows) => {
     const copy = (rows || []).slice();
     if (rpcName.includes('new')) copy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -134,7 +129,6 @@ const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, categor
     return copy.slice(0, limit);
   };
 
-  // 1) try RPC
   try {
     const args = { p_limit: limit };
     if (category) args.p_category = category;
@@ -154,9 +148,8 @@ const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, categor
     console.warn(`[rpc] ${rpcName} threw`, e?.message || e);
   }
 
-  // 2) fallback: server-side selective queries (use SELECT_WITH_COUNTS)
+  // fallback
   try {
-    // 'new' we can rely on ordering server-side
     if (rpcName.includes('new')) {
       let q = supabase.from('book_summaries').select(LIGHT_SELECT).order('created_at', { ascending: false }).limit(limit);
       if (category) q = q.eq('category', category);
@@ -165,7 +158,6 @@ const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, categor
       return (data || []).map(normalizeRow);
     }
 
-    // for others request a larger page then sort client-side
     let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS).limit(500);
     if (category) q = q.eq('category', category);
     const { data, error } = await q;
@@ -229,8 +221,19 @@ const similarityScore = (item, query) => {
 };
 
 /* ---------------- Component ---------------- */
+
+const SECTIONS = [
+  { key: 'newest', title: 'Newest', sortKey: 'newest' },
+  { key: 'mostLiked', title: 'Most Liked', sortKey: 'likes' },
+  { key: 'highestRated', title: 'Most Rated', sortKey: 'rating' },
+  { key: 'mostViewed', title: 'Most Viewed', sortKey: 'views' },
+];
+
 const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQuery = '' }) => {
   const location = useLocation();
+  const mountedRef = useRef(true);
+  const generationRef = useRef(0);
+  const fastCacheRef = useRef(new Map());
 
   const [loadingGlobal, setLoadingGlobal] = useState(true);
   const [globalContent, setGlobalContent] = useState({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
@@ -242,7 +245,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   const [availableTags, setAvailableTags] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
-
   const [taggedResults, setTaggedResults] = useState(null);
   const [taggedLoading, setTaggedLoading] = useState(false);
 
@@ -253,24 +255,19 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
 
   const rootRef = useRef(null);
   const sentinelRef = useRef(null);
-  const mountedRef = useRef(true);
-  const fastCacheRef = useRef(new Map());
-
-  // generationRef prevents stale async runs from writing state (strict-mode safe)
-  const generationRef = useRef(0);
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
-  // ensure SPA navigation always starts at top of page AFTER route change (fallback)
+  // SPA route-change scroll reset
   useEffect(() => {
     try {
       window.scrollTo({ top: 0, behavior: 'auto' });
       if (document && document.documentElement) document.documentElement.scrollTop = 0;
       if (document && document.body) document.body.scrollTop = 0;
-    } catch (e) { /* ignore */ }
+    } catch (e) {}
   }, [location.pathname]);
 
-  // click-capture scroll guard
+  // click-capture scroll guard (watch both /summary/ and /library/)
   useEffect(() => {
     const root = rootRef.current || document;
     if (!root) return;
@@ -284,7 +281,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         let url;
         try { url = new URL(href, window.location.origin); } catch (err) { return; }
         if (url.origin !== window.location.origin) return;
-        if (url.pathname.startsWith('/summary/')) {
+        if (url.pathname.startsWith('/summary/') || url.pathname.startsWith('/library/')) {
           window.scrollTo({ top: 0, behavior: 'auto' });
           if (document && document.documentElement) document.documentElement.scrollTop = 0;
           if (document && document.body) document.body.scrollTop = 0;
@@ -295,10 +292,11 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return () => root.removeEventListener('click', onLinkClickCapture, true);
   }, []);
 
+  // effective query
   const [effectiveQuery, setEffectiveQuery] = useState((searchQuery || '').trim());
   useEffect(() => { setEffectiveQuery((searchQuery || '').trim()); }, [searchQuery]);
 
-  // scroll-to-top when category or effectiveQuery changes (feed-specific)
+  // scroll-to-top when category / search changes
   useEffect(() => {
     const scrollToFeedTop = () => {
       try {
@@ -321,7 +319,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return () => clearTimeout(t);
   }, [selectedCategory, effectiveQuery]);
 
-  // ---- Tags loader ----
+  // --- tags loader
   useEffect(() => {
     (async () => {
       try {
@@ -350,7 +348,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     })();
   }, [selectedCategory, tagsReloadKey]);
 
-  // FAST lightweight fetch (now returns counts because LIGHT_SELECT includes them)
+  // FAST lightweight fetch
   const fastFetchList = useCallback(async (limit = ITEMS_PER_CAROUSEL, category = null) => {
     const cacheKey = category ? `cat:${category}` : `global`;
     const cache = fastCacheRef.current.get(cacheKey);
@@ -369,7 +367,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     }
   }, []);
 
-  // heavy fetch (global blocks)
+  // heavy fetch
   const fetchContentBlock = useCallback(async (category = null) => {
     try {
       const start = Date.now();
@@ -398,7 +396,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     });
   }, []);
 
-  // ranking with tag boost
+  // ranking logic (kept as pure function)
   const rankItemsWithBoost = useCallback((items = [], selectedTags = [], sortKey = 'newest') => {
     if (!items || items.length === 0) return [];
     if (!selectedTags || selectedTags.length === 0) {
@@ -467,7 +465,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     }
   }, [categoryQueue, loadingCategories, fetchContentBlock, fastFetchList, replaceCategoryBlock]);
 
-  // MAIN orchestration (generationRef prevents stale writes)
+  // MAIN orchestration effect
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -475,13 +473,8 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       const gen = generationRef.current;
       const isStale = () => gen !== generationRef.current || cancelled || !mountedRef.current;
 
-      console.debug('🔍 [MAIN] Effect fired. selectedCategory=', selectedCategory, 'effectiveQuery=', effectiveQuery);
-
-      // clear fast cache synchronously for this run (no extra render)
       fastCacheRef.current.clear();
-      console.debug('🔍 [CACHE] fastCacheRef cleared (sync).');
 
-      // helper merge setter (only if still current generation)
       const safeSetGlobalContent = (updater) => {
         if (isStale()) return;
         setGlobalContent((prev) => {
@@ -497,7 +490,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       setSearchResults([]);
       setSearchRelated([]);
 
-      // SEARCH mode
+      // SEARCH MODE
       if (effectiveQuery && effectiveQuery.trim()) {
         const start = Date.now();
         try {
@@ -609,7 +602,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       try {
         const fast = await fastFetchList(ITEMS_PER_CAROUSEL);
         if (isStale()) return;
-        // set placeholders (merge)
         safeSetGlobalContent({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
 
         (async () => {
@@ -617,7 +609,6 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
             const [globalBlock, cats] = await Promise.all([fetchContentBlock(), fetchTopCategories(200)]);
             if (isStale()) return;
 
-            // selective merge: only replace arrays that returned non-empty results
             safeSetGlobalContent((prev) => ({
               newest: (globalBlock.newest && globalBlock.newest.length) ? globalBlock.newest : prev.newest,
               mostLiked: (globalBlock.mostLiked && globalBlock.mostLiked.length) ? globalBlock.mostLiked : prev.mostLiked,
@@ -674,7 +665,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory, effectiveQuery, fastFetchList, fetchContentBlock, replaceCategoryBlock]);
 
-  // sentinel observer for additional categories
+  // sentinel observer
   useEffect(() => {
     if (!sentinelRef.current) return;
     const node = sentinelRef.current;
@@ -689,7 +680,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return () => obs.disconnect();
   }, [hasMoreCategories, loadingCategories, loadNextCategoryBatch]);
 
-  // fetchTaggedContent (for tag chips)
+  // fetchTaggedContent
   const fetchTaggedContent = useCallback(async (tag, category = null, limit = ITEMS_PER_CAROUSEL) => {
     if (!tag) return [];
     try {
@@ -704,8 +695,8 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     }
   }, []);
 
-  // helper: buildViewAllLink
-  const buildViewAllLink = (sortKey = 'newest', category = null, tag = null, fields = 'id,title,description,author,created_at,tags') => {
+  // buildViewAllLink & buildSeeMoreText (stable)
+  const buildViewAllLink = useCallback((sortKey = 'newest', category = null, tag = null, fields = 'id,title,description,author,created_at,tags') => {
     const params = new URLSearchParams();
     if (sortKey) params.set('sort', sortKey);
     if (category) params.set('category', category);
@@ -716,9 +707,9 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     if (fields) params.set('fields', fields);
     const s = params.toString();
     return s ? `/explore?${s}` : '/explore';
-  };
+  }, []);
 
-  const buildSeeMoreText = ({ sortKey = 'newest', category = null, tag = null } = {}) => {
+  const buildSeeMoreText = useCallback(({ sortKey = 'newest', category = null, tag = null } = {}) => {
     const sortMap = {
       newest: 'Newest Content',
       likes: 'Most Liked content',
@@ -729,16 +720,17 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     if (tag) return `Explore More From ${base} In "${tag}"`;
     if (category) return `Explore More From ${base} In ${category}`;
     return `Explore More From ${base}`;
-  };
+  }, []);
 
-  const SeeMoreCTA = ({ href, text }) => {
+  // SeeMore CTA component (keeps existing className)
+  const SeeMoreCTA = useCallback(({ href, text }) => {
     if (!href) return null;
     return (
       <div className="see-more-wrapper" aria-hidden={false}>
         <a href={href} className="see-more-btn" role="button">{text}</a>
       </div>
     );
-  };
+  }, []);
 
   // tagged results effect
   useEffect(() => {
@@ -765,19 +757,19 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return () => { mounted = false; };
   }, [selectedTags, selectedCategory, fetchTaggedContent]);
 
-  const toggleTag = (tag) => {
+  const toggleTag = useCallback((tag) => {
     const lower = tag.toLowerCase();
     setSelectedTags(prev => {
       const cur = Array.isArray(prev) ? prev : [];
       if (cur.length > 0 && cur[0] === lower) return [];
       return [lower];
     });
-  };
+  }, []);
 
-  const clearTags = () => setSelectedTags([]);
+  const clearTags = useCallback(() => setSelectedTags([]), []);
 
-  // renderCards
-  const renderCards = (items, mode = 'newest') => {
+  // renderCards (memoized ranking)
+  const renderCards = useCallback((items, mode = 'newest') => {
     if (!items || !Array.isArray(items)) return null;
     if (mode === 'search') {
       return items.map((summary) => (
@@ -788,7 +780,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
     return (ranked || []).map((summary) => (
       <BookSummaryCard key={String(summary.id ?? summary.slug)} summary={summary} onEdit={onEdit} onDelete={onDelete} />
     ));
-  };
+  }, [onEdit, onDelete, rankItemsWithBoost, selectedTags]);
 
   const isForYou = selectedCategory === 'For You' || selectedCategory === 'All';
 
@@ -887,7 +879,7 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
         </section>
       )}
 
-      {/* SEARCH results (uses effectiveQuery) */}
+      {/* SEARCH results */}
       {effectiveQuery && effectiveQuery.trim() && (
         <>
           <section className="feed-section">
@@ -913,18 +905,11 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       {/* SPECIFIC CATEGORY (no search) */}
       {(!isForYou && !effectiveQuery) && loadedCategoryBlocks.length > 0 && (
         <div key={`${loadedCategoryBlocks[0].category}-single`}>
-          {['newest', 'mostLiked', 'highestRated', 'mostViewed'].map((k) => {
-            const titleMap = {
-              newest: `Newest in ${loadedCategoryBlocks[0].category}`,
-              mostLiked: `Most Liked in ${loadedCategoryBlocks[0].category}`,
-              highestRated: `Most Rated in ${loadedCategoryBlocks[0].category}`,
-              mostViewed: `Most Viewed in ${loadedCategoryBlocks[0].category}`,
-            };
-            const items = loadedCategoryBlocks[0][k];
-            const sortKey = k === 'newest' ? 'newest' : (k === 'mostLiked' ? 'likes' : (k === 'highestRated' ? 'rating' : 'views'));
+          {SECTIONS.map(({ key, title, sortKey }) => {
+            const items = loadedCategoryBlocks[0][key];
             return (
-              <section className="feed-section" key={k}>
-                <HorizontalCarousel title={titleMap[k]} items={items} loading={loadingGlobal} skeletonCount={6}>
+              <section className="feed-section" key={key}>
+                <HorizontalCarousel title={`${title} in ${loadedCategoryBlocks[0].category}`} items={items} loading={loadingGlobal} skeletonCount={6}>
                   {renderCards(items, sortKey)}
                 </HorizontalCarousel>
 
@@ -938,69 +923,28 @@ const ContentFeed = ({ selectedCategory = 'For You', onEdit, onDelete, searchQue
       {/* FOR YOU / ALL (no search) */}
       {isForYou && !effectiveQuery && (
         <>
-          <section className="feed-section">
-            <HorizontalCarousel title="Newest" items={globalContent.newest} loading={loadingGlobal} skeletonCount={6}>
-              {renderCards(globalContent.newest, 'newest')}
-            </HorizontalCarousel>
+          {SECTIONS.map(({ key, title, sortKey }) => (
+            <section className="feed-section" key={key}>
+              <HorizontalCarousel title={title} items={globalContent[key]} loading={loadingGlobal} skeletonCount={6}>
+                {renderCards(globalContent[key], sortKey)}
+              </HorizontalCarousel>
 
-            <SeeMoreCTA href={buildViewAllLink('newest', null)} text={buildSeeMoreText({ sortKey: 'newest' })} />
-          </section>
-
-          <section className="feed-section">
-            <HorizontalCarousel title="Most Liked" items={globalContent.mostLiked} loading={loadingGlobal} skeletonCount={6}>
-              {renderCards(globalContent.mostLiked, 'likes')}
-            </HorizontalCarousel>
-
-            <SeeMoreCTA href={buildViewAllLink('likes', null)} text={buildSeeMoreText({ sortKey: 'likes' })} />
-          </section>
-
-          <section className="feed-section">
-            <HorizontalCarousel title="Most Rated" items={globalContent.highestRated} loading={loadingGlobal} skeletonCount={6}>
-              {renderCards(globalContent.highestRated, 'rating')}
-            </HorizontalCarousel>
-
-            <SeeMoreCTA href={buildViewAllLink('rating', null)} text={buildSeeMoreText({ sortKey: 'rating' })} />
-          </section>
-
-          <section className="feed-section">
-            <HorizontalCarousel title="Most Viewed" items={globalContent.mostViewed} loading={loadingGlobal} skeletonCount={6}>
-              {renderCards(globalContent.mostViewed, 'views')}
-            </HorizontalCarousel>
-
-            <SeeMoreCTA href={buildViewAllLink('views', null)} text={buildSeeMoreText({ sortKey: 'views' })} />
-          </section>
+              <SeeMoreCTA href={buildViewAllLink(sortKey, null)} text={buildSeeMoreText({ sortKey })} />
+            </section>
+          ))}
 
           {loadedCategoryBlocks.map((block, i) => (
             <section className="category-block" key={`${String(block.category)}-${i}`}>
               <div className="category-block-header"><h3 className="cat-title">{block.category}</h3></div>
 
-              <section className="feed-section">
-                <HorizontalCarousel title={`Newest in ${block.category}`} items={block.newest} loading={loadingGlobal} skeletonCount={4}>
-                  {renderCards(block.newest, 'newest')}
-                </HorizontalCarousel>
-                <SeeMoreCTA href={buildViewAllLink('newest', block.category)} text={buildSeeMoreText({ sortKey: 'newest', category: block.category })} />
-              </section>
-
-              <section className="feed-section">
-                <HorizontalCarousel title={`Most Liked in ${block.category}`} items={block.mostLiked} loading={loadingGlobal} skeletonCount={4}>
-                  {renderCards(block.mostLiked, 'likes')}
-                </HorizontalCarousel>
-                <SeeMoreCTA href={buildViewAllLink('likes', block.category)} text={buildSeeMoreText({ sortKey: 'likes', category: block.category })} />
-              </section>
-
-              <section className="feed-section">
-                <HorizontalCarousel title={`Highest Rated in ${block.category}`} items={block.highestRated} loading={loadingGlobal} skeletonCount={4}>
-                  {renderCards(block.highestRated, 'rating')}
-                </HorizontalCarousel>
-                <SeeMoreCTA href={buildViewAllLink('rating', block.category)} text={buildSeeMoreText({ sortKey: 'rating', category: block.category })} />
-              </section>
-
-              <section className="feed-section">
-                <HorizontalCarousel title={`Most Viewed in ${block.category}`} items={block.mostViewed} loading={loadingGlobal} skeletonCount={4}>
-                  {renderCards(block.mostViewed, 'views')}
-                </HorizontalCarousel>
-                <SeeMoreCTA href={buildViewAllLink('views', block.category)} text={buildSeeMoreText({ sortKey: 'views', category: block.category })} />
-              </section>
+              {SECTIONS.map(({ key, title, sortKey }) => (
+                <section className="feed-section" key={`${block.category}-${key}`}>
+                  <HorizontalCarousel title={`${title} in ${block.category}`} items={block[key]} loading={loadingGlobal} skeletonCount={4}>
+                    {renderCards(block[key], sortKey)}
+                  </HorizontalCarousel>
+                  <SeeMoreCTA href={buildViewAllLink(sortKey, block.category)} text={buildSeeMoreText({ sortKey, category: block.category })} />
+                </section>
+              ))}
             </section>
           ))}
 
