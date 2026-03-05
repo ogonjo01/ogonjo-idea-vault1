@@ -17,9 +17,23 @@ import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import FAQ from "./pages/FAQ";
 import Footer from './components/Footer';
-import ResetPassword from "./pages/ResetPassword"; 
+import ResetPassword from "./pages/ResetPassword";
 import SubscriptionPopup from './components/SubscriptionPopup/SubscriptionPopup';
 import './App.css';
+
+// ─── Scroll to top on every navigation ───────────────────────────────────────
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const main = document.querySelector('.main-content');
+    if (main) main.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }, [pathname]);
+  return null;
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 const AppInner = ({ session }) => {
   const navigate = useNavigate();
@@ -45,17 +59,12 @@ const AppInner = ({ session }) => {
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
-
     const handleScroll = () => {
-      if (isHomePage) {
-        setHeaderHidden(false);
-        return;
-      }
+      if (isHomePage) { setHeaderHidden(false); return; }
       const currentScrollY = window.scrollY;
       setHeaderHidden(currentScrollY > 0);
       lastScrollY = currentScrollY;
     };
-
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isHomePage]);
@@ -65,15 +74,11 @@ const AppInner = ({ session }) => {
       const subscribedAt = localStorage.getItem('subscribedAt');
       const dismissedAt = localStorage.getItem('popupDismissedAt');
       const now = Date.now();
-      const popupDelay = 4 * 24 * 60 * 60 * 1000; // 4 days in milliseconds
-
-      if (subscribedAt) return; // Don't show if subscribed
-      if (!dismissedAt || now - parseInt(dismissedAt) > popupDelay) {
-        setShowPopup(true); // Show if never dismissed or 4+ days since dismissal
-      }
+      const popupDelay = 4 * 24 * 60 * 60 * 1000;
+      if (subscribedAt) return;
+      if (!dismissedAt || now - parseInt(dismissedAt) > popupDelay) setShowPopup(true);
     };
-
-    const timer = setTimeout(checkPopup, 10000); // Show after 10 seconds
+    const timer = setTimeout(checkPopup, 10000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -102,20 +107,21 @@ const AppInner = ({ session }) => {
 
   return (
     <div className="app-container">
-      <Header 
-        session={session} 
-        onAddClick={() => setShowAddForm(true)} 
-        onSearch={handleSearch} 
-        isHomePage={isHomePage} 
-        isHidden={headerHidden} 
+      <ScrollToTop />
+      <Header
+        session={session}
+        onAddClick={() => setShowAddForm(true)}
+        onSearch={handleSearch}
+        isHomePage={isHomePage}
+        isHidden={headerHidden}
       />
-      <CategoryFilter 
-        selectedCategory={selectedCategory} 
-        onSelectCategory={handleNavClick} 
-        isHomePage={isHomePage} 
-        isHidden={headerHidden} 
+      <CategoryFilter
+        selectedCategory={selectedCategory}
+        onSelectCategory={handleNavClick}
+        isHomePage={isHomePage}
+        isHidden={headerHidden}
       />
-      
+
       <main className="main-content">
         <Routes>
           <Route path="/" element={
@@ -130,14 +136,13 @@ const AppInner = ({ session }) => {
           <Route path="/auth" element={!session ? <AuthForm /> : <p className="logged-in-message">You are already logged in!</p>} />
           <Route path="/profile/:userId" element={<UserProfile onEdit={handleEdit} onDelete={handleDelete} />} />
           <Route path="/library/:param" element={<SummaryView />} />
-<Route path="/summary/:param" element={<SummaryView />} />
+          <Route path="/summary/:param" element={<SummaryView />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/features" element={<Features />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-
           <Route path="/faq" element={<FAQ />} />
           <Route path="/about" element={<About />} />
           <Route path="/subscribe" element={<SubscriptionPage />} />
@@ -145,17 +150,13 @@ const AppInner = ({ session }) => {
 
         {showAddForm && (
           <AddSummaryForm
-            onClose={() => {
-              setShowAddForm(false);
-              setEditingSummary(null);
-            }}
+            onClose={() => { setShowAddForm(false); setEditingSummary(null); }}
             summaryToEdit={editingSummary}
           />
         )}
       </main>
 
       <Footer />
-
       {showPopup && <SubscriptionPopup onClose={() => setShowPopup(false)} />}
     </div>
   );
@@ -165,17 +166,9 @@ const App = () => {
   const [session, setSession] = useState(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
   return (
