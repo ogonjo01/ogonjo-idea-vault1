@@ -443,36 +443,32 @@ const AIAdvisor = ({ theme:T }) => {
     { id:'news',           label:'📰 Business News'    },
   ];
 
-  // Contextual suggested prompts per tab
-  const SUGGESTED_PROMPTS = {
+  // Dynamic suggested prompts — fetched fresh on every load
+  const [suggestedPrompts, setSuggestedPrompts] = useState({
     chat: [
       "What business topics are trending on Google right now?",
-      "How can I monetize Ogonjo's traffic better?",
+      "How can I monetize Ogonjo\'s traffic better?",
       "What content should I create this week to grow traffic?",
-      "What are the most profitable content niches in business right now?",
-      "How do platforms like HBR and Investopedia make money?",
-      "What's the fastest way to grow from 10k to 100k monthly visitors?",
       "Which African business trends should I be covering?",
       "How do I get my content into Google Discover?",
-      "What business books are people searching for right now?",
-      "How should I price a premium membership on Ogonjo?",
     ],
     trending: [
-      "What's trending in AI business tools?",
-      "What are entrepreneurs searching for most right now?",
-      "Which business concepts are going viral this week?",
+      "What niche has the highest search demand right now?",
+      "What are entrepreneurs searching for most this week?",
+      "Which business concepts are going viral right now?",
     ],
     recommendations: [
-      "What content gaps am I missing in this category?",
-      "What's the highest traffic opportunity right now?",
+      "What content gaps am I missing right now?",
+      "What\'s the highest traffic opportunity this month?",
       "What type of content gets the most Google Discover clicks?",
     ],
     news: [
       "What business news should I turn into content today?",
-      "What's the biggest economic story affecting entrepreneurs?",
-      "What market trends should I write about this week?",
+      "What\'s the biggest economic story affecting entrepreneurs?",
+      "What market trend should I write about this week?",
     ],
-  };
+  });
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
 
   const IMPACT_C = { high:'#ef4444', hot:'#ef4444', medium:'#f97316', low:'#f59e0b', rising:'#10b981' };
   const VOLUME_C = { high:'#06b6d4', medium:'#f97316', rising:'#10b981' };
@@ -495,6 +491,23 @@ const AIAdvisor = ({ theme:T }) => {
         (cats||[]).forEach(r=>{ const c=r.category||'Other'; catMap[c]=(catMap[c]||0)+1; });
         const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,count])=>({name,count}));
         if(mounted) setPlatform({ topContent:top||[], topCategories:topCats, totalContent:count||0 });
+
+        // Fetch dynamic trending suggestions
+        try {
+          const sugRes = await fetch('/api/ai-advisor', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({ mode:'suggestions', category:'business' }),
+          });
+          if(sugRes.ok) {
+            const sugData = await sugRes.json();
+            if(!sugData.error && sugData.chat && mounted) {
+              setSuggestedPrompts(sugData);
+            }
+          }
+        } catch(e){ console.log('Suggestions load failed, using defaults'); }
+        finally{ if(mounted) setSuggestionsLoading(false); }
+
       } catch(err){ console.error('AIAdvisor init',err); }
     };
     load();
@@ -575,12 +588,20 @@ const AIAdvisor = ({ theme:T }) => {
 
   // ── Prompt suggestions strip ───────────────────────────────────────────────
   const PromptStrip = ({ tab }) => {
-    const prompts = SUGGESTED_PROMPTS[tab] || [];
+    const prompts = suggestedPrompts[tab] || [];
     const isChat = tab === 'chat';
     return (
       <div style={{ marginBottom:10 }}>
-        <div style={{ fontSize:10, color:T.textMuted, marginBottom:6, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
-          {isChat ? '💡 Suggested questions' : '💬 Ask Marcus about this'}
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+          <div style={{ fontSize:10, color:T.textMuted, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
+            {isChat ? '💡 Trending questions' : '💬 Ask Marcus'}
+          </div>
+          {suggestionsLoading && (
+            <span style={{ fontSize:9, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, padding:'1px 6px', borderRadius:10 }}>updating…</span>
+          )}
+          {!suggestionsLoading && (
+            <span style={{ fontSize:9, color:'#34d399', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.2)', padding:'1px 6px', borderRadius:10 }}>● live</span>
+          )}
         </div>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
           {prompts.slice(0, isChat ? 5 : 3).map((p,i)=>(

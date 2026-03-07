@@ -69,6 +69,23 @@ COMMUNICATION STYLE:
 
 Always search the web for current information before answering questions about trends, news, or what is popular right now. Today is March 2026.`;
 
+const suggestionsPrompt = () => `You are a business intelligence analyst. Based on what is currently trending in the business world in March 2026, generate smart, specific questions that a business content platform owner would want to ask their AI advisor right now. Make them highly relevant to current events, trending topics, and real business opportunities.
+
+Return ONLY valid JSON, no markdown, no backticks:
+{
+  "chat": ["question1","question2","question3","question4","question5","question6","question7","question8"],
+  "trending": ["question1","question2","question3"],
+  "recommendations": ["question1","question2","question3"],
+  "news": ["question1","question2","question3"]
+}
+
+Chat questions should be about: current trending business topics, monetization strategies, content that will go viral right now, what entrepreneurs are searching for today, specific industries that are booming.
+Trending questions should be about: specific niches with high search demand right now.
+Recommendations questions should be about: content gaps and opportunities based on current market.
+News questions should be about: turning today specific business news into content.
+
+Make every question specific and timely — reference actual current trends, not generic advice.`;
+
 export default async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -143,6 +160,7 @@ export default async (request) => {
       if (mode === 'trending')             prompt = trendingPrompt(category);
       else if (mode === 'recommendations') prompt = recommendationsPrompt(category, platformData);
       else if (mode === 'news')            prompt = newsPrompt(category);
+      else if (mode === 'suggestions') prompt = suggestionsPrompt();
       else return new Response(JSON.stringify({ error: 'Invalid mode.' }), { status: 400 });
 
       // No grounding tool for structured modes — it injects extra text that breaks JSON
