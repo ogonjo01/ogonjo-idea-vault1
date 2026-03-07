@@ -10,7 +10,7 @@ const trendingPrompt = (category) => `You are a senior business intelligence ana
 Return ONLY a valid JSON object. No markdown. No backticks. No explanation before or after. Just the raw JSON:
 {"category":"${category}","updatedAt":"now","trendingSearces":[{"searchQuery":"exact phrase people type","volume":"high|medium|rising","contentAngle":"specific compelling article title to write","reason":"why this is trending right now in one sentence","googleDiscoverPotential":"high|medium|low"}],"risingTopics":["topic1","topic2","topic3","topic4","topic5"],"insight":"2-sentence summary of what is driving search interest in ${category} right now"}
 
-Provide exactly 8 trending searches. Base this on real current data from the web.`;
+Provide exactly 6 trending searches. Keep reason field to 10 words max.`;
 
 const recommendationsPrompt = (category, pd) => `You are a senior content strategist specializing in Google SEO and Discover traffic. Search the web for what is currently trending in "${category}" in March 2026.
 
@@ -21,14 +21,14 @@ Cross-reference live search trends with existing platform gaps to recommend the 
 Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 {"category":"${category}","summary":"2-sentence strategy focusing on biggest opportunity","recommendations":[{"title":"specific compelling title","type":"Book Summary|Business Concept|Business Idea|Course|Market Analysis|Company Profile","searchDemand":"high|medium|rising","reason":"specific reason this will get Google traffic","urgency":"hot|high|medium","estimatedImpact":"specific traffic/engagement prediction"}],"contentGaps":["specific gap 1","specific gap 2","specific gap 3"],"quickWins":["quick win 1","quick win 2","quick win 3"]}
 
-Provide exactly 6 recommendations based on real current search trends.`;
+Provide exactly 5 recommendations. Keep reason and estimatedImpact fields brief (10 words max each).`;
 
 const newsPrompt = (category) => `You are a business news analyst. Search the web for the most important business news related to "${category}" published in the last 48-72 hours (around March 7, 2026). Focus on news that matters to entrepreneurs, business owners, investors, and content creators in this space.
 
 Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 {"category":"${category}","fetchedAt":"now","headlines":[{"title":"exact headline","summary":"2-sentence summary of what happened and why it matters","source":"publication name","publishedAt":"e.g. 2 hours ago / yesterday","relevance":"why this matters for business content creators","contentOpportunity":"specific article title you could write based on this news","impact":"high|medium|low"}],"marketSentiment":"bullish|bearish|neutral|mixed","keyTheme":"the single biggest business theme dominating the news today","editorNote":"2-sentence actionable advice on what content to create this week based on these headlines"}
 
-Provide exactly 7 headlines. Use real current news from the web.`;
+Provide exactly 5 headlines. Use real current news from the web. Keep each summary to 1 sentence max.`;
 
 const chatSystemPrompt = (platformData, categories) => `You are Marcus — an elite business consultant, growth strategist, and content monetization expert advising the founder of Ogonjo, a fast-growing business knowledge platform. You have 20+ years of experience advising startups, Fortune 500s, and digital media companies.
 
@@ -184,7 +184,7 @@ export default async (request) => {
       // No grounding tool for structured modes — it injects extra text that breaks JSON
       geminiBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
+        generationConfig: { maxOutputTokens: 4000, temperature: 0.3 },
       };
     }
 
@@ -206,11 +206,15 @@ export default async (request) => {
     const data = await geminiRes.json();
 
     // Extract text from Gemini response
-    const textBlocks = (data.candidates || [])
-      .flatMap(c => c.content?.parts || [])
-      .filter(p => p.text)
+    // gemini-2.5-flash is a thinking model — it may return thought parts + text parts
+    // We want only non-thought text parts
+    const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
+    console.log('Parts count:', allParts.length, 'types:', allParts.map(p => p.thought ? 'thought' : p.text ? 'text' : 'other').join(','));
+    const textBlocks = allParts
+      .filter(p => p.text && !p.thought)
       .map(p => p.text)
       .join('');
+    console.log('Raw textBlocks length:', textBlocks.length, 'preview:', textBlocks.slice(0, 200));
 
     if (!textBlocks) {
       console.error('Empty Gemini response:', JSON.stringify(data).slice(0, 500));
