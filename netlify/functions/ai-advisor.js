@@ -145,9 +145,9 @@ export default async (request) => {
       else if (mode === 'news')            prompt = newsPrompt(category);
       else return new Response(JSON.stringify({ error: 'Invalid mode.' }), { status: 400 });
 
+      // No grounding tool for structured modes — it injects extra text that breaks JSON
       geminiBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        tools: [groundingTool],
         generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
       };
     }
@@ -202,6 +202,7 @@ export default async (request) => {
         );
       }
       clean = clean.slice(start, end + 1);
+      console.log('Parsing JSON, length:', clean.length, 'preview:', clean.slice(0, 120));
       const parsed = JSON.parse(clean);
       return new Response(JSON.stringify(parsed), {
         status: 200,
