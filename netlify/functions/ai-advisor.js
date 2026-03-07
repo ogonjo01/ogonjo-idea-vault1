@@ -2,8 +2,9 @@
 // Handles 4 modes: trending | recommendations | news | chat
 // Uses Google Gemini 2.5 Flash with grounding (real-time web search)
 
-const MODEL = 'gemini-2.5-flash';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const MODEL_CHAT = 'gemini-2.5-flash';        // powerful, for chat (20/day free)
+const MODEL_STRUCTURED = 'gemini-2.0-flash-lite'; // generous free tier, for structured tabs
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const trendingPrompt = (category) => `You are a senior business intelligence analyst. Search the web RIGHT NOW for what people are actively searching for and what topics are trending in the "${category}" space — specifically content that gets discovered via Google Search and Google Discover in March 2026.
 
@@ -170,7 +171,8 @@ export default async (request) => {
       };
     }
 
-    const geminiRes = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    const modelToUse = mode === 'chat' ? MODEL_CHAT : MODEL_STRUCTURED;
+    const geminiRes = await fetch(`${GEMINI_BASE}/${modelToUse}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(geminiBody),

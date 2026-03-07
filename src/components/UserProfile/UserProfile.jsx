@@ -492,21 +492,8 @@ const AIAdvisor = ({ theme:T }) => {
         const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,count])=>({name,count}));
         if(mounted) setPlatform({ topContent:top||[], topCategories:topCats, totalContent:count||0 });
 
-        // Fetch dynamic trending suggestions
-        try {
-          const sugRes = await fetch('/api/ai-advisor', {
-            method:'POST',
-            headers:{ 'Content-Type':'application/json' },
-            body: JSON.stringify({ mode:'suggestions', category:'business' }),
-          });
-          if(sugRes.ok) {
-            const sugData = await sugRes.json();
-            if(!sugData.error && sugData.chat && mounted) {
-              setSuggestedPrompts(sugData);
-            }
-          }
-        } catch(e){ console.log('Suggestions load failed, using defaults'); }
-        finally{ if(mounted) setSuggestionsLoading(false); }
+        // Suggestions are refreshed manually to preserve quota
+        if(mounted) setSuggestionsLoading(false);
 
       } catch(err){ console.error('AIAdvisor init',err); }
     };
@@ -586,6 +573,23 @@ const AIAdvisor = ({ theme:T }) => {
     <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:10 }}>{children}</div>
   );
 
+  // ── Refresh suggestions manually ──────────────────────────────────────────
+  const refreshSuggestions = async () => {
+    setSuggestionsLoading(true);
+    try {
+      const res = await fetch('/api/ai-advisor', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ mode:'suggestions', category:'business' }),
+      });
+      if(res.ok) {
+        const data = await res.json();
+        if(!data.error && data.chat) setSuggestedPrompts(data);
+      }
+    } catch(e){ console.log('Suggestions refresh failed'); }
+    finally{ setSuggestionsLoading(false); }
+  };
+
   // ── Prompt suggestions strip ───────────────────────────────────────────────
   const PromptStrip = ({ tab }) => {
     const prompts = suggestedPrompts[tab] || [];
@@ -594,14 +598,13 @@ const AIAdvisor = ({ theme:T }) => {
       <div style={{ marginBottom:10 }}>
         <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
           <div style={{ fontSize:10, color:T.textMuted, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
-            {isChat ? '💡 Trending questions' : '💬 Ask Marcus'}
+            {isChat ? '💡 Suggested questions' : '💬 Ask Marcus'}
           </div>
-          {suggestionsLoading && (
-            <span style={{ fontSize:9, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, padding:'1px 6px', borderRadius:10 }}>updating…</span>
-          )}
-          {!suggestionsLoading && (
-            <span style={{ fontSize:9, color:'#34d399', background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.2)', padding:'1px 6px', borderRadius:10 }}>● live</span>
-          )}
+          <button onClick={refreshSuggestions} disabled={suggestionsLoading} title="Refresh suggestions based on today's trends"
+            style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:10, padding:'1px 7px', fontSize:9, color:T.textMuted, cursor:suggestionsLoading?'default':'pointer', transition:'all 0.15s' }}
+            onMouseEnter={e=>{ if(!suggestionsLoading){ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}}
+            onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}
+          >{suggestionsLoading ? 'updating…' : '↻ refresh'}</button>
         </div>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
           {prompts.slice(0, isChat ? 5 : 3).map((p,i)=>(
