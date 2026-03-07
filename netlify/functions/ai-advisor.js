@@ -2,8 +2,7 @@
 // Handles 4 modes: trending | recommendations | news | chat
 // Uses Google Gemini 2.5 Flash with grounding (real-time web search)
 
-const MODEL_CHAT = 'gemini-2.5-flash';        // powerful, for chat (20/day free)
-const MODEL_STRUCTURED = 'gemini-2.0-flash-lite'; // generous free tier, for structured tabs
+const MODEL = 'gemini-2.5-flash';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const trendingPrompt = (category) => `You are a senior business intelligence analyst. Search the web RIGHT NOW for what people are actively searching for and what topics are trending in the "${category}" space — specifically content that gets discovered via Google Search and Google Discover in March 2026.
@@ -114,9 +113,27 @@ export default async (request) => {
     );
   }
 
+  // ── Simple in-memory cache (resets on function cold start, ~6hr TTL) ────────
+  // For production, swap this with a Supabase table read/write
+  const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+  if (!globalThis._aiCache) globalThis._aiCache = {};
+
   try {
     const body = await request.json();
     const { mode, category, platformData, message, history, categories } = body;
+
+    // Cache non-chat, non-suggestions modes to save quota
+    const cacheKey = `${mode}:${category}`;
+    if (mode !== 'chat' && mode !== 'suggestions') {
+      const cached = globalThis._aiCache[cacheKey];
+      if (cached && (Date.now() - cached.ts) < CACHE_TTL) {
+        console.log('Cache hit:', cacheKey);
+        return new Response(JSON.stringify(cached.data), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'X-Cache': 'HIT' },
+        });
+      }
+    }
 
     if (!mode) {
       return new Response(JSON.stringify({ error: 'Missing mode.' }), { status: 400 });
@@ -171,8 +188,7 @@ export default async (request) => {
       };
     }
 
-    const modelToUse = mode === 'chat' ? MODEL_CHAT : MODEL_STRUCTURED;
-    const geminiRes = await fetch(`${GEMINI_BASE}/${modelToUse}:generateContent?key=${apiKey}`, {
+    const geminiRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(geminiBody),
@@ -224,9 +240,13 @@ export default async (request) => {
       clean = clean.slice(start, end + 1);
       console.log('Parsing JSON, length:', clean.length, 'preview:', clean.slice(0, 120));
       const parsed = JSON.parse(clean);
+      // Store in cache for next 6 hours
+      if (mode !== 'suggestions') {
+        globalThis._aiCache[cacheKey] = { data: parsed, ts: Date.now() };
+      }
       return new Response(JSON.stringify(parsed), {
         status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'X-Cache': 'MISS' },
       });
     }
   } catch (err) {
