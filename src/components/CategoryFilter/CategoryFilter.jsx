@@ -1,10 +1,4 @@
 // src/components/CategoryFilter/CategoryFilter.jsx
-// ─────────────────────────────────────────────────────────────
-//  CHANGES:
-//   • Fetches current user's role from profiles table
-//   • Injects "📝 Drafts" tab as the FIRST item for admin/team
-//   • Passes role up via optional onRoleLoaded prop
-// ─────────────────────────────────────────────────────────────
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../supabase/supabaseClient';
@@ -15,11 +9,11 @@ const CategoryFilter = ({
   onSelectCategory,
   isHomePage,
   isHidden,
-  onRoleLoaded, // optional: (role: string) => void
+  onRoleLoaded,
 }) => {
   const [categories, setCategories] = useState(['For You']);
   const [loading, setLoading]       = useState(true);
-  const [userRole, setUserRole]     = useState(null); // 'user' | 'team' | 'admin' | null
+  const [userRole, setUserRole]     = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -43,11 +37,12 @@ const CategoryFilter = ({
           if (typeof onRoleLoaded === 'function') onRoleLoaded(role);
         }
 
-        // 2. Fetch distinct categories
+        // 2. FIXED: fetch all rows, deduplicate in JS — no {distinct:true} option
         const { data, error } = await supabase
           .from('book_summaries')
-          .select('category', { distinct: true })
-          .not('category', 'is', null);
+          .select('category')
+          .not('category', 'is', null)
+          .limit(10000);
 
         if (error) throw error;
 
@@ -60,7 +55,6 @@ const CategoryFilter = ({
         ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
         if (mounted) {
-          // Inject Drafts tab first for admin/team
           const draftTab = (role === 'admin' || role === 'team') ? ['📝 Drafts'] : [];
           setCategories([...draftTab, 'For You', ...unique]);
           setLoading(false);

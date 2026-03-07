@@ -6,19 +6,6 @@ import { supabase } from "../../supabase/supabaseClient";
 import UserProfileModal from "../UserProfile/UserProfile";
 import "./Header.css";
 
-/**
- * Header component - compact header + expandable search dropdown with dynamic categories
- *
- * FIXED:
- * - Search priority: Exact title matches → Related title matches → Keyword matches
- * - Default search category is ALWAYS "all" (searches entire database) unless manually changed
- * - clearSearch no longer navigates (only clears input + closes dropdown + focuses input).
- * - clear-search global event listener clears UI only (no navigation).
- * - Dropdown is rendered into document.body (portal) with wide desktop width and near-full on mobile.
- * - Top matches area is scrollable.
- * - Dropdown closes via: X (top-right), clicking outside, Escape, or when selecting a suggestion.
- */
-
 const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
   const [profile, setProfile] = useState(null);
   const [q, setQ] = useState("");
@@ -31,39 +18,25 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
 
-  const inputRef = useRef(null); // input anchor
-  const portalDropdownRef = useRef(null); // portal dropdown node
-  const suggestionsScrollRef = useRef(null); // scrollable suggestions node
+  const inputRef = useRef(null);
+  const portalDropdownRef = useRef(null);
+  const suggestionsScrollRef = useRef(null);
 
-  // suggestions
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const suggestionsTimerRef = useRef(null);
   const lastQueryRef = useRef("");
 
-  // responsive / mobile
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.matchMedia("(max-width:640px)").matches : false);
   const [showCategoriesMobile, setShowCategoriesMobile] = useState(false);
 
-  // dropdown position (for portal)
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 320, maxWidth: 640 });
 
-  /* --------------------------
-     Sync q from URL but ALWAYS default category to "all"
-     (Only change category if user manually selects it in dropdown)
-  -------------------------- */
   useEffect(() => {
     const urlq = searchParams.get("q") || "";
-    // We sync the query but NOT the category from URL
-    // Category stays "all" unless user manually changes it
     setQ(String(urlq || ""));
-    // Don't sync category from URL - always defaults to "all"
-    // setCategory remains "all" unless user clicks a category button
   }, [searchParams]);
 
-  /* --------------------------
-     Load profile
-  -------------------------- */
   useEffect(() => {
     let mounted = true;
     const fetchProfile = async () => {
@@ -83,26 +56,28 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
     return () => { mounted = false; };
   }, [session]);
 
-  /* --------------------------
-     Load distinct categories (dynamic)
-  -------------------------- */
+  // ── FIXED: fetch all categories without distinct option, deduplicate in JS ──
   useEffect(() => {
     let mounted = true;
     const fetchCategories = async () => {
       try {
         const { data, error } = await supabase
           .from("book_summaries")
-          .select("category", { distinct: true })
+          .select("category")
           .not("category", "is", null)
-          .order("category", { ascending: true });
+          .limit(10000); // get everything, dedupe in JS
 
         if (error) throw error;
-        const unique = Array.from(new Set((data || []).map(d => (d.category || "").toString().trim()).filter(Boolean)))
-          .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
-        if (mounted) {
-          setCategories(["all", ...unique]);
-        }
+        const unique = Array.from(
+          new Set(
+            (data || [])
+              .map(d => (d.category || "").toString().trim())
+              .filter(Boolean)
+          )
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+        if (mounted) setCategories(["all", ...unique]);
       } catch (err) {
         console.error("Failed to load categories", err);
         if (mounted) setCategories(["all"]);
@@ -113,9 +88,6 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
     return () => { mounted = false; };
   }, []);
 
-  /* --------------------------
-     Dropdown position calculations (portal)
-  -------------------------- */
   const updateDropdownPosition = useCallback(() => {
     try {
       const inputEl = inputRef.current;
@@ -123,62 +95,38 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
       const rect = inputEl.getBoundingClientRect();
       const scrollY = window.scrollY || window.pageYOffset || 0;
       const scrollX = window.scrollX || window.pageXOffset || 0;
+      const viewportPad = 16;
 
-      const viewportPad = 16; // margin from viewport edges
-
-      // If small screen, make dropdown nearly full-width and centered with padding
       if (window.innerWidth <= 640) {
         const vwWidth = Math.floor(window.innerWidth - viewportPad * 2);
         const left = Math.round(scrollX + viewportPad);
-        setDropdownPos({
-          top: Math.round(rect.bottom + scrollY),
-          left,
-          width: vwWidth,
-          maxWidth: vwWidth
-        });
+        setDropdownPos({ top: Math.round(rect.bottom + scrollY), left, width: vwWidth, maxWidth: vwWidth });
         return;
       }
 
-      // Desktop: prefer input width but allow expansion to a sensible minimum and clamp to max
-      const minWidth = 640; // comfortable minimum width on desktop
+      const minWidth = 640;
       const maxAllowed = Math.min(1100, window.innerWidth - viewportPad * 2);
       const desiredWidth = Math.min(Math.max(rect.width, minWidth), maxAllowed);
-
-      // compute left so dropdown stays within viewport
       let left = rect.left + scrollX;
       if (left + desiredWidth > scrollX + window.innerWidth - viewportPad) {
         left = Math.max(scrollX + viewportPad, (rect.right + scrollX) - desiredWidth);
       }
       left = Math.max(left, scrollX + viewportPad);
-
-      setDropdownPos({
-        top: Math.round(rect.bottom + scrollY),
-        left: Math.round(left),
-        width: Math.round(desiredWidth),
-        maxWidth: maxAllowed
-      });
-    } catch (e) {
-      // ignore
-    }
+      setDropdownPos({ top: Math.round(rect.bottom + scrollY), left: Math.round(left), width: Math.round(desiredWidth), maxWidth: maxAllowed });
+    } catch (e) {}
   }, []);
 
-  // update position when dropdown opens and on resize/scroll
   useEffect(() => {
     if (!dropdownOpen) return;
     updateDropdownPosition();
-
     let rafId = null;
     const onChange = () => {
       if (rafId != null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        updateDropdownPosition();
-        rafId = null;
-      });
+      rafId = requestAnimationFrame(() => { updateDropdownPosition(); rafId = null; });
     };
     window.addEventListener("resize", onChange);
     window.addEventListener("orientationchange", onChange);
     window.addEventListener("scroll", onChange, { passive: true });
-
     return () => {
       window.removeEventListener("resize", onChange);
       window.removeEventListener("orientationchange", onChange);
@@ -187,17 +135,11 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
     };
   }, [dropdownOpen, updateDropdownPosition]);
 
-  /* --------------------------
-     Click outside / Escape closes dropdown (works with portal)
-  -------------------------- */
   useEffect(() => {
     const handler = (ev) => {
       if (ev.type === "keydown" && ev.key === "Escape") {
-        setDropdownOpen(false);
-        setShowCategoriesMobile(false);
-        return;
+        setDropdownOpen(false); setShowCategoriesMobile(false); return;
       }
-
       if (ev.type === "mousedown" || ev.type === "click") {
         const tgt = ev.target;
         const dropdownNode = portalDropdownRef.current;
@@ -205,12 +147,10 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
         if (dropdownOpen) {
           if (dropdownNode && dropdownNode.contains && dropdownNode.contains(tgt)) return;
           if (inputNode && inputNode.contains && inputNode.contains(tgt)) return;
-          setDropdownOpen(false);
-          setShowCategoriesMobile(false);
+          setDropdownOpen(false); setShowCategoriesMobile(false);
         }
       }
     };
-
     document.addEventListener("mousedown", handler);
     document.addEventListener("click", handler);
     document.addEventListener("keydown", handler);
@@ -221,92 +161,50 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
     };
   }, [dropdownOpen]);
 
-  /* --------------------------
-     Clear-search listener for other components
-     (NO navigation here — only clears UI)
-  -------------------------- */
   useEffect(() => {
     const handler = () => {
-      setQ("");
-      setCategory("all");
-      setDropdownOpen(false);
-      setShowCategoriesMobile(false);
-      // intentionally DO NOT navigate; just clear UI state
+      setQ(""); setCategory("all"); setDropdownOpen(false); setShowCategoriesMobile(false);
     };
     window.addEventListener("clear-search", handler);
     return () => window.removeEventListener("clear-search", handler);
   }, []);
 
-  /* --------------------------
-     Responsive detection (isMobile)
-  -------------------------- */
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mm = window.matchMedia("(max-width:640px)");
-    const handler = (ev) => {
-      setIsMobile(ev.matches);
-      if (!ev.matches) setShowCategoriesMobile(false);
-    };
+    const handler = (ev) => { setIsMobile(ev.matches); if (!ev.matches) setShowCategoriesMobile(false); };
     setIsMobile(mm.matches);
     try {
       mm.addEventListener ? mm.addEventListener("change", handler) : mm.addListener(handler);
-    } catch (e) {
-      mm.addListener(handler);
-    }
+    } catch (e) { mm.addListener(handler); }
     return () => {
       try {
         mm.removeEventListener ? mm.removeEventListener("change", handler) : mm.removeListener(handler);
-      } catch (e) {
-        try { mm.removeListener(handler); } catch (err) {}
-      }
+      } catch (e) { try { mm.removeListener(handler); } catch (err) {} }
     };
   }, []);
 
-  /* --------------------------
-     Submit search: build target URL and navigate
-  -------------------------- */
   const submitSearch = useCallback((e) => {
     if (e && typeof e.preventDefault === "function") e.preventDefault();
-
     const trimmed = String(q || "").trim();
     let target = "/explore";
-
-    if (trimmed && category && category !== "all") {
-      target = `/explore?q=${encodeURIComponent(trimmed)}&category=${encodeURIComponent(category)}`;
-    } else if (trimmed) {
-      target = `/explore?q=${encodeURIComponent(trimmed)}`;
-    } else if (category && category !== "all") {
-      target = `/explore?category=${encodeURIComponent(category)}`;
-    }
-
+    if (trimmed && category && category !== "all") target = `/explore?q=${encodeURIComponent(trimmed)}&category=${encodeURIComponent(category)}`;
+    else if (trimmed) target = `/explore?q=${encodeURIComponent(trimmed)}`;
+    else if (category && category !== "all") target = `/explore?category=${encodeURIComponent(category)}`;
     const current = `${location.pathname}${location.search}`;
     if (current === target) navigate(target, { replace: true });
     else navigate(target);
-
-    setDropdownOpen(false);
-    setShowCategoriesMobile(false);
+    setDropdownOpen(false); setShowCategoriesMobile(false);
   }, [q, category, navigate, location.pathname, location.search]);
 
-  /* --------------------------
-     Clear button (input) — now DOES NOT navigate
-  -------------------------- */
   const clearSearch = useCallback((e) => {
-    if (e && typeof e.preventDefault === "function") {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    setQ("");
-    setCategory("all");
-    setDropdownOpen(false);
-    setShowCategoriesMobile(false);
-
-    // keep the user where they are — DO NOT navigate
+    if (e && typeof e.preventDefault === "function") { e.preventDefault(); e.stopPropagation(); }
+    setQ(""); setCategory("all"); setDropdownOpen(false); setShowCategoriesMobile(false);
     try { window.dispatchEvent(new Event("clear-search")); } catch (err) {}
     if (inputRef.current) inputRef.current.focus();
   }, []);
 
-  const avatarLetter =
-    (profile?.username || session?.user?.email || "U")[0]?.toUpperCase() || "U";
+  const avatarLetter = (profile?.username || session?.user?.email || "U")[0]?.toUpperCase() || "U";
 
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut();
@@ -315,209 +213,109 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
 
   const headerClassName = `og-header ${isHomePage ? "" : "og-header--scrollable"} ${isHidden ? "og-header--hidden" : ""}`;
 
-  /* --------------------------
-     Helper: choose category and close (mobile-friendly)
-  -------------------------- */
   const pickCategory = (cat) => {
     setCategory(cat || "all");
     if (isMobile) setShowCategoriesMobile(false);
-    setTimeout(() => {
-      if (inputRef.current) inputRef.current.focus();
-    }, 10);
+    setTimeout(() => { if (inputRef.current) inputRef.current.focus(); }, 10);
   };
 
-  /* --------------------------
-     NEW: Improved suggestion fetching with proper priority ranking
-     Priority: Exact title match → Related title match → Keyword match
-  -------------------------- */
-  const tokenize = (s = "") => {
-    return (String(s || "").trim().toLowerCase().split(/\s+/).map(t => t.replace(/[^\w-]/g, '')).filter(Boolean));
+  // ── Smart relevance scorer — shorter exact matches rank highest ──────────
+  const scoreTitle = (title = "", query = "") => {
+    const t = title.toLowerCase().trim();
+    const q2 = query.toLowerCase().trim();
+    if (!t || !q2) return 0;
+
+    // Tier 1 — title IS the query (exact)
+    if (t === q2) return 10000;
+
+    // Tier 2 — title STARTS with query
+    if (t.startsWith(q2)) return 8000 - t.length; // shorter title = higher score
+
+    // Tier 3 — title contains query as a whole word
+    const wordBoundary = new RegExp(`(^|\\s|\\b)${q2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|\\b|$)`, 'i');
+    if (wordBoundary.test(t)) return 6000 - t.length;
+
+    // Tier 4 — title contains query anywhere
+    if (t.includes(q2)) return 4000 - t.length; // penalize by length so short titles win
+
+    // Tier 5 — every word in query found somewhere in title
+    const qWords = q2.split(/\s+/).filter(Boolean);
+    if (qWords.length > 1 && qWords.every(w => t.includes(w))) return 2000 - t.length;
+
+    // Tier 6 — any word from query found in title
+    const matchCount = qWords.filter(w => t.includes(w)).length;
+    if (matchCount > 0) return (matchCount / qWords.length) * 1000 - t.length;
+
+    return 0;
   };
 
-  /**
-   * Fetch exact title matches (highest priority)
-   * These are titles that contain the exact search query
-   */
-  const fetchExactTitleMatches = async (query, limit = 10) => {
-    if (!query || !query.trim()) return [];
-    try {
-      // IMPORTANT: Always search ALL categories for suggestions (ignore current category filter)
-      const { data, error } = await supabase
+  // Single fetch — get candidates by title ilike, score + sort in JS
+  const fetchSuggestions = async (query, displayCap) => {
+    if (!query || query.length < 2) return [];
+    const q2 = query.toLowerCase().trim();
+
+    // Fetch title matches (broad) + keyword matches in parallel
+    const tokens = q2.split(/\s+/).filter(Boolean);
+    const [titleRes, keywordRes] = await Promise.allSettled([
+      supabase
         .from("book_summaries")
-        .select("id, title, slug, category")
+        .select("id, title, slug, category, author")
         .ilike("title", `%${query}%`)
-        .limit(limit);
+        .limit(100),
+      tokens.length > 0
+        ? supabase
+            .from("book_summaries")
+            .select("id, title, slug, category, author")
+            .overlaps("keywords", tokens)
+            .limit(50)
+        : Promise.resolve({ data: [] }),
+    ]);
 
-      if (error) {
-        console.warn("fetchExactTitleMatches error", error);
-        return [];
-      }
-      
-      // Mark these as exact matches for priority sorting
-      return (data || []).map(item => ({ ...item, matchType: 'exact_title', priority: 1 }));
-    } catch (e) {
-      console.warn("fetchExactTitleMatches exception", e);
-      return [];
-    }
+    const titleRows   = titleRes.status   === "fulfilled" ? (titleRes.value?.data   || []) : [];
+    const keywordRows = keywordRes.status === "fulfilled" ? (keywordRes.value?.data || []) : [];
+
+    // Merge, dedupe by id
+    const seen = new Map();
+    [...titleRows, ...keywordRows].forEach(r => { if (r?.id && !seen.has(r.id)) seen.set(r.id, r); });
+
+    // Score every candidate
+    const scored = Array.from(seen.values()).map(r => {
+      const titleScore = scoreTitle(r.title || "", query);
+      // Small bonus if author matches
+      const authorBonus = (r.author || "").toLowerCase().includes(q2) ? 50 : 0;
+      const score = titleScore + authorBonus;
+      // Determine badge label
+      const t = (r.title || "").toLowerCase().trim();
+      const matchType = t === q2 ? "exact"
+        : t.startsWith(q2) ? "exact"
+        : t.includes(q2) ? "title"
+        : "related";
+      return { ...r, _score: score, matchType };
+    });
+
+    // Sort by score descending, filter zero-score (no relation)
+    return scored
+      .filter(r => r._score > 0)
+      .sort((a, b) => b._score - a._score)
+      .slice(0, displayCap);
   };
 
-  /**
-   * Fetch related title matches (medium priority)
-   * These are titles that contain words from the search query
-   */
-  const fetchRelatedTitleMatches = async (query, limit = 10) => {
-    const tokens = tokenize(query);
-    if (tokens.length === 0) return [];
-    
-    try {
-      // IMPORTANT: Always search ALL categories for suggestions
-      const { data, error } = await supabase
-        .from("book_summaries")
-        .select("id, title, slug, category")
-        .limit(limit * 2); // Get more to filter
-
-      if (error) {
-        console.warn("fetchRelatedTitleMatches error", error);
-        return [];
-      }
-
-      // Filter titles that contain at least one token but aren't exact matches
-      const queryLower = query.toLowerCase();
-      const related = (data || [])
-        .filter(item => {
-          const titleLower = (item.title || '').toLowerCase();
-          // Exclude exact matches (they're already in exact_title)
-          if (titleLower.includes(queryLower)) return false;
-          // Include if title contains any search token
-          return tokens.some(token => titleLower.includes(token));
-        })
-        .slice(0, limit)
-        .map(item => ({ ...item, matchType: 'related_title', priority: 2 }));
-
-      return related;
-    } catch (e) {
-      console.warn("fetchRelatedTitleMatches exception", e);
-      return [];
-    }
-  };
-
-  /**
-   * Fetch keyword matches (lowest priority)
-   * These match based on keywords but not necessarily the title
-   */
-  const fetchKeywordMatches = async (query, limit = 12) => {
-    const tokens = tokenize(query);
-    if (tokens.length === 0) return [];
-    try {
-      // IMPORTANT: Always search ALL categories for suggestions
-      const { data, error } = await supabase
-        .from("book_summaries")
-        .select("id, title, slug, keywords, category")
-        .overlaps("keywords", tokens)
-        .limit(limit);
-
-      if (error) {
-        console.warn("fetchKeywordMatches overlaps error:", error);
-        return [];
-      }
-      
-      // Mark these as keyword matches (lowest priority)
-      return (data || []).map(item => ({ ...item, matchType: 'keyword', priority: 3 }));
-    } catch (e) {
-      console.warn("fetchKeywordMatches exception", e);
-      return [];
-    }
-  };
-
-  /**
-   * Merge and sort suggestions by priority
-   * Priority order: exact_title (1) → related_title (2) → keyword (3)
-   */
-  const mergeSuggestionsByPriority = (exactTitles = [], relatedTitles = [], keywordResults = []) => {
-    const byId = new Map();
-    const out = [];
-    
-    // Add exact title matches first (highest priority)
-    for (const it of exactTitles) {
-      if (!it || !it.id) continue;
-      if (!byId.has(it.id)) {
-        byId.set(it.id, true);
-        out.push(it);
-      }
-    }
-    
-    // Add related title matches second (medium priority)
-    for (const it of relatedTitles) {
-      if (!it || !it.id) continue;
-      if (!byId.has(it.id)) {
-        byId.set(it.id, true);
-        out.push(it);
-      }
-    }
-    
-    // Add keyword matches last (lowest priority)
-    for (const it of keywordResults) {
-      if (!it || !it.id) continue;
-      if (!byId.has(it.id)) {
-        byId.set(it.id, true);
-        out.push(it);
-      }
-    }
-    
-    return out;
-  };
-
-  /* --------------------------
-     Debounced live suggestions effect with proper priority
-  -------------------------- */
   useEffect(() => {
-    if (suggestionsTimerRef.current) {
-      clearTimeout(suggestionsTimerRef.current);
-      suggestionsTimerRef.current = null;
-    }
-
-    if (!dropdownOpen) {
-      setSuggestions([]);
-      setSuggestionsLoading(false);
-      return;
-    }
-
+    if (suggestionsTimerRef.current) { clearTimeout(suggestionsTimerRef.current); suggestionsTimerRef.current = null; }
+    if (!dropdownOpen) { setSuggestions([]); setSuggestionsLoading(false); return; }
     const trimmed = String(q || "").trim();
-    if (trimmed.length < 2) {
-      setSuggestions([]);
-      setSuggestionsLoading(false);
-      return;
-    }
+    if (trimmed.length < 2) { setSuggestions([]); setSuggestionsLoading(false); return; }
 
-    const exactLimit = isMobile ? 4 : 6;
-    const relatedLimit = isMobile ? 3 : 5;
-    const keywordLimit = isMobile ? 3 : 6;
     const displayCap = isMobile ? 8 : 12;
 
     suggestionsTimerRef.current = setTimeout(async () => {
       lastQueryRef.current = trimmed;
       setSuggestionsLoading(true);
       try {
-        // Fetch all three types in parallel
-        const [exactRes, relatedRes, keywordRes] = await Promise.allSettled([
-          fetchExactTitleMatches(trimmed, exactLimit),
-          fetchRelatedTitleMatches(trimmed, relatedLimit),
-          fetchKeywordMatches(trimmed, keywordLimit),
-        ]);
-
-        const exactTitles = exactRes.status === "fulfilled" ? (exactRes.value || []) : [];
-        const relatedTitles = relatedRes.status === "fulfilled" ? (relatedRes.value || []) : [];
-        const keywords = keywordRes.status === "fulfilled" ? (keywordRes.value || []) : [];
-
-        // Merge with proper priority ranking
-        const merged = mergeSuggestionsByPriority(exactTitles, relatedTitles, keywords);
-
+        const results = await fetchSuggestions(trimmed, displayCap);
         if (lastQueryRef.current === trimmed) {
-          setSuggestions(merged.slice(0, displayCap));
-          // reset scroll when new suggestions load
-          if (suggestionsScrollRef.current) {
-            suggestionsScrollRef.current.scrollTop = 0;
-          }
+          setSuggestions(results);
+          if (suggestionsScrollRef.current) suggestionsScrollRef.current.scrollTop = 0;
         }
       } catch (err) {
         console.error("Suggestion fetch failed", err);
@@ -527,26 +325,17 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
       }
     }, 250);
 
-    return () => {
-      if (suggestionsTimerRef.current) {
-        clearTimeout(suggestionsTimerRef.current);
-        suggestionsTimerRef.current = null;
-      }
-    };
-  }, [q, dropdownOpen, isMobile]); // Removed category dependency - always search all
+    return () => { if (suggestionsTimerRef.current) { clearTimeout(suggestionsTimerRef.current); suggestionsTimerRef.current = null; } };
+  }, [q, dropdownOpen, isMobile]);
 
   const goToSummary = (item) => {
     if (!item) return;
     const slug = item.slug || "";
     if (slug) navigate(`/summary/${slug}`);
     else if (item.id) navigate(`/summary/${item.id}`);
-    setDropdownOpen(false);
-    setShowCategoriesMobile(false);
+    setDropdownOpen(false); setShowCategoriesMobile(false);
   };
 
-  /* --------------------------
-     Portal dropdown content
-  -------------------------- */
   const dropdownContent = (
     <div
       ref={portalDropdownRef}
@@ -568,31 +357,17 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
       }}
     >
       <div className={`search-dropdown-inner ${isMobile ? "mobile-layout" : ""}`} style={{ padding: 8, position: 'relative' }}>
-        {/* Close button (top-right) */}
         <button
           type="button"
           className="search-dropdown-close"
           aria-label="Close search"
           onClick={() => { setDropdownOpen(false); setShowCategoriesMobile(false); }}
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            background: 'transparent',
-            border: 'none',
-            fontSize: 16,
-            cursor: 'pointer',
-            lineHeight: 1,
-            padding: '4px 6px'
-          }}
-        >
-          ✕
-        </button>
+          style={{ position: 'absolute', top: 8, right: 8, background: 'transparent', border: 'none', fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: '4px 6px' }}
+        >✕</button>
 
-        {/* Category */}
+        {/* Category section — now shows ALL categories */}
         <div className="search-dropdown-section category-section" style={{ padding: "6px 8px" }}>
           <div className="search-dropdown-title">Category</div>
-
           <button
             type="button"
             className="category-toggle"
@@ -610,7 +385,7 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
             className={`search-category-list ${showCategoriesMobile ? "show" : ""}`}
             role="listbox"
             aria-label="Categories"
-            style={{ marginTop: 8, display: showCategoriesMobile || !isMobile ? "flex" : "none", gap: 8, flexWrap: "wrap" }}
+            style={{ marginTop: 8, display: showCategoriesMobile || !isMobile ? "flex" : "none", gap: 8, flexWrap: "wrap", maxHeight: 200, overflowY: "auto" }}
           >
             {categories.map((c) => {
               const key = c || "all";
@@ -624,40 +399,31 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
                   onClick={() => { pickCategory(key); }}
                   aria-pressed={active}
                   style={{
-                    padding: "6px 10px",
-                    borderRadius: 20,
+                    padding: "6px 10px", borderRadius: 20,
                     border: active ? "1px solid #0070f3" : "1px solid #e6e6e6",
                     background: active ? "#0070f3" : "#fafafa",
                     color: active ? "#fff" : "#222",
-                    cursor: "pointer",
-                    fontSize: 13,
+                    cursor: "pointer", fontSize: 13,
                   }}
-                >
-                  {label}
-                </button>
+                >{label}</button>
               );
             })}
           </div>
         </div>
 
-        {/* Top matches (SCROLLABLE) - now shows priority-ranked results */}
+        {/* Top matches */}
         <div className="search-dropdown-section top-matches-section" style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
           <div className="search-dropdown-title">Top matches</div>
           <div style={{ minHeight: 32, paddingTop: 6 }}>
             {suggestionsLoading && <div style={{ padding: 8, color: "#666" }}>Loading suggestions…</div>}
-            {!suggestionsLoading && suggestions.length === 0 && (q.trim().length >= 2) && (
+            {!suggestionsLoading && suggestions.length === 0 && q.trim().length >= 2 && (
               <div style={{ padding: 8, color: "#666" }}>No matches found.</div>
             )}
-            {!suggestionsLoading && suggestions.length === 0 && (q.trim().length < 2) && (
+            {!suggestionsLoading && suggestions.length === 0 && q.trim().length < 2 && (
               <div style={{ padding: 8, color: "#666" }}>Type at least 2 characters to see suggestions.</div>
             )}
-
             {!suggestionsLoading && suggestions.length > 0 && (
-              <div
-                ref={suggestionsScrollRef}
-                className="top-matches-scroll"
-                style={{ maxHeight: isMobile ? 180 : 320, overflowY: "auto", paddingRight: 6 }}
-              >
+              <div ref={suggestionsScrollRef} className="top-matches-scroll" style={{ maxHeight: isMobile ? 180 : 320, overflowY: "auto", paddingRight: 6 }}>
                 <ul className="top-matches-list" style={{ listStyle: "none", padding: 0, margin: 0 }}>
                   {suggestions.map((s) => (
                     <li key={s.id} className="top-match-item" style={{ marginBottom: 6 }}>
@@ -669,11 +435,8 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
                       >
                         <div style={{ fontWeight: 600, overflowWrap: "break-word", display: 'flex', alignItems: 'center', gap: 6 }}>
                           {s.title}
-                          {/* Show badge for match type (for debugging/clarity) */}
-                          {s.matchType === 'exact_title' && (
-                            <span style={{ fontSize: 10, padding: '2px 6px', background: '#10b981', color: 'white', borderRadius: 4, fontWeight: 500 }}>
-                              Exact
-                            </span>
+                          {s.matchType === 'exact' && (
+                            <span style={{ fontSize: 10, padding: '2px 6px', background: '#10b981', color: 'white', borderRadius: 4, fontWeight: 500 }}>Exact</span>
                           )}
                         </div>
                         <div style={{ fontSize: 12, color: "#666" }}>{s.category || "Uncategorized"}</div>
@@ -703,21 +466,13 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
     <>
       <header className={headerClassName}>
         <div className="og-header-left">
-          <button
-            className="icon-btn mobile-menu-toggle"
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Toggle menu"
-          >
-            ☰
-          </button>
-
+          <button className="icon-btn mobile-menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">☰</button>
           <Link to="/" className="og-logo" aria-label="Home">
             <div className="og-logo-mark">O</div>
             <div className="og-logo-text">OGONJO</div>
           </Link>
         </div>
 
-        {/* SEARCH */}
         <form onSubmit={submitSearch} className="og-search" role="search" aria-label="Search business knowledge" style={{ position: "relative" }}>
           <div className="search-input-wrap" style={{ position: "relative" }}>
             <input
@@ -743,13 +498,8 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
               </svg>
             </button>
           </div>
-
-          {q && (
-            <button type="button" className="search-clear" onClick={clearSearch} aria-label="Clear search">×</button>
-          )}
+          {q && <button type="button" className="search-clear" onClick={clearSearch} aria-label="Clear search">×</button>}
           <button type="submit" className="search-btn" aria-label="Submit search">Search</button>
-
-          {/* Dropdown is rendered into a portal (document.body) */}
           {dropdownOpen && typeof document !== "undefined" && createPortal(dropdownContent, document.body)}
         </form>
 
@@ -761,9 +511,7 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
                   <span className="letter-avatar">{avatarLetter}</span>
                   <span className="profile-name">{profile?.username || "Profile"}</span>
                 </button>
-
                 <button className="logout-button" onClick={handleSignOut}>Sign Out</button>
-
                 {profile?.can_add_summary && <button className="create-button" onClick={onAddClick}>+ Add Summary</button>}
               </>
             ) : (
@@ -774,12 +522,10 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
         </div>
       </header>
 
-      {/* MOBILE MENU */}
       {menuOpen && (
         <>
           <div className="mobile-menu-left">
             <button className="mobile-menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">✕</button>
-
             {session ? (
               <>
                 <button onClick={() => { setShowProfileModal(true); setMenuOpen(false); }}>Profile</button>
@@ -789,14 +535,12 @@ const Header = ({ session, onAddClick, isHomePage, isHidden }) => {
             ) : (
               <Link to="/auth" onClick={() => setMenuOpen(false)}>Sign In</Link>
             )}
-
             <a href="https://onjo.gumroad.com" target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)}>Subscribe</a>
           </div>
           <div className="overlay" onClick={() => setMenuOpen(false)} />
         </>
       )}
 
-      {/* PROFILE MODAL */}
       {showProfileModal && session && (
         <UserProfileModal
           onClose={() => setShowProfileModal(false)}
