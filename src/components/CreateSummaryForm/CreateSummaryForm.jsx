@@ -1,12 +1,4 @@
 // src/components/CreateSummaryForm/CreateSummaryForm.jsx
-// ─────────────────────────────────────────────────────────────
-//  NEW FEATURES:
-//   • Default status = 'draft'  (auto-saves every 30s)
-//   • Choosing a real category unlocks "Publish" button
-//   • Duplicate-title check fires only on Publish
-//   • Delete article button with confirmation dialog
-//   • Manual "Save Draft" button
-// ─────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { supabase } from "../../supabase/supabaseClient";
 import ReactQuill from "react-quill";
@@ -15,7 +7,7 @@ import slugify from "slugify";
 import "quill/dist/quill.snow.css";
 import "./CreateSummaryForm.css";
 
-/* ── Quill clipboard patch (unchanged from original) ─────── */
+/* ── Quill clipboard patch ───────────────────────────────── */
 const Clipboard = Quill.import("modules/clipboard");
 const Delta = Quill.import("delta");
 class CustomClipboard extends Clipboard {
@@ -27,9 +19,7 @@ class CustomClipboard extends Clipboard {
         if (lines.length > 1 && lines.every((l) => l.includes("\t"))) {
           e.preventDefault();
           const td = new Delta();
-          td.insert({ table: true });
           lines.forEach((l) => td.insert({ "table-row": l.split("\t").map((c) => c.trim()) }));
-          td.insert({ "table-end": true });
           this.quill.updateContents(td, "user");
           return;
         }
@@ -41,7 +31,7 @@ class CustomClipboard extends Clipboard {
 Quill.register("modules/clipboard", CustomClipboard, true);
 try { const icons = Quill.import("ui/icons"); icons.internalLink = '<svg viewBox="0 0 18 18"><path d="M7 7h4v1H7z"/></svg>'; } catch (_) {}
 
-/* ── Constants ──────────────────────────────────────────── */
+/* ── Constants ───────────────────────────────────────────── */
 const REAL_CATEGORIES = [
   "Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
   "Business Ideas","Business Legends","Business Strategy & Systems","Career Development",
@@ -59,21 +49,76 @@ const DIFFICULTIES = [
 ];
 const AUTO_SAVE_MS = 30_000;
 
-/* ── Pure helpers (unchanged from original) ─────────────── */
+/* ── Pure helpers ────────────────────────────────────────── */
 const normalize = (s = "") => String(s || "").trim().toLowerCase();
 const uniqueWords = (s = "") => Array.from(new Set(normalize(s).split(/\s+/).filter(Boolean)));
 const wordMatchScore = (a = "", b = "") => { const aw = uniqueWords(a), bw = uniqueWords(b); if (!aw.length || !bw.length) return 0; return aw.filter((w) => bw.includes(w)).length / Math.max(aw.length, bw.length); };
 const lcsr = (a = "", b = "") => { const A = String(a||""), B = String(b||""); const n = A.length, m = B.length; if (!n||!m) return 0; const dp = new Array(m+1).fill(0); let best=0; for (let i=1;i<=n;i++) for (let j=m;j>=1;j--) { if (A[i-1]===B[j-1]) { dp[j]=dp[j-1]+1; if (dp[j]>best) best=dp[j]; } else dp[j]=0; } return best/Math.max(n,m); };
 const combinedScore = (cand = "", q = "") => Math.min(1, 0.55*wordMatchScore(cand,q) + 0.35*lcsr(cand,q) + 0.1*(normalize(cand).startsWith(normalize(q))?1:0));
-const generateVariants = (word) => { const w=normalize(word); const v=new Set([w]); v.add(`${w}s`); v.add(`${w}es`); if (w.endsWith("y")&&w.length>1) v.add(`${w.slice(0,-1)}ies`); if (w.endsWith("is")) v.add(`${w.slice(0,-2)}es`); return Array.from(v); };
-const parseKeywords = (input, max=8) => { if (!input) return []; const seen=new Set(),uniq=[]; for (const k of input.split(",").map(k=>k.trim().toLowerCase()).filter(Boolean)) { if (!seen.has(k)) { seen.add(k); uniq.push(k); if (uniq.length>=max) break; } } return uniq; };
+const generateVariants = (word) => { const w=normalize(word); const v=new Set([w]); v.add(`${w}s`); v.add(`${w}es`); if (w.endsWith("y")&&w.length>1) v.add(`${w.slice(0,-1)}ies`); return Array.from(v); };
+const parseKeywords = (input, max=8) => { if (!input) return []; const seen=new Set(),uniq=[]; const src = Array.isArray(input) ? input.join(",") : String(input||""); for (const k of src.split(",").map(k=>k.trim().toLowerCase()).filter(Boolean)) { if (!seen.has(k)) { seen.add(k); uniq.push(k); if (uniq.length>=max) break; } } return uniq; };
 const toLibraryHref = (row) => row?.slug ? `/library/${row.slug}` : `/library/${row?.id}`;
+
+/* ── Helper: fetch full draft row from DB ────────────────── */
+const fetchFullRow = async (id) => {
+  if (!id) return null;
+  try {
+    const { data, error } = await supabase
+      .from("book_summaries")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error("fetchFullRow error:", err);
+    return null;
+  }
+};
 
 /* ═══════════════════════════════════════════════════════════
    COMPONENT
 ═══════════════════════════════════════════════════════════ */
 const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => {
-  // editingSummary: pass a full summary row to edit an existing article
+
+  /* ── Loading state while fetching full row ───────────── */
+  const [initLoading, setInitLoading] = useState(false);
+  const [initData, setInitData]       = useState(null); // fully loaded row
+
+  /* ── Fetch full row if editingSummary is a partial draft ─ */
+  useEffect(() => {
+    if (!editingSummary?.id) {
+      setInitData(editingSummary);
+      return;
+    }
+    // Always fetch full row from DB to ensure summary/keywords etc. are loaded
+    setInitLoading(true);
+    fetchFullRow(editingSummary.id).then((row) => {
+      setInitData(row || editingSummary);
+      setInitLoading(false);
+    });
+  }, [editingSummary?.id]);
+
+  /* ── Don't render form until we have full data ───────── */
+  if (initLoading || (editingSummary?.id && !initData)) {
+    return (
+      <div className="modal-overlay">
+        <div className="modal-content large" style={{ display:"flex", alignItems:"center", justifyContent:"center", minHeight:300 }}>
+          <div style={{ color:"#6b7280", fontSize:14 }}>Loading article…</div>
+        </div>
+      </div>
+    );
+  }
+
+  return <CreateSummaryInner key={initData?.id || "new"} onClose={onClose} onNewSummary={onNewSummary} editingSummary={initData} />;
+};
+
+/* ─────────────────────────────────────────────────────────
+   INNER COMPONENT  — only mounts once initData is ready
+   The `key` on CreateSummaryInner forces a full remount
+   whenever the article being edited changes.
+───────────────────────────────────────────────────────── */
+const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
 
   /* ── Form fields ──────────────────────────────────────── */
   const [title, setTitle]             = useState(editingSummary?.title || "");
@@ -83,6 +128,16 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
   const [summaryText, setSummaryText] = useState(editingSummary?.summary || "");
   const [category, setCategory]       = useState(editingSummary?.category || DRAFT_SENTINEL);
   const [imageUrl, setImageUrl]       = useState(editingSummary?.image_url || "");
+  const [youtubeUrl, setYoutubeUrl]   = useState(editingSummary?.youtube_url || "");
+  const [difficulty, setDifficulty]   = useState(editingSummary?.difficulty_level || "");
+  const [tags, setTags]               = useState(() => {
+    const t = editingSummary?.tags;
+    if (Array.isArray(t)) return t.join(", ");
+    return String(t || "");
+  });
+  const [keywordsInput, setKeywordsInput] = useState(() =>
+    parseKeywords(editingSummary?.keywords, 8).join(", ")
+  );
   const [affiliateLink, setAffiliateLink] = useState(() => {
     const r = editingSummary?.affiliate_link || "";
     return r.includes("|") ? r.split("|")[1] : r;
@@ -91,45 +146,57 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
     const r = editingSummary?.affiliate_link || "";
     return r.includes("|") ? r.split("|")[0] : "book";
   });
-  const [youtubeUrl, setYoutubeUrl]   = useState(editingSummary?.youtube_url || "");
-  const [tags, setTags]               = useState((editingSummary?.tags || []).join(", "));
-  const [keywordsInput, setKeywordsInput] = useState((editingSummary?.keywords || []).join(", "));
-  const [difficulty, setDifficulty]   = useState(editingSummary?.difficulty_level || "");
 
-  /* ── Draft / status state ─────────────────────────────── */
-  const [draftId, setDraftId]         = useState(editingSummary?.id || null);
-  const [autoSaveStatus, setAutoSaveStatus] = useState("idle"); // idle|saving|saved|error
-  const autoSaveTimer                 = useRef(null);
-  const lastSnapshotRef               = useRef(null);
+  /* ── Draft / auto-save state ──────────────────────────── */
+  const [draftId, setDraftId]               = useState(editingSummary?.id || null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("idle");
+  const autoSaveTimer                       = useRef(null);
+  const lastSnapshotRef                     = useRef(null);
 
   /* ── UI state ─────────────────────────────────────────── */
-  const [loading, setLoading]         = useState(false);
-  const [errorMsg, setErrorMsg]       = useState("");
+  const [loading, setLoading]               = useState(false);
+  const [errorMsg, setErrorMsg]             = useState("");
   const [titleDupeWarning, setTitleDupeWarning] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading]   = useState(false);
 
-  /* ── Quill / link modal state (unchanged) ─────────────── */
-  const quillRef = useRef(null);
-  const [showLinkModal, setShowLinkModal]     = useState(false);
-  const [linkSearch, setLinkSearch]           = useState("");
-  const [linkResults, setLinkResults]         = useState([]);
-  const [selectedRange, setSelectedRange]     = useState(null);
+  /* ── Quill / link modal ───────────────────────────────── */
+  const quillRef                        = useRef(null);
+  const [showLinkModal, setShowLinkModal]   = useState(false);
+  const [linkSearch, setLinkSearch]         = useState("");
+  const [linkResults, setLinkResults]       = useState([]);
+  const [selectedRange, setSelectedRange]   = useState(null);
 
   const parsedKeywordsPreview = useMemo(() => parseKeywords(keywordsInput, 8), [keywordsInput]);
+  const isDraftMode  = category === DRAFT_SENTINEL;
+  const canPublish   = !isDraftMode;
+  const isEditing    = !!editingSummary?.id;
 
-  /* ── Slug from title ──────────────────────────────────── */
+  const autoSaveLabel = {
+    idle: "", saving: "💾 Saving draft…",
+    saved: "✅ Draft saved", error: "⚠️ Auto-save failed"
+  }[autoSaveStatus];
+
+  /* ── Slug from title (new articles only) ─────────────── */
   useEffect(() => {
-    if (!editingSummary && title?.trim())
+    if (!isEditing && title?.trim())
       setSlug(slugify(title, { lower:true, strict:true, replacement:"-" }));
-    else if (!title?.trim())
+    else if (!title?.trim() && !isEditing)
       setSlug("");
-  }, [title, editingSummary]);
+  }, [title, isEditing]);
 
   /* ── Quill modules ────────────────────────────────────── */
   const quillModules = useMemo(() => ({
     toolbar: {
-      container: [[{header:[1,2,3,false]}],["bold","italic","underline","strike"],[{list:"ordered"},{list:"bullet"}],["blockquote","code-block"],["link","image"],["internalLink"],["clean"]],
+      container: [
+        [{header:[1,2,3,false]}],
+        ["bold","italic","underline","strike"],
+        [{list:"ordered"},{list:"bullet"}],
+        ["blockquote","code-block"],
+        ["link","image"],
+        ["internalLink"],
+        ["clean"],
+      ],
       handlers: {
         internalLink: () => {
           const editor = quillRef.current?.getEditor();
@@ -143,7 +210,11 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
     },
     clipboard: { matchVisual: false },
   }), []);
-  const quillFormats = useMemo(() => ["header","bold","italic","underline","strike","list","bullet","blockquote","code-block","link","image","table"], []);
+
+  const quillFormats = useMemo(() => [
+    "header","bold","italic","underline","strike",
+    "list","bullet","blockquote","code-block","link","image","table"
+  ], []);
 
   /* ── Internal link search ─────────────────────────────── */
   useEffect(() => {
@@ -151,7 +222,9 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
     if (!linkSearch?.trim()) { setLinkResults([]); return; }
     (async () => {
       try {
-        const { data, error } = await supabase.from("book_summaries").select("id, title, slug").ilike("title", `%${linkSearch}%`).limit(10);
+        const { data, error } = await supabase
+          .from("book_summaries").select("id, title, slug")
+          .ilike("title", `%${linkSearch}%`).limit(10);
         if (!cancelled) setLinkResults(error ? [] : (data||[]));
       } catch { if (!cancelled) setLinkResults([]); }
     })();
@@ -177,7 +250,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
       const payload = {
         title:            title.trim() || "Untitled Draft",
         author:           author.trim() || "",
-        description:      description?.trim() || String(summaryText||"").replace(/<[^>]*>/g,"").slice(0,200),
+        description:      description?.trim() || null,
         summary:          summaryText || null,
         category:         category === DRAFT_SENTINEL ? null : category,
         user_id:          user.id,
@@ -193,19 +266,20 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
       };
 
       if (draftId) {
-        const { error } = await supabase.from("book_summaries").update(payload).eq("id", draftId).eq("user_id", user.id);
+        const { error } = await supabase.from("book_summaries")
+          .update(payload).eq("id", draftId).eq("user_id", user.id);
         if (error) throw error;
       } else {
         // Slug collision check
         try {
           const { data: ex } = await supabase.from("book_summaries").select("id").eq("slug", finalSlug).maybeSingle();
           if (ex) {
-            let c=2;
+            let c = 2;
             while (true) {
               const ns = `${finalSlug}-${c}`;
               const { data: ex2 } = await supabase.from("book_summaries").select("id").eq("slug", ns).maybeSingle();
               if (!ex2) { finalSlug = ns; payload.slug = finalSlug; break; }
-              if (++c>1000) { finalSlug=`${finalSlug}-${Date.now()}`; payload.slug=finalSlug; break; }
+              if (++c > 1000) { finalSlug = `${finalSlug}-${Date.now()}`; payload.slug = finalSlug; break; }
             }
           }
         } catch (_) {}
@@ -213,6 +287,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
         if (error) throw error;
         setDraftId(ins.id);
       }
+
       lastSnapshotRef.current = buildSnapshot();
       setAutoSaveStatus("saved");
       return draftId;
@@ -223,7 +298,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
     }
   }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty, draftId, slug, buildSnapshot]);
 
-  /* Auto-save timer */
   useEffect(() => {
     if (!title.trim() && !summaryText.trim()) return;
     if (buildSnapshot() === lastSnapshotRef.current) return;
@@ -235,7 +309,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
   useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
 
   /* ══════════════════════════════════════════════════════
-     DUPLICATE TITLE CHECK  (on Publish only)
+     DUPLICATE TITLE CHECK
   ══════════════════════════════════════════════════════ */
   const checkTitleDuplicate = useCallback(async (t, excludeId = null) => {
     if (!t?.trim()) return false;
@@ -253,10 +327,12 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg(""); setTitleDupeWarning("");
-    if (!title.trim()) { setErrorMsg("Title is required."); return; }
+    if (!title.trim())  { setErrorMsg("Title is required."); return; }
     if (!author.trim()) { setErrorMsg("Author is required."); return; }
     const publishCategory = category === DRAFT_SENTINEL ? null : category;
-    if (!publishCategory) { await saveDraft(); return; } // no category = save as draft
+
+    // No category = save as draft
+    if (!publishCategory) { await saveDraft(); return; }
 
     // Duplicate check
     const isDupe = await checkTitleDuplicate(title.trim(), draftId);
@@ -275,21 +351,29 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
         try {
           const { data: ex } = await supabase.from("book_summaries").select("id").eq("slug", finalSlug).maybeSingle();
           if (ex) {
-            let c=2; while (true) { const ns=`${finalSlug}-${c}`; const { data: ex2 } = await supabase.from("book_summaries").select("id").eq("slug", ns).maybeSingle(); if (!ex2) { finalSlug=ns; break; } if (++c>1000) { finalSlug=`${finalSlug}-${Date.now()}`; break; } }
+            let c=2;
+            while (true) {
+              const ns = `${finalSlug}-${c}`;
+              const { data: ex2 } = await supabase.from("book_summaries").select("id").eq("slug", ns).maybeSingle();
+              if (!ex2) { finalSlug=ns; break; }
+              if (++c>1000) { finalSlug=`${finalSlug}-${Date.now()}`; break; }
+            }
           }
         } catch (_) {}
       }
 
       const payload = {
         title: title.trim(), author: author.trim(),
-        description: description?.trim() || String(summaryText||"").replace(/<[^>]*>/g,"").slice(0,200),
-        summary: summaryText||null, category: publishCategory, user_id: user.id,
-        image_url: imageUrl||null,
+        description: description?.trim() || null,
+        summary: summaryText || null,
+        category: publishCategory,
+        user_id: user.id,
+        image_url: imageUrl || null,
         affiliate_link: affiliateLink?.trim() ? `${affiliateType}|${affiliateLink.trim()}` : null,
-        youtube_url: youtubeUrl||null,
+        youtube_url: youtubeUrl || null,
         tags: (tags||"").split(",").map(t=>t.trim().toLowerCase()).filter(Boolean),
         keywords: parseKeywords(keywordsInput,8).length ? parseKeywords(keywordsInput,8) : null,
-        slug: finalSlug||null,
+        slug: finalSlug || null,
         difficulty_level: ["Beginner","Intermediate","Advanced"].includes(difficulty) ? difficulty : null,
         status: "published",
         auto_saved_at: null,
@@ -300,12 +384,14 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
         : await supabase.from("book_summaries").insert([payload]);
 
       setLoading(false);
-      if (error) setErrorMsg(error.message || "Error publishing.");
-      else {
-        if (typeof onNewSummary === "function") onNewSummary();
-        if (typeof onClose === "function") onClose();
-      }
-    } catch (err) { console.error(err); setErrorMsg("Unexpected error."); setLoading(false); }
+      if (error) { setErrorMsg(error.message || "Error publishing."); return; }
+      if (typeof onNewSummary === "function") onNewSummary();
+      if (typeof onClose === "function") onClose();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("Unexpected error.");
+      setLoading(false);
+    }
   };
 
   /* ══════════════════════════════════════════════════════
@@ -328,51 +414,32 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
     } finally { setDeleteLoading(false); }
   };
 
-  /* ── Auto-link helpers (all unchanged) ────────────────── */
+  /* ── Auto-link helpers (unchanged) ───────────────────── */
   const fetchTitleCandidates = async (text, limit=200) => { if (!text?.trim()) return []; try { const { data, error } = await supabase.from("book_summaries").select("id, title, slug, keywords").ilike("title", `%${text.trim()}%`).limit(limit); return error?[]:(data||[]); } catch { return []; } };
   const fetchKeywordRows = async (limit=1000) => { try { const { data, error } = await supabase.from("book_summaries").select("id, title, slug, keywords").not("keywords","is",null).limit(limit); return error?[]:(data||[]); } catch { return []; } };
-  const searchBestMatch = async (text, opts={limitCandidates:50,minScore:0.6}) => {
-    const q=String(text||"").trim(); if (!q) return null;
-    const tokens=uniqueWords(q); const isSingle=tokens.length===1; const token=tokens[0]??"";
-    try { const { data: ex } = await supabase.from("book_summaries").select("id,title,slug").eq("title",q).maybeSingle(); if (ex?.id) return ex; } catch (_) {}
-    try { const { data: ph } = await supabase.from("book_summaries").select("id,title,slug").ilike("title",`%${q}%`).limit(1).maybeSingle(); if (ph?.id&&!isSingle) return ph; } catch (_) {}
-    if (isSingle) {
-      const variants=generateVariants(token);
-      try { for (const v of variants) { const { data: eq } = await supabase.from("book_summaries").select("id,title,slug").ilike("title",v).limit(1).maybeSingle(); if (eq?.id) return eq; } } catch (_) {}
-      const orF=variants.map(t=>`title.ilike.%${t}%`).join(",");
-      try { const { data: cands=[] } = await supabase.from("book_summaries").select("id,title,slug").or(orF).limit(opts.limitCandidates); if (!cands?.length) return null; const tv=generateVariants(normalize(token)); const filtered=cands.filter(c=>tv.some(v=>uniqueWords(c.title||"").includes(v))); let best=null,bs=0; filtered.forEach(c=>{const s=combinedScore(c.title||"",q);if(s>bs){bs=s;best=c;}}); return (best&&bs>=(opts.minScore??0.7))?best:null; } catch { return null; }
-    }
-    try { const orF=tokens.slice(0,6).map(t=>`title.ilike.%${t}%`).join(","); const { data: cands=[] } = await supabase.from("book_summaries").select("id,title,slug").or(orF).limit(opts.limitCandidates); if (!cands?.length) return null; let best=null,bs=0; cands.forEach(c=>{const s=combinedScore(c.title||"",q);if(s>bs){bs=s;best=c;}}); return (best&&bs>=(opts.minScore??0.5))?best:(best&&bs>0.25?best:null); } catch { return null; }
-  };
   const wrapNodeInAnchor = (node, row) => {
     const href=toLibraryHref(row);
     try { if (node.closest?.("a")) return false; const a=document.createElement("a"); a.setAttribute("data-summary-id",row.id); a.setAttribute("href",href); a.className="internal-summary-link"; node.parentNode&&node.parentNode.replaceChild(a,node); a.appendChild(node); return true; } catch (_) {}
-    try { const safe=(node.textContent||"").replace(/</g,"&lt;").replace(/>/g,"&gt;"); const p=node.parentNode; if (p) { p.replaceChild(document.createTextNode(""),node); p.innerHTML+=`<a data-summary-id="${row.id}" class="internal-summary-link" href="${href}">${safe}</a>`; return true; } } catch (_) {}
     return false;
   };
   const collectBoldNodes = (root) => {
-    const nl=Array.from(root.querySelectorAll("strong,b,.ql-bold,*[style*='font-weight']")); const cands=[]; nl.forEach(n=>{if(n.closest?.("a"))return;let b=["strong","b"].includes(n.tagName?.toLowerCase());if(!b){try{const fw=window.getComputedStyle(n).fontWeight;const num=parseInt(fw,10);if(!isNaN(num)&&num>=600)b=true;if(fw==="bold"||fw==="bolder")b=true;}catch(_){}}if(!b)return;const t=(n.textContent||"").trim();if(!t||t.length<3)return;cands.push({text:t,node:n});});
-    const map=new Map(); cands.forEach(({text,node})=>{const k=normalize(text);if(!map.has(k))map.set(k,{text:text.trim(),nodes:[node]});else map.get(k).nodes.push(node);}); return map;
+    const nl=Array.from(root.querySelectorAll("strong,b")); const map=new Map();
+    nl.forEach(n=>{ if(n.closest?.("a"))return; const t=(n.textContent||"").trim(); if(!t||t.length<3)return; const k=normalize(t); if(!map.has(k))map.set(k,{text:t,nodes:[n]}); else map.get(k).nodes.push(n); });
+    return map;
   };
-  const autoLinkBoldTextBySlug = () => { const editor=quillRef.current?.getEditor(); if(!editor){alert("Editor not available.");return;}const range=editor.getSelection();if(!range||range.length===0){alert("Please select the text.");return;}let sel="";try{sel=editor.getText(range.index,range.length).trim();}catch(_){}if(!sel){alert("Selected text is empty.");return;}const gs=slugify(sel,{lower:true,strict:true,replacement:"-"});if(!gs){alert("Could not generate slug.");return;}try{editor.focus();editor.deleteText(range.index,range.length);editor.insertText(range.index,sel,{link:`/library/${gs}`},"user");}catch(_){}setTimeout(()=>{try{const[leaf]=editor.getLeaf(range.index);const a=leaf?.domNode?.parentElement?.tagName==="A"?leaf.domNode.parentElement:null;if(a){a.classList.add("slug-summary-link");a.setAttribute("href",`/library/${gs}`);a.setAttribute("data-slug",gs);}}catch(_){}},60);try{editor.setSelection(range.index+sel.length,0);}catch(_){}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Linked to /library/${gs}`); };
-  const autoLinkBoldTextExact = async () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const map=collectBoldNodes(editor.root); if(!map.size){alert("No bold text found.");return;}let cnt=0; for(const[,{text,nodes}]of map.entries()){try{let m=null;const v=generateVariants(text);for(const c of await fetchTitleCandidates(text,50)){if(!c?.title)continue;const nt=normalize(c.title);if(nt===normalize(text)||v.includes(nt)){m=c;break;}}if(!m)for(const c of await fetchKeywordRows(500)){if(!c?.title)continue;const nt=normalize(c.title);if(nt===normalize(text)||v.includes(nt)){m=c;break;}}if(!m?.id)continue;nodes.forEach(n=>{if(wrapNodeInAnchor(n,m))cnt++;});}catch(_){}}try{if(editor.update)editor.update("user");}catch(_){}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Exact auto-link — ${cnt} linked.`); };
-  const autoLinkBoldTextKeywords = async () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const map=collectBoldNodes(editor.root); if(!map.size){alert("No bold text found.");return;}let kws=[];try{kws=await fetchKeywordRows(800);}catch(_){}let cnt=0; for(const[,{text,nodes}]of map.entries()){try{const nt=uniqueWords(text).map(t=>normalize(t));const tc=await fetchTitleCandidates(text,200);const kc=kws.filter(r=>{try{if(!r?.keywords)return false;const ks=r.keywords.map(k=>normalize(String(k||"")));return nt.some(t=>ks.includes(t)||ks.some(k=>k.includes(t)));}catch(_){return false;}});const byId=new Map();tc.forEach(c=>{if(c?.id)byId.set(c.id,c);});kc.forEach(c=>{if(c?.id&&!byId.has(c.id))byId.set(c.id,c);});const merged=Array.from(byId.values());if(!merged.length)continue;let best=null,bs=0;for(const c of merged){try{let s=combinedScore(c.title||"",text);if(normalize(c.title)===normalize(text))s=Math.max(s,0.95);if(Array.isArray(c.keywords)){const ks=c.keywords.map(k=>normalize(String(k||"")));if(ks.includes(normalize(text)))s=Math.max(s,s+0.6);else{const m=nt.filter(t=>ks.some(k=>k===t||k.includes(t))).length;if(m>0)s+=Math.min(0.35,0.12*m);}}if(s>1)s=1;if(s>bs){bs=s;best=c;}}catch(_){}}if(!best?.id||bs<0.65)continue;nodes.forEach(n=>{if(wrapNodeInAnchor(n,best))cnt++;});}catch(_){}}try{if(editor.update)editor.update("user");}catch(_){}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Keyword auto-link — ${cnt} linked.`); };
-  const autoLinkBoldText = async () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const map=collectBoldNodes(editor.root); if(!map.size){alert("No bold text found.");return;}let cnt=0; for(const[,{text,nodes}]of map.entries()){try{const single=uniqueWords(text).length===1;let best=null;if(single){best=await searchBestMatch(text,{limitCandidates:50,minScore:0.75});if(!best)best=await searchBestMatch(text,{limitCandidates:50,minScore:0.6});}else{best=await searchBestMatch(text,{limitCandidates:50,minScore:0.5});if(!best)best=await searchBestMatch(text,{limitCandidates:50,minScore:0.4});}if(!best?.id)continue;nodes.forEach(n=>{if(wrapNodeInAnchor(n,best))cnt++;});}catch(_){}}try{if(editor.update)editor.update("user");}catch(_){}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Auto-link — ${cnt} linked.`); };
-  const removeInternalLinksAndBold = () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const as=Array.from(editor.root.querySelectorAll('a[data-summary-id].internal-summary-link,a[data-summary-id]')); if(!as.length){alert("No internal links found.");return;}let r=0; as.forEach(a=>{try{const s=document.createElement("strong");s.textContent=(a.textContent||"").trim();a.parentNode?.replaceChild(s,a);r++;}catch(_){}}); try{if(editor.update)editor.update("user");}catch(_){} try{setSummaryText(editor.root.innerHTML);}catch(_){} alert(`Removed ${r} link(s).`); };
+  const autoLinkBoldTextBySlug = () => { const editor=quillRef.current?.getEditor(); if(!editor){alert("Editor not available.");return;}const range=editor.getSelection();if(!range||range.length===0){alert("Please select the text.");return;}let sel="";try{sel=editor.getText(range.index,range.length).trim();}catch(_){}if(!sel){alert("Selected text is empty.");return;}const gs=slugify(sel,{lower:true,strict:true,replacement:"-"});if(!gs){alert("Could not generate slug.");return;}try{editor.focus();editor.deleteText(range.index,range.length);editor.insertText(range.index,sel,{link:`/library/${gs}`},"user");}catch(_){}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Linked to /library/${gs}`); };
+  const autoLinkBoldTextExact = async () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const map=collectBoldNodes(editor.root); if(!map.size){alert("No bold text found.");return;}let cnt=0; for(const[,{text,nodes}]of map.entries()){try{let m=null;const v=generateVariants(text);for(const c of await fetchTitleCandidates(text,50)){if(!c?.title)continue;const nt=normalize(c.title);if(nt===normalize(text)||v.includes(nt)){m=c;break;}}if(!m?.id)continue;nodes.forEach(n=>{if(wrapNodeInAnchor(n,m))cnt++;});}catch(_){}}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Exact auto-link — ${cnt} linked.`); };
+  const autoLinkBoldTextKeywords = async () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const map=collectBoldNodes(editor.root); if(!map.size){alert("No bold text found.");return;}let kws=[];try{kws=await fetchKeywordRows(800);}catch(_){}let cnt=0; for(const[,{text,nodes}]of map.entries()){try{const nt=uniqueWords(text).map(t=>normalize(t));const tc=await fetchTitleCandidates(text,200);const kc=kws.filter(r=>{try{if(!r?.keywords)return false;const ks=r.keywords.map(k=>normalize(String(k||"")));return nt.some(t=>ks.includes(t));}catch(_){return false;}});const byId=new Map();tc.forEach(c=>{if(c?.id)byId.set(c.id,c);});kc.forEach(c=>{if(c?.id&&!byId.has(c.id))byId.set(c.id,c);});const merged=Array.from(byId.values());if(!merged.length)continue;let best=null,bs=0;for(const c of merged){try{let s=combinedScore(c.title||"",text);if(normalize(c.title)===normalize(text))s=Math.max(s,0.95);if(s>bs){bs=s;best=c;}}catch(_){}}if(!best?.id||bs<0.65)continue;nodes.forEach(n=>{if(wrapNodeInAnchor(n,best))cnt++;});}catch(_){}}try{setSummaryText(editor.root.innerHTML);}catch(_){}alert(`Keyword auto-link — ${cnt} linked.`); };
+  const removeInternalLinksAndBold = () => { const editor=quillRef.current?.getEditor(); if(!editor)return; const as=Array.from(editor.root.querySelectorAll('a[data-summary-id]')); if(!as.length){alert("No internal links found.");return;}let r=0; as.forEach(a=>{try{const s=document.createElement("strong");s.textContent=(a.textContent||"").trim();a.parentNode?.replaceChild(s,a);r++;}catch(_){}}); try{setSummaryText(editor.root.innerHTML);}catch(_){} alert(`Removed ${r} link(s).`); };
   const insertInternalLink = (item) => {
     const editor=quillRef.current?.getEditor(); if(!editor)return;
     const range=selectedRange||editor.getSelection(); if(!range){alert("Selection lost.");setShowLinkModal(false);return;}
-    try{editor.focus();editor.setSelection(range.index,range.length);}catch(_){}
     let sel="";try{if(range.length)sel=editor.getText(range.index,range.length).trim();}catch(_){}if(!sel)sel=item.title||"link";
     const href=toLibraryHref(item);
     try{editor.deleteText(range.index,range.length);editor.insertText(range.index,sel,{link:href},"user");}catch(_){}
-    const tryA=(att=0)=>{try{const[leaf]=editor.getLeaf(range.index);const a=leaf?.domNode?.parentElement?.tagName==="A"?leaf.domNode.parentElement:null;if(a){a.setAttribute("data-summary-id",item.id);a.classList.add("internal-summary-link");a.setAttribute("href",href);return true;}}catch(_){}if(att<4){setTimeout(()=>tryA(att+1),30*(att+1));return false;}try{const safe=sel.replace(/</g,"&lt;").replace(/>/g,"&gt;");editor.deleteText(range.index,sel.length);editor.clipboard.dangerouslyPasteHTML(range.index,`<a data-summary-id="${item.id}" class="internal-summary-link" href="${href}">${safe}</a>`);}catch(_){}};
-    tryA(0);try{editor.setSelection(range.index+sel.length,0);}catch(_){}try{setSummaryText(editor.root.innerHTML);}catch(_){}setShowLinkModal(false);setLinkSearch("");setLinkResults([]);setSelectedRange(null);
+    try{setSummaryText(editor.root.innerHTML);}catch(_){}
+    setShowLinkModal(false);setLinkSearch("");setLinkResults([]);setSelectedRange(null);
   };
-
-  const isDraftMode = category === DRAFT_SENTINEL;
-  const canPublish  = !isDraftMode;
-  const autoSaveLabel = { idle:"", saving:"💾 Saving draft…", saved:"✅ Draft saved", error:"⚠️ Auto-save failed" }[autoSaveStatus];
 
   /* ══════════════════════════════════════════════════════
      RENDER
@@ -385,7 +452,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
         {/* Header */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
           <h2 style={{ margin:0 }}>
-            {editingSummary ? "Edit Summary" : "Create New Summary"}
+            {isEditing ? "Edit Summary" : "Create New Summary"}
           </h2>
           <div style={{ display:"flex", gap:10, alignItems:"center" }}>
             {autoSaveLabel && (
@@ -409,21 +476,21 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
         )}
 
         <form onSubmit={handleSubmit} className="summary-form">
+
           <label>Title</label>
           <input type="text" value={title} onChange={e=>{setTitle(e.target.value);setTitleDupeWarning("");}} required />
-          {slug && <small className="slug-preview">Generated slug: <code>/library/{slug}</code></small>}
+          {slug && <small className="slug-preview">Slug: <code>/library/{slug}</code></small>}
 
           <label>Author</label>
           <input type="text" value={author} onChange={e=>setAuthor(e.target.value)} required />
 
-          {/* Category / status selector */}
           <label>
             Category
             <span style={{ color:"#6b7280", fontWeight:400, fontSize:12, marginLeft:6 }}>
               — select a category to enable publishing
             </span>
           </label>
-          <select value={category} onChange={e => setCategory(e.target.value)}>
+          <select value={category} onChange={e=>setCategory(e.target.value)}>
             <option value={DRAFT_SENTINEL}>📝 Keep as Draft (auto-save)</option>
             {REAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -440,7 +507,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
           <input type="url" value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://example.com/cover.jpg" />
 
           <label>Affiliate Link</label>
-          <div className="affiliate-row" style={{ display:"flex", gap:8, alignItems:"center", width:"100%", marginBottom:6 }}>
+          <div style={{ display:"flex", gap:8, alignItems:"center", width:"100%", marginBottom:6 }}>
             <input type="url" value={affiliateLink} onChange={e=>setAffiliateLink(e.target.value)} placeholder="Affiliate link (https://...)" style={{ flex:1, minWidth:0, padding:"8px 10px" }} />
             <select value={affiliateType} onChange={e=>setAffiliateType(e.target.value)} style={{ width:"12%", minWidth:100, padding:"6px 8px" }}>
               <option value="book">Get Book</option>
@@ -456,40 +523,65 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
           <input type="text" value={tags} onChange={e=>setTags(e.target.value)} placeholder="business, leadership, strategy" />
 
           <label>Keywords (optional, comma separated)</label>
-          <input type="text" value={keywordsInput} onChange={e=>setKeywordsInput(e.target.value)} placeholder="e.g. business strategy, growth, productivity" />
+          <input type="text" value={keywordsInput} onChange={e=>setKeywordsInput(e.target.value)} placeholder="e.g. business strategy, growth" />
           <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>
-            {parsedKeywordsPreview.length} / 8 keywords — normalized, deduped.
+            {parsedKeywordsPreview.length} / 8 keywords
           </div>
 
           <label>Summary</label>
           <div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldTextBySlug}>🔗 Slug-link bold</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldText}>🔗 Auto-link bold</button>
+            <button type="button" className="hf-btn" onClick={autoLinkBoldTextBySlug}>🔗 Slug-link</button>
             <button type="button" className="hf-btn" onClick={autoLinkBoldTextExact}>🎯 Exact auto-link</button>
             <button type="button" className="hf-btn" onClick={autoLinkBoldTextKeywords}>🧠 Keyword auto-link</button>
             <button type="button" className="hf-btn" onClick={removeInternalLinksAndBold}>✂️ Remove links</button>
             <button type="button" className="hf-btn" onClick={()=>setShowLinkModal(true)}>🔎 Manual link</button>
           </div>
           <div className="quill-container">
-            <ReactQuill ref={quillRef} value={summaryText} onChange={setSummaryText} modules={quillModules} formats={quillFormats} theme="snow" />
+            <ReactQuill
+              ref={quillRef}
+              value={summaryText}
+              onChange={setSummaryText}
+              modules={quillModules}
+              formats={quillFormats}
+              theme="snow"
+            />
           </div>
 
           {/* Action bar */}
           <div style={{ display:"flex", gap:10, marginTop:16, alignItems:"center", flexWrap:"wrap" }}>
-            <button type="button" onClick={saveDraft} disabled={loading} style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 18px", cursor:"pointer", fontWeight:500 }}>
+            <button
+              type="button"
+              onClick={saveDraft}
+              disabled={loading}
+              style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 18px", cursor:"pointer", fontWeight:500 }}
+            >
               💾 Save Draft
             </button>
+
             <button
               type="submit"
               disabled={loading || !canPublish}
               title={!canPublish ? "Select a category above to publish" : ""}
-              style={{ background: canPublish ? "#2563eb" : "#9ca3af", color:"#fff", border:"none", borderRadius:6, padding:"8px 22px", cursor: canPublish?"pointer":"not-allowed", fontWeight:600 }}
+              style={{
+                background: canPublish ? "#2563eb" : "#9ca3af",
+                color:"#fff", border:"none", borderRadius:6,
+                padding:"8px 22px",
+                cursor: canPublish ? "pointer" : "not-allowed",
+                fontWeight:600
+              }}
             >
-              {loading ? "Publishing…" : "🚀 Publish"}
+              {loading ? "Publishing…" : (isEditing ? "🚀 Save & Publish" : "🚀 Publish")}
             </button>
-            {!canPublish && <span style={{ fontSize:12, color:"#9ca3af" }}>Select a category to publish</span>}
 
-            {/* Delete — only for existing articles */}
+            {!canPublish && (
+              <span style={{ fontSize:12, color:"#9ca3af" }}>Select a category to publish</span>
+            )}
+
+            <button type="button" onClick={onClose} disabled={loading}
+              style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 16px", cursor:"pointer" }}>
+              Cancel
+            </button>
+
             {draftId && (
               <button
                 type="button"
@@ -512,8 +604,8 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
                 {linkResults.length===0 && <div style={{ padding:8, color:"#666" }}>No results</div>}
                 <ul style={{ listStyle:"none", padding:0, margin:0 }}>
                   {linkResults.map(r=>(
-                    <li key={r.id} style={{ marginBottom:6 }}>
-                      <button type="button" className="hf-btn" onClick={()=>insertInternalLink(r)} style={{ width:"100%", textAlign:"left" }}>{r.title}</button>
+                    <li key={r.id}>
+                      <button type="button" className="hf-btn" onClick={()=>insertInternalLink(r)} style={{ width:"100%", textAlign:"left", marginBottom:6 }}>{r.title}</button>
                     </li>
                   ))}
                 </ul>
@@ -530,13 +622,15 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
               <div style={{ fontSize:44, marginBottom:8 }}>⚠️</div>
               <h3 style={{ margin:"0 0 8px", color:"#dc2626" }}>Delete this article?</h3>
               <p style={{ color:"#6b7280", marginBottom:20, fontSize:14 }}>
-                This will <strong>permanently delete</strong> <em>"{title || "this article"}"</em> and cannot be undone.
+                <strong>"{title || "this article"}"</strong> will be permanently deleted and cannot be undone.
               </p>
               <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
-                <button type="button" onClick={()=>setShowDeleteConfirm(false)} disabled={deleteLoading} style={{ padding:"9px 22px", borderRadius:6, border:"1px solid #d1d5db", background:"#f9fafb", cursor:"pointer", fontWeight:500 }}>
+                <button type="button" onClick={()=>setShowDeleteConfirm(false)} disabled={deleteLoading}
+                  style={{ padding:"9px 22px", borderRadius:6, border:"1px solid #d1d5db", background:"#f9fafb", cursor:"pointer", fontWeight:500 }}>
                   Cancel
                 </button>
-                <button type="button" onClick={handleDelete} disabled={deleteLoading} style={{ padding:"9px 22px", borderRadius:6, border:"none", background:"#dc2626", color:"#fff", cursor:"pointer", fontWeight:600 }}>
+                <button type="button" onClick={handleDelete} disabled={deleteLoading}
+                  style={{ padding:"9px 22px", borderRadius:6, border:"none", background:"#dc2626", color:"#fff", cursor:"pointer", fontWeight:600 }}>
                   {deleteLoading ? "Deleting…" : "Yes, Delete"}
                 </button>
               </div>

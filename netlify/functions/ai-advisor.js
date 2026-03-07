@@ -2,7 +2,7 @@
 // Handles 4 modes: trending | recommendations | news | chat
 // Uses Google Gemini API with grounding (real-time web search)
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-2.0-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 const trendingPrompt = (category) => `Search the web right now for what people are actively searching for and what topics are trending in the "${category}" space — specifically content discoverable via Google Search and Google Discover. Find real current trending searches and questions. Return ONLY valid JSON, no markdown, no backticks:
@@ -143,8 +143,19 @@ export default async (request) => {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     } else {
-      // Parse JSON for structured tabs
-      const clean = textBlocks.replace(/```json|```/g, '').trim();
+      // Parse JSON for structured tabs — extract JSON object robustly
+      let clean = textBlocks.replace(/```json|```/g, '').trim();
+      // Find the first { and last } to extract just the JSON object
+      const start = clean.indexOf('{');
+      const end = clean.lastIndexOf('}');
+      if (start === -1 || end === -1) {
+        console.error('No JSON object found in response:', clean);
+        return new Response(JSON.stringify({ error: 'AI did not return valid JSON. Try again.' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      clean = clean.slice(start, end + 1);
       const parsed = JSON.parse(clean);
       return new Response(JSON.stringify(parsed), {
         status: 200,

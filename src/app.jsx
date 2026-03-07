@@ -21,7 +21,6 @@ import ResetPassword from "./pages/ResetPassword";
 import SubscriptionPopup from './components/SubscriptionPopup/SubscriptionPopup';
 import './App.css';
 
-// ─── Scroll to top on every navigation ───────────────────────────────────────
 const ScrollToTop = () => {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -33,7 +32,6 @@ const ScrollToTop = () => {
   }, [pathname]);
   return null;
 };
-// ─────────────────────────────────────────────────────────────────────────────
 
 const AppInner = ({ session }) => {
   const navigate = useNavigate();
@@ -41,17 +39,18 @@ const AppInner = ({ session }) => {
 
   const getCategoryFromSearch = useCallback(() => {
     const qs = new URLSearchParams(location.search);
-    const cat = qs.get('category');
-    return cat || 'For You';
+    return qs.get('category') || 'For You';
   }, [location.search]);
 
   const [selectedCategory, setSelectedCategory] = useState(getCategoryFromSearch());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingSummary, setEditingSummary] = useState(null);
+  const [searchQuery, setSearchQuery]           = useState('');
+  const [showAddForm, setShowAddForm]           = useState(false);
+  const [editingSummary, setEditingSummary]     = useState(null);
+  const [headerHidden, setHeaderHidden]         = useState(false);
+  const [showPopup, setShowPopup]               = useState(false);
+  const [userRole, setUserRole]                 = useState('user'); // ← new
+
   const isHomePage = location.pathname === '/';
-  const [headerHidden, setHeaderHidden] = useState(false);
-  const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
     setSelectedCategory(getCategoryFromSearch());
@@ -72,11 +71,10 @@ const AppInner = ({ session }) => {
   useEffect(() => {
     const checkPopup = () => {
       const subscribedAt = localStorage.getItem('subscribedAt');
-      const dismissedAt = localStorage.getItem('popupDismissedAt');
+      const dismissedAt  = localStorage.getItem('popupDismissedAt');
       const now = Date.now();
-      const popupDelay = 4 * 24 * 60 * 60 * 1000;
       if (subscribedAt) return;
-      if (!dismissedAt || now - parseInt(dismissedAt) > popupDelay) setShowPopup(true);
+      if (!dismissedAt || now - parseInt(dismissedAt) > 4 * 24 * 60 * 60 * 1000) setShowPopup(true);
     };
     const timer = setTimeout(checkPopup, 10000);
     return () => clearTimeout(timer);
@@ -120,6 +118,7 @@ const AppInner = ({ session }) => {
         onSelectCategory={handleNavClick}
         isHomePage={isHomePage}
         isHidden={headerHidden}
+        onRoleLoaded={setUserRole}
       />
 
       <main className="main-content">
@@ -131,6 +130,7 @@ const AppInner = ({ session }) => {
               onEdit={handleEdit}
               onDelete={handleDelete}
               onSelectCategory={handleNavClick}
+              userRole={userRole}
             />
           } />
           <Route path="/auth" element={!session ? <AuthForm /> : <p className="logged-in-message">You are already logged in!</p>} />
