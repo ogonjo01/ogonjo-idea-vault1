@@ -4,6 +4,42 @@ import { motion } from 'framer-motion';
 import { supabase } from '../../supabase/supabaseClient';
 import './CategoryFilter.css';
 
+/* ── Fetch every distinct non-null category ──────────────────
+   Supabase hard-caps a single request at 1000 rows by default.
+   We page through in batches of 1000 until we get everything,
+   then deduplicate in JS.
+──────────────────────────────────────────────────────────── */
+const fetchAllCategories = async () => {
+  const PAGE = 1000;
+  let from = 0;
+  const allCategories = new Set();
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('book_summaries')
+      .select('category')
+      .not('category', 'is', null)
+      .range(from, from + PAGE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    data.forEach(row => {
+      const cat = (row.category || '').toString().trim();
+      if (cat) allCategories.add(cat);
+    });
+
+    // If we got fewer rows than the page size, we've reached the end
+    if (data.length < PAGE) break;
+
+    from += PAGE;
+  }
+
+  return Array.from(allCategories).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' })
+  );
+};
+
 const CategoryFilter = ({
   selectedCategory = 'For You',
   onSelectCategory,
@@ -13,15 +49,14 @@ const CategoryFilter = ({
 }) => {
   const [categories, setCategories] = useState(['For You']);
   const [loading, setLoading]       = useState(true);
-  const [userRole, setUserRole]     = useState(null);
 
   useEffect(() => {
     let mounted = true;
 
-    const fetchAll = async () => {
+    const init = async () => {
       setLoading(true);
       try {
-        // 1. Get current user role
+        // 1. Get user role
         const { data: { user } = {} } = await supabase.auth.getUser();
         let role = 'user';
         if (user?.id) {
@@ -32,27 +67,10 @@ const CategoryFilter = ({
             .maybeSingle();
           role = profile?.role || 'user';
         }
-        if (mounted) {
-          setUserRole(role);
-          if (typeof onRoleLoaded === 'function') onRoleLoaded(role);
-        }
+        if (mounted && typeof onRoleLoaded === 'function') onRoleLoaded(role);
 
-        // 2. FIXED: fetch all rows, deduplicate in JS — no {distinct:true} option
-        const { data, error } = await supabase
-          .from('book_summaries')
-          .select('category')
-          .not('category', 'is', null)
-          .limit(10000);
-
-        if (error) throw error;
-
-        const unique = Array.from(
-          new Set(
-            (data || [])
-              .map((d) => (d.category || '').toString().trim())
-              .filter(Boolean)
-          )
-        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        // 2. Fetch ALL categories via pagination
+        const unique = await fetchAllCategories();
 
         if (mounted) {
           const draftTab = (role === 'admin' || role === 'team') ? ['📝 Drafts'] : [];
@@ -60,12 +78,12 @@ const CategoryFilter = ({
           setLoading(false);
         }
       } catch (err) {
-        console.error('Fetch categories failed', err);
+        console.error('CategoryFilter init failed:', err);
         if (mounted) setLoading(false);
       }
     };
 
-    fetchAll();
+    init();
     return () => { mounted = false; };
   }, [onRoleLoaded]);
 
@@ -79,7 +97,7 @@ const CategoryFilter = ({
   const containerClassName = [
     'category-filter-container',
     !isHomePage ? 'category-filter-container--scrollable' : '',
-    isHidden    ? 'category-filter-container--hidden' : '',
+    isHidden    ? 'category-filter-container--hidden'     : '',
   ].filter(Boolean).join(' ');
 
   return (
