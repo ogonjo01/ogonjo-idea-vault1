@@ -1,27 +1,73 @@
 // netlify/functions/ai-advisor.js
 // Handles 4 modes: trending | recommendations | news | chat
-// Uses Google Gemini API with grounding (real-time web search)
+// Uses Google Gemini 2.5 Flash with grounding (real-time web search)
 
-const MODEL = 'gemini-2.0-flash';
+const MODEL = 'gemini-2.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
-const trendingPrompt = (category) => `Search the web right now for what people are actively searching for and what topics are trending in the "${category}" space — specifically content discoverable via Google Search and Google Discover. Find real current trending searches and questions. Return ONLY valid JSON, no markdown, no backticks:
-{"category":"${category}","updatedAt":"now","trendingSearces":[{"searchQuery":"exact phrase","volume":"high|medium|rising","contentAngle":"specific article title","reason":"why trending (1 sentence)","googleDiscoverPotential":"high|medium|low"}],"risingTopics":["t1","t2","t3","t4","t5"],"insight":"2-sentence summary of what is driving search interest in ${category} right now"}
-Provide exactly 8 trending searches.`;
+const trendingPrompt = (category) => `You are a senior business intelligence analyst. Search the web RIGHT NOW for what people are actively searching for and what topics are trending in the "${category}" space — specifically content that gets discovered via Google Search and Google Discover in March 2026.
 
-const recommendationsPrompt = (category, pd) => `Search the web for what is currently trending in "${category}". Cross-reference: total content: ${pd?.totalContent||0}, top categories: ${(pd?.topCategories||[]).map(c=>`${c.name}(${c.count})`).join(',')}, top content: ${(pd?.topContent||[]).slice(0,4).map(c=>`"${c.title}"(${c.views_count}views)`).join('|')}. Recommend content for Google discovery. Return ONLY valid JSON, no markdown, no backticks:
-{"category":"${category}","summary":"2-sentence strategy","recommendations":[{"title":"specific title","type":"Book Summary|Business Concept|Business Idea|Course|Market Analysis|Company Profile","searchDemand":"high|medium|rising","reason":"why Google traffic","urgency":"hot|high|medium","estimatedImpact":"prediction"}],"contentGaps":["g1","g2","g3"],"quickWins":["w1","w2","w3"]}
-Provide exactly 6 recommendations.`;
+Return ONLY a valid JSON object. No markdown. No backticks. No explanation before or after. Just the raw JSON:
+{"category":"${category}","updatedAt":"now","trendingSearces":[{"searchQuery":"exact phrase people type","volume":"high|medium|rising","contentAngle":"specific compelling article title to write","reason":"why this is trending right now in one sentence","googleDiscoverPotential":"high|medium|low"}],"risingTopics":["topic1","topic2","topic3","topic4","topic5"],"insight":"2-sentence summary of what is driving search interest in ${category} right now"}
 
-const newsPrompt = (category) => `Search the web for the latest business news related to "${category}" from the last 48-72 hours. Focus on what affects entrepreneurs and business professionals. Return ONLY valid JSON, no markdown, no backticks:
-{"category":"${category}","fetchedAt":"now","headlines":[{"title":"headline","summary":"2 sentences","source":"publication","publishedAt":"how recent","relevance":"why it matters for content creators","contentOpportunity":"article you could write","impact":"high|medium|low"}],"marketSentiment":"bullish|bearish|neutral|mixed","keyTheme":"biggest theme today","editorNote":"2-sentence content strategy note"}
-Provide exactly 7 headlines.`;
+Provide exactly 8 trending searches. Base this on real current data from the web.`;
 
-const chatSystemPrompt = (platformData, categories) => `You are an expert content strategy advisor for "Ogonjo" — a business knowledge platform that gets most of its traffic from Google Search and Google Discover. The platform covers: ${(categories||[]).join(', ') || 'business ideas, book summaries, business concepts, company profiles, market analysis, courses, business strategy'}.
+const recommendationsPrompt = (category, pd) => `You are a senior content strategist specializing in Google SEO and Discover traffic. Search the web for what is currently trending in "${category}" in March 2026.
 
-Platform snapshot: ${platformData ? `${platformData.totalContent} total pieces, top categories: ${(platformData.topCategories||[]).map(c=>`${c.name}(${c.count})`).join(', ')}, top content: ${(platformData.topContent||[]).slice(0,3).map(c=>`"${c.title}"(${c.views_count}views)`).join(' | ')}` : 'data loading'}
+Platform context: ${pd?.totalContent||0} total pieces published. Top categories: ${(pd?.topCategories||[]).map(c=>`${c.name}(${c.count} pieces)`).join(', ')}. Top performing content: ${(pd?.topContent||[]).slice(0,4).map(c=>`"${c.title}"(${c.views_count} views)`).join(' | ')}.
 
-You have web search / grounding capability. When asked about trends, current events, what's popular, or anything requiring up-to-date information — search the web first. Give specific, actionable advice. Be direct and practical. You are a real strategic advisor, not just a chatbot.`;
+Cross-reference live search trends with existing platform gaps to recommend the highest-impact content to create next.
+
+Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
+{"category":"${category}","summary":"2-sentence strategy focusing on biggest opportunity","recommendations":[{"title":"specific compelling title","type":"Book Summary|Business Concept|Business Idea|Course|Market Analysis|Company Profile","searchDemand":"high|medium|rising","reason":"specific reason this will get Google traffic","urgency":"hot|high|medium","estimatedImpact":"specific traffic/engagement prediction"}],"contentGaps":["specific gap 1","specific gap 2","specific gap 3"],"quickWins":["quick win 1","quick win 2","quick win 3"]}
+
+Provide exactly 6 recommendations based on real current search trends.`;
+
+const newsPrompt = (category) => `You are a business news analyst. Search the web for the most important business news related to "${category}" published in the last 48-72 hours (around March 7, 2026). Focus on news that matters to entrepreneurs, business owners, investors, and content creators in this space.
+
+Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
+{"category":"${category}","fetchedAt":"now","headlines":[{"title":"exact headline","summary":"2-sentence summary of what happened and why it matters","source":"publication name","publishedAt":"e.g. 2 hours ago / yesterday","relevance":"why this matters for business content creators","contentOpportunity":"specific article title you could write based on this news","impact":"high|medium|low"}],"marketSentiment":"bullish|bearish|neutral|mixed","keyTheme":"the single biggest business theme dominating the news today","editorNote":"2-sentence actionable advice on what content to create this week based on these headlines"}
+
+Provide exactly 7 headlines. Use real current news from the web.`;
+
+const chatSystemPrompt = (platformData, categories) => `You are Marcus — an elite business consultant, growth strategist, and content monetization expert advising the founder of Ogonjo, a fast-growing business knowledge platform. You have 20+ years of experience advising startups, Fortune 500s, and digital media companies.
+
+PLATFORM CONTEXT:
+- Platform: Ogonjo — a business knowledge platform covering ${(categories||[]).join(', ') || 'business ideas, book summaries, business concepts, company profiles, market analysis, courses, business strategy'}
+- Traffic source: Primarily Google Search and Google Discover (SEO-driven)
+- Content: ${platformData ? `${platformData.totalContent} total pieces published` : 'growing content library'}
+- Top categories: ${platformData ? (platformData.topCategories||[]).map(c=>`${c.name}(${c.count})`).join(', ') : 'business, finance, strategy'}
+- Top performing content: ${platformData ? (platformData.topContent||[]).slice(0,3).map(c=>`"${c.title}"(${c.views_count} views)`).join(' | ') : 'various business topics'}
+
+YOUR ROLE & PERSONALITY:
+- You are direct, sharp, and deeply practical — no fluff, no filler
+- You think like a CEO, a growth hacker, and a media strategist simultaneously
+- You give specific, actionable advice with numbers, frameworks, and concrete next steps
+- You are a monetization expert — you know exactly how to turn content and traffic into revenue
+- You stay updated on what is happening in the business world RIGHT NOW
+- You challenge the founder to think bigger and move faster
+- You use web search to get real current data before advising
+
+CORE EXPERTISE:
+1. Content monetization (ads, courses, memberships, sponsorships, affiliate)
+2. Google SEO and Discover optimization for massive organic traffic
+3. Business strategy frameworks (Porter, Blue Ocean, Jobs-to-be-Done, OKRs, etc.)
+4. Trending business topics and what entrepreneurs are searching for right now
+5. African and emerging market business opportunities
+6. Revenue diversification for media and content platforms
+7. Scaling content operations efficiently
+8. How to make more money from an existing audience and traffic
+
+COMMUNICATION STYLE:
+- Lead with the most important insight immediately
+- Use specific numbers and examples when possible
+- Break down complex strategies into clear numbered action steps
+- Ask sharp follow-up questions to give better advice
+- Be encouraging but brutally honest when something is not working
+- Reference what top platforms like HBR, Forbes, Investopedia do — and how Ogonjo can compete
+- When relevant, mention African/emerging market angles since the platform likely serves this audience
+
+Always search the web for current information before answering questions about trends, news, or what is popular right now. Today is March 2026.`;
 
 export default async (request) => {
   if (request.method === 'OPTIONS') {
@@ -58,9 +104,7 @@ export default async (request) => {
       return new Response(JSON.stringify({ error: 'Missing mode.' }), { status: 400 });
     }
 
-    // Google Search grounding tool — gives Gemini real-time web access
     const groundingTool = { google_search: {} };
-
     let geminiBody;
 
     if (mode === 'chat') {
@@ -68,13 +112,10 @@ export default async (request) => {
         return new Response(JSON.stringify({ error: 'Missing message.' }), { status: 400 });
       }
 
-      // Build conversation history
       const contents = [];
-
-      // Add history (last 10 messages)
       const recentHistory = (history || [])
         .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-10);
+        .slice(-12);
 
       for (const m of recentHistory) {
         contents.push({
@@ -83,7 +124,6 @@ export default async (request) => {
         });
       }
 
-      // Add current message if not already last
       if (!contents.length || contents[contents.length - 1].parts[0].text !== message) {
         contents.push({ role: 'user', parts: [{ text: message }] });
       }
@@ -92,24 +132,23 @@ export default async (request) => {
         system_instruction: { parts: [{ text: chatSystemPrompt(platformData, categories) }] },
         contents,
         tools: [groundingTool],
-        generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
+        generationConfig: { maxOutputTokens: 2000, temperature: 0.75 },
       };
     } else {
-      // Non-chat structured modes
       if (!category) {
         return new Response(JSON.stringify({ error: 'Missing category.' }), { status: 400 });
       }
 
       let prompt;
-      if (mode === 'trending')           prompt = trendingPrompt(category);
+      if (mode === 'trending')             prompt = trendingPrompt(category);
       else if (mode === 'recommendations') prompt = recommendationsPrompt(category, platformData);
-      else if (mode === 'news')          prompt = newsPrompt(category);
+      else if (mode === 'news')            prompt = newsPrompt(category);
       else return new Response(JSON.stringify({ error: 'Invalid mode.' }), { status: 400 });
 
       geminiBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         tools: [groundingTool],
-        generationConfig: { maxOutputTokens: 2000, temperature: 0.4 },
+        generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
       };
     }
 
@@ -123,8 +162,8 @@ export default async (request) => {
       const errText = await geminiRes.text();
       console.error('Gemini error:', errText);
       return new Response(
-        JSON.stringify({ error: 'Gemini API error. Check Netlify function logs.' }),
-        { status: geminiRes.status, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: `Gemini API error: ${errText}` }),
+        { status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       );
     }
 
@@ -137,23 +176,30 @@ export default async (request) => {
       .map(p => p.text)
       .join('');
 
+    if (!textBlocks) {
+      console.error('Empty Gemini response:', JSON.stringify(data).slice(0, 500));
+      return new Response(
+        JSON.stringify({ error: 'No response from AI. Try again.' }),
+        { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+      );
+    }
+
     if (mode === 'chat') {
       return new Response(JSON.stringify({ reply: textBlocks }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     } else {
-      // Parse JSON for structured tabs — extract JSON object robustly
+      // Robustly extract JSON — find outermost { ... }
       let clean = textBlocks.replace(/```json|```/g, '').trim();
-      // Find the first { and last } to extract just the JSON object
       const start = clean.indexOf('{');
       const end = clean.lastIndexOf('}');
       if (start === -1 || end === -1) {
-        console.error('No JSON object found in response:', clean);
-        return new Response(JSON.stringify({ error: 'AI did not return valid JSON. Try again.' }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
+        console.error('No JSON found:', clean.slice(0, 500));
+        return new Response(
+          JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }),
+          { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+        );
       }
       clean = clean.slice(start, end + 1);
       const parsed = JSON.parse(clean);
@@ -166,7 +212,7 @@ export default async (request) => {
     console.error('Function error:', err);
     return new Response(
       JSON.stringify({ error: `Server error: ${err.message}` }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
     );
   }
 };

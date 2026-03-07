@@ -221,3 +221,24 @@
   width: 90%;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
+/* Add this to your existing DraftPanel.css */
+
+.draft-panel__title-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  line-height: 1.4;
+  transition: color 0.15s;
+}
+
+.draft-panel__title-link:hover {
+  color: #1e40af;
+}

@@ -1,13 +1,6 @@
 // src/components/DraftPanel/DraftPanel.jsx
-// ─────────────────────────────────────────────────────────────
-//  Shown as the FIRST tab in ContentFeed for admin/team roles.
-//  Features:
-//   • Lists all draft articles for the current user
-//   • Select individual drafts with checkboxes
-//   • Bulk-publish: choose a category per-article OR one for all
-//   • Delete individual drafts with confirmation
-// ─────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabase/supabaseClient";
 import "./DraftPanel.css";
 
@@ -20,7 +13,6 @@ const REAL_CATEGORIES = [
   "Self-Improvement","Strategic Communication","Tools & Software","Video Insights",
 ];
 
-/* ── helpers ──────────────────────────────────────────────── */
 const fmtDate = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -28,21 +20,18 @@ const fmtDate = (iso) => {
 };
 
 const DraftPanel = ({ onEdit }) => {
-  const [drafts, setDrafts]             = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [selected, setSelected]         = useState(new Set()); // Set of draft ids
+  const navigate = useNavigate();
 
-  // Per-article category overrides
-  const [perArticleCategory, setPerArticleCategory] = useState({}); // { [id]: category }
-  // Global category for all selected
-  const [bulkCategory, setBulkCategory]   = useState("");
-  const [bulkMode, setBulkMode]           = useState("individual"); // 'individual' | 'all'
-
-  const [publishing, setPublishing]       = useState(false);
-  const [publishResult, setPublishResult] = useState(null); // { ok: n, fail: n }
-
-  const [deleteTarget, setDeleteTarget]   = useState(null); // draft id to delete
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [drafts, setDrafts]                     = useState([]);
+  const [loading, setLoading]                   = useState(true);
+  const [selected, setSelected]                 = useState(new Set());
+  const [perArticleCategory, setPerArticleCategory] = useState({});
+  const [bulkCategory, setBulkCategory]         = useState("");
+  const [bulkMode, setBulkMode]                 = useState("individual");
+  const [publishing, setPublishing]             = useState(false);
+  const [publishResult, setPublishResult]       = useState(null);
+  const [deleteTarget, setDeleteTarget]         = useState(null);
+  const [deleteLoading, setDeleteLoading]       = useState(false);
 
   /* ── fetch drafts ─────────────────────────────────────── */
   const fetchDrafts = useCallback(async () => {
@@ -85,7 +74,6 @@ const DraftPanel = ({ onEdit }) => {
   const canBulkPublish = () => {
     if (selected.size === 0) return false;
     if (bulkMode === "all") return !!bulkCategory;
-    // individual: every selected draft must have a category set
     return Array.from(selected).every(id => {
       const override = perArticleCategory[id];
       const existing = drafts.find(d => d.id === id)?.category;
@@ -145,6 +133,17 @@ const DraftPanel = ({ onEdit }) => {
     } finally { setDeleteLoading(false); }
   };
 
+  /* ── navigate to draft view ───────────────────────────── */
+  const handleTitleClick = (draft) => {
+    const path = draft.slug ? `/library/${draft.slug}` : `/library/${draft.id}`;
+    navigate(path);
+  };
+
+  /* ── open edit form (EditSummaryForm via onEdit) ──────── */
+  const handleEditClick = (draft) => {
+    if (typeof onEdit === "function") onEdit(draft);
+  };
+
   /* ── render ───────────────────────────────────────────── */
   if (loading) {
     return (
@@ -163,7 +162,6 @@ const DraftPanel = ({ onEdit }) => {
             <span className="draft-panel__count">{drafts.length}</span>
           )}
         </h2>
-
         {drafts.length > 0 && (
           <button className="dp-btn dp-btn--secondary" onClick={fetchDrafts} type="button">
             ↻ Refresh
@@ -189,45 +187,23 @@ const DraftPanel = ({ onEdit }) => {
           {/* Bulk controls */}
           {selected.size > 0 && (
             <div className="draft-panel__bulk">
-              <span className="draft-panel__bulk-info">
-                {selected.size} selected
-              </span>
-
-              {/* Publish mode toggle */}
+              <span className="draft-panel__bulk-info">{selected.size} selected</span>
               <div className="draft-panel__bulk-mode">
                 <label>
-                  <input
-                    type="radio"
-                    name="bulkMode"
-                    value="individual"
-                    checked={bulkMode === "individual"}
-                    onChange={() => setBulkMode("individual")}
-                  />
+                  <input type="radio" name="bulkMode" value="individual" checked={bulkMode === "individual"} onChange={() => setBulkMode("individual")} />
                   {" "}Category per article
                 </label>
                 <label style={{ marginLeft:16 }}>
-                  <input
-                    type="radio"
-                    name="bulkMode"
-                    value="all"
-                    checked={bulkMode === "all"}
-                    onChange={() => setBulkMode("all")}
-                  />
+                  <input type="radio" name="bulkMode" value="all" checked={bulkMode === "all"} onChange={() => setBulkMode("all")} />
                   {" "}Same category for all
                 </label>
               </div>
-
               {bulkMode === "all" && (
-                <select
-                  className="draft-panel__bulk-cat"
-                  value={bulkCategory}
-                  onChange={e => setBulkCategory(e.target.value)}
-                >
+                <select className="draft-panel__bulk-cat" value={bulkCategory} onChange={e => setBulkCategory(e.target.value)}>
                   <option value="">— Choose category —</option>
                   {REAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               )}
-
               <button
                 className="dp-btn dp-btn--publish"
                 type="button"
@@ -245,12 +221,7 @@ const DraftPanel = ({ onEdit }) => {
               <thead>
                 <tr>
                   <th style={{ width:36 }}>
-                    <input
-                      type="checkbox"
-                      checked={selected.size === drafts.length}
-                      onChange={toggleAll}
-                      title="Select all"
-                    />
+                    <input type="checkbox" checked={selected.size === drafts.length} onChange={toggleAll} title="Select all" />
                   </th>
                   <th>Title</th>
                   <th>Author</th>
@@ -259,7 +230,7 @@ const DraftPanel = ({ onEdit }) => {
                     {bulkMode === "individual" && <span style={{ fontSize:11, color:"#9ca3af", marginLeft:4 }}>(per article)</span>}
                   </th>
                   <th style={{ width:120 }}>Last saved</th>
-                  <th style={{ width:120 }}>Actions</th>
+                  <th style={{ width:100 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -268,19 +239,25 @@ const DraftPanel = ({ onEdit }) => {
                   return (
                     <tr key={draft.id} className={isSelected ? "draft-panel__row--selected" : ""}>
                       <td>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelect(draft.id)}
-                        />
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(draft.id)} />
                       </td>
+
+                      {/* Clickable title → /library/:slug */}
                       <td className="draft-panel__title-cell">
                         <span className="draft-panel__draft-badge">DRAFT</span>
-                        {draft.title || <em style={{ color:"#9ca3af" }}>Untitled</em>}
+                        <button
+                          type="button"
+                          className="draft-panel__title-link"
+                          onClick={() => handleTitleClick(draft)}
+                          title="Preview draft"
+                        >
+                          {draft.title || <em style={{ color:"#9ca3af" }}>Untitled</em>}
+                        </button>
                       </td>
+
                       <td>{draft.author || <span style={{ color:"#9ca3af" }}>—</span>}</td>
+
                       <td>
-                        {/* Per-article category selector (only in individual mode) */}
                         {bulkMode === "individual" && isSelected ? (
                           <select
                             value={perArticleCategory[draft.id] || draft.category || ""}
@@ -296,15 +273,18 @@ const DraftPanel = ({ onEdit }) => {
                           </span>
                         )}
                       </td>
+
                       <td style={{ fontSize:12, color:"#6b7280" }}>
                         {fmtDate(draft.auto_saved_at || draft.created_at)}
                       </td>
+
                       <td>
                         <div style={{ display:"flex", gap:6 }}>
+                          {/* Edit → opens EditSummaryForm */}
                           <button
                             type="button"
                             className="dp-btn dp-btn--edit"
-                            onClick={() => typeof onEdit === "function" && onEdit(draft)}
+                            onClick={() => handleEditClick(draft)}
                             title="Edit this draft"
                           >
                             ✏️ Edit
@@ -339,21 +319,10 @@ const DraftPanel = ({ onEdit }) => {
               {" "}will be permanently deleted.
             </p>
             <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                disabled={deleteLoading}
-                className="dp-btn dp-btn--secondary"
-              >
+              <button type="button" onClick={() => setDeleteTarget(null)} disabled={deleteLoading} className="dp-btn dp-btn--secondary">
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleteLoading}
-                className="dp-btn dp-btn--danger"
-                style={{ padding:"9px 22px" }}
-              >
+              <button type="button" onClick={handleDelete} disabled={deleteLoading} className="dp-btn dp-btn--danger" style={{ padding:"9px 22px" }}>
                 {deleteLoading ? "Deleting…" : "Yes, Delete"}
               </button>
             </div>

@@ -430,18 +430,49 @@ const AIAdvisor = ({ theme:T }) => {
 
   // Chat state
   const [messages, setMessages]     = useState([
-    { role:'assistant', content:"Hi! I'm your content strategy advisor for Ogonjo. Ask me anything — what's trending today, what to write about, which categories to focus on, how to grow your Google traffic, or anything about your business content strategy. I'll search the web for current data to give you real answers." }
+    { role:'assistant', content:"Hey — I'm Marcus, your business consultant for Ogonjo.\n\nI'm here to help you grow this platform into a real revenue machine. I can tell you what's trending right now on Google, what content to create this week, how to monetize your traffic better, and any business strategy question you have.\n\nI search the web in real-time, so my answers are based on what's actually happening today — not outdated data.\n\nWhat do you want to work on?" }
   ]);
   const [chatInput, setChatInput]   = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef               = useRef(null);
 
   const SUB_TABS = [
-    { id:'chat',           label:'💬 Chat Advisor'     },
+    { id:'chat',           label:'💬 Ask Marcus'       },
     { id:'trending',       label:'🔍 Trending'         },
     { id:'recommendations',label:'💡 Content Ideas'    },
     { id:'news',           label:'📰 Business News'    },
   ];
+
+  // Contextual suggested prompts per tab
+  const SUGGESTED_PROMPTS = {
+    chat: [
+      "What business topics are trending on Google right now?",
+      "How can I monetize Ogonjo's traffic better?",
+      "What content should I create this week to grow traffic?",
+      "What are the most profitable content niches in business right now?",
+      "How do platforms like HBR and Investopedia make money?",
+      "What's the fastest way to grow from 10k to 100k monthly visitors?",
+      "Which African business trends should I be covering?",
+      "How do I get my content into Google Discover?",
+      "What business books are people searching for right now?",
+      "How should I price a premium membership on Ogonjo?",
+    ],
+    trending: [
+      "What's trending in AI business tools?",
+      "What are entrepreneurs searching for most right now?",
+      "Which business concepts are going viral this week?",
+    ],
+    recommendations: [
+      "What content gaps am I missing in this category?",
+      "What's the highest traffic opportunity right now?",
+      "What type of content gets the most Google Discover clicks?",
+    ],
+    news: [
+      "What business news should I turn into content today?",
+      "What's the biggest economic story affecting entrepreneurs?",
+      "What market trends should I write about this week?",
+    ],
+  };
 
   const IMPACT_C = { high:'#ef4444', hot:'#ef4444', medium:'#f97316', low:'#f59e0b', rising:'#10b981' };
   const VOLUME_C = { high:'#06b6d4', medium:'#f97316', rising:'#10b981' };
@@ -474,8 +505,8 @@ const AIAdvisor = ({ theme:T }) => {
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({ behavior:'smooth' }); },[messages]);
 
   // ── Chat send ──────────────────────────────────────────────────────────────
-  const sendChat = async () => {
-    const text = chatInput.trim();
+  const sendChat = async (overrideText) => {
+    const text = (overrideText || chatInput).trim();
     if(!text || chatLoading) return;
 
     const userMsg = { role:'user', content:text };
@@ -491,7 +522,7 @@ const AIAdvisor = ({ theme:T }) => {
         body: JSON.stringify({
           mode:'chat',
           message: text,
-          history: newMessages.slice(-10), // last 10 messages for context
+          history: newMessages.slice(-12),
           platformData,
           categories,
         }),
@@ -500,7 +531,7 @@ const AIAdvisor = ({ theme:T }) => {
       if(!res.ok || data.error) throw new Error(data.error||'Request failed');
       setMessages(prev=>[...prev, { role:'assistant', content:data.reply }]);
     } catch(err){
-      setMessages(prev=>[...prev, { role:'assistant', content:`Sorry, I ran into an error: ${err.message}. Make sure your API key is configured in Netlify.` }]);
+      setMessages(prev=>[...prev, { role:'assistant', content:`Sorry, I ran into an error: ${err.message}` }]);
     } finally {
       setChatLoading(false);
     }
@@ -525,6 +556,12 @@ const AIAdvisor = ({ theme:T }) => {
     finally{ setLoading(false); }
   };
 
+  // ── Ask Marcus from any tab ────────────────────────────────────────────────
+  const askMarcus = (question) => {
+    setSubTab('chat');
+    setTimeout(() => sendChat(question), 100);
+  };
+
   // ── Badge ──────────────────────────────────────────────────────────────────
   const Badge = ({ label, colour }) => (
     <span style={{ fontSize:10, fontWeight:700, color:colour||T.aiAccent,
@@ -536,51 +573,59 @@ const AIAdvisor = ({ theme:T }) => {
     <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:10 }}>{children}</div>
   );
 
-  // ── Chat UI ────────────────────────────────────────────────────────────────
-  const renderChat = () => (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
-      {/* Suggested prompts */}
-      {messages.length<=1 && (
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:12 }}>
-          {[
-            "What's trending on Google today for business content?",
-            "What should I write about this week?",
-            "Which category should I focus on to grow traffic?",
-            "What business topics are people searching for right now?",
-            "How can I improve my Google Discover visibility?",
-          ].map((p,i)=>(
-            <button key={i} onClick={()=>{ setChatInput(p); }} style={{
-              background:T.surface, border:`1px solid ${T.border}`, borderRadius:20,
-              padding:'5px 12px', fontSize:11, color:T.textSub, cursor:'pointer',
-              transition:'all 0.15s',
-            }}
+  // ── Prompt suggestions strip ───────────────────────────────────────────────
+  const PromptStrip = ({ tab }) => {
+    const prompts = SUGGESTED_PROMPTS[tab] || [];
+    const isChat = tab === 'chat';
+    return (
+      <div style={{ marginBottom:10 }}>
+        <div style={{ fontSize:10, color:T.textMuted, marginBottom:6, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
+          {isChat ? '💡 Suggested questions' : '💬 Ask Marcus about this'}
+        </div>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          {prompts.slice(0, isChat ? 5 : 3).map((p,i)=>(
+            <button key={i}
+              onClick={() => isChat ? setChatInput(p) : askMarcus(p)}
+              style={{
+                background:T.surface, border:`1px solid ${T.border}`, borderRadius:20,
+                padding:'5px 12px', fontSize:11, color:T.textSub, cursor:'pointer',
+                transition:'all 0.15s',
+              }}
               onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}
               onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textSub; }}
             >{p}</button>
           ))}
         </div>
-      )}
+      </div>
+    );
+  };
+
+  // ── Chat UI ────────────────────────────────────────────────────────────────
+  const renderChat = () => (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+      <PromptStrip tab="chat" />
 
       {/* Messages */}
-      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:10, paddingBottom:8, minHeight:200, maxHeight:'calc(90vh - 380px)' }}>
+      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, paddingBottom:8, minHeight:200, maxHeight:'calc(90vh - 400px)' }}>
         {messages.map((m,i)=>{
           const isUser = m.role==='user';
           return(
-            <div key={i} style={{ display:'flex', justifyContent:isUser?'flex-end':'flex-start', gap:10 }}>
+            <div key={i} style={{ display:'flex', justifyContent:isUser?'flex-end':'flex-start', gap:10, alignItems:'flex-end' }}>
               {!isUser && (
-                <div style={{ width:28, height:28, borderRadius:'50%', flexShrink:0,
+                <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0,
                   background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
-                  display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'#fff' }}>✨</div>
+                  display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', letterSpacing:-0.5 }}>M</div>
               )}
               <div style={{
-                maxWidth:'78%', padding:'10px 14px', borderRadius:isUser?'14px 14px 4px 14px':'14px 14px 14px 4px',
+                maxWidth:'80%', padding:'11px 15px',
+                borderRadius:isUser?'16px 16px 4px 16px':'16px 16px 16px 4px',
                 background:isUser?T.chatUserBg:T.chatAiBg,
-                border:`1px solid ${isUser?T.aiAccent+'44':T.border}`,
-                fontSize:12, color:T.text, lineHeight:1.6,
+                border:`1px solid ${isUser?T.aiAccent+'55':T.border}`,
+                fontSize:12.5, color:T.text, lineHeight:1.65,
                 whiteSpace:'pre-wrap', wordBreak:'break-word',
               }}>{m.content}</div>
               {isUser && (
-                <div style={{ width:28, height:28, borderRadius:'50%', flexShrink:0,
+                <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0,
                   background:`hsl(200,60%,35%)`,
                   display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'#fff' }}>You</div>
               )}
@@ -588,11 +633,11 @@ const AIAdvisor = ({ theme:T }) => {
           );
         })}
         {chatLoading && (
-          <div style={{ display:'flex', gap:10 }}>
-            <div style={{ width:28, height:28, borderRadius:'50%', flexShrink:0,
+          <div style={{ display:'flex', gap:10, alignItems:'flex-end' }}>
+            <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0,
               background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
-              display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>✨</div>
-            <div style={{ padding:'10px 14px', borderRadius:'14px 14px 14px 4px',
+              display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff' }}>M</div>
+            <div style={{ padding:'11px 15px', borderRadius:'16px 16px 16px 4px',
               background:T.chatAiBg, border:`1px solid ${T.border}`, color:T.textMuted, fontSize:12 }}>
               Searching the web…
             </div>
@@ -607,12 +652,12 @@ const AIAdvisor = ({ theme:T }) => {
           value={chatInput}
           onChange={e=>setChatInput(e.target.value)}
           onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }}
-          placeholder="Ask anything — what to write, what's trending, content strategy…"
-          style={{ flex:1, padding:'10px 14px', background:T.inputBg, border:`1px solid ${T.inputBorder}`,
-            borderRadius:10, color:T.text, fontSize:12, outline:'none', boxSizing:'border-box' }}
+          placeholder="Ask Marcus anything about your business, content, or growth…"
+          style={{ flex:1, padding:'11px 14px', background:T.inputBg, border:`1px solid ${T.inputBorder}`,
+            borderRadius:10, color:T.text, fontSize:12.5, outline:'none', boxSizing:'border-box' }}
         />
-        <button onClick={sendChat} disabled={chatLoading||!chatInput.trim()} style={{
-          padding:'10px 18px', borderRadius:10, border:'none',
+        <button onClick={()=>sendChat()} disabled={chatLoading||!chatInput.trim()} style={{
+          padding:'11px 20px', borderRadius:10, border:'none',
           background:chatLoading||!chatInput.trim()?T.surface:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
           color:chatLoading||!chatInput.trim()?T.textMuted:'#fff',
           cursor:chatLoading||!chatInput.trim()?'default':'pointer',
@@ -625,14 +670,18 @@ const AIAdvisor = ({ theme:T }) => {
   // ── Trending ───────────────────────────────────────────────────────────────
   const renderTrending = () => {
     if(!result) return(
-      <div style={{ textAlign:'center', padding:'32px 20px', color:T.textMuted }}>
-        <div style={{ fontSize:32, marginBottom:10 }}>🔍</div>
-        <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>See what people are searching for in "{category}"</div>
-        <div style={{ fontSize:11 }}>Results pulled live from the web — real search demand right now</div>
+      <div>
+        <PromptStrip tab="trending" />
+        <div style={{ textAlign:'center', padding:'28px 20px', color:T.textMuted }}>
+          <div style={{ fontSize:32, marginBottom:10 }}>🔍</div>
+          <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>See what people are searching for in "{category}"</div>
+          <div style={{ fontSize:11 }}>Results pulled live from the web — real search demand right now</div>
+        </div>
       </div>
     );
     return(
       <>
+        <PromptStrip tab="trending" />
         <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
           <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>📊 Search Intelligence — {result.category}</div>
           <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.insight}</p>
@@ -642,7 +691,11 @@ const AIAdvisor = ({ theme:T }) => {
             <SectionTitle>🚀 Rising Topics</SectionTitle>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
               {result.risingTopics.map((t,i)=>(
-                <span key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:20, padding:'4px 12px', fontSize:11, color:T.text }}>{t}</span>
+                <button key={i} onClick={()=>askMarcus(`Tell me more about the trend: "${t}" and how I should create content about it`)}
+                  style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:20, padding:'4px 12px', fontSize:11, color:T.text, cursor:'pointer', transition:'all 0.15s' }}
+                  onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.text; }}
+                >{t} →</button>
               ))}
             </div>
           </div>
@@ -650,18 +703,22 @@ const AIAdvisor = ({ theme:T }) => {
         <SectionTitle>🔍 What People Are Searching For</SectionTitle>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
           {(result.trendingSearces||result.trendingSearches||[]).map((item,i)=>(
-            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px', transition:'border-color 0.15s' }}
+            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px', transition:'border-color 0.15s', cursor:'pointer' }}
               onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
+              onClick={()=>askMarcus(`How should I write an article about "${item.contentAngle}" to capture the search query "${item.searchQuery}"?`)}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, marginBottom:6 }}>
                 <span style={{ fontSize:12, fontWeight:700, color:T.text, lineHeight:1.3 }}>"{item.searchQuery}"</span>
                 <Badge label={item.volume} colour={VOLUME_C[item.volume]}/>
               </div>
               <div style={{ fontSize:11, color:T.aiAccent, marginBottom:6, fontWeight:600 }}>✍️ {item.contentAngle}</div>
               <div style={{ fontSize:11, color:T.textSub, lineHeight:1.4, marginBottom:8 }}>{item.reason}</div>
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <span style={{ fontSize:10, color:T.textMuted }}>Google Discover:</span>
-                <Badge label={item.googleDiscoverPotential} colour={IMPACT_C[item.googleDiscoverPotential]}/>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <span style={{ fontSize:10, color:T.textMuted }}>Discover:</span>
+                  <Badge label={item.googleDiscoverPotential} colour={IMPACT_C[item.googleDiscoverPotential]}/>
+                </div>
+                <span style={{ fontSize:10, color:T.aiAccent }}>Ask Marcus →</span>
               </div>
             </div>
           ))}
@@ -673,14 +730,18 @@ const AIAdvisor = ({ theme:T }) => {
   // ── Recommendations ────────────────────────────────────────────────────────
   const renderRecommendations = () => {
     if(!result) return(
-      <div style={{ textAlign:'center', padding:'32px 20px', color:T.textMuted }}>
-        <div style={{ fontSize:32, marginBottom:10 }}>💡</div>
-        <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>Get content ideas for "{category}" based on real search demand</div>
-        <div style={{ fontSize:11 }}>AI cross-references live Google trends with your platform's content</div>
+      <div>
+        <PromptStrip tab="recommendations" />
+        <div style={{ textAlign:'center', padding:'28px 20px', color:T.textMuted }}>
+          <div style={{ fontSize:32, marginBottom:10 }}>💡</div>
+          <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>Get content ideas for "{category}" based on real search demand</div>
+          <div style={{ fontSize:11 }}>AI cross-references live Google trends with your platform's content</div>
+        </div>
       </div>
     );
     return(
       <>
+        <PromptStrip tab="recommendations" />
         <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
           <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>🎯 Strategy — {result.category}</div>
           <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.summary}</p>
@@ -688,9 +749,10 @@ const AIAdvisor = ({ theme:T }) => {
         <SectionTitle>📝 What to Create Next</SectionTitle>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
           {(result.recommendations||[]).map((r,i)=>(
-            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px', transition:'border-color 0.15s' }}
+            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px', transition:'border-color 0.15s', cursor:'pointer' }}
               onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
+              onClick={()=>askMarcus(`Help me write an outline for: "${r.title}" — including the best structure, key points to cover, and how to optimize it for Google traffic.`)}>
               <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginBottom:6 }}>
                 <span style={{ fontSize:12, fontWeight:700, color:T.text, lineHeight:1.3 }}>{r.title}</span>
                 <Badge label={r.urgency} colour={IMPACT_C[r.urgency]}/>
@@ -700,7 +762,10 @@ const AIAdvisor = ({ theme:T }) => {
                 {r.searchDemand&&<Badge label={`demand: ${r.searchDemand}`} colour={VOLUME_C[r.searchDemand]}/>}
               </div>
               <div style={{ fontSize:11, color:T.textSub, lineHeight:1.4, marginBottom:6 }}>{r.reason}</div>
-              <div style={{ fontSize:10, color:T.textMuted, fontStyle:'italic' }}>📈 {r.estimatedImpact}</div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div style={{ fontSize:10, color:T.textMuted, fontStyle:'italic' }}>📈 {r.estimatedImpact}</div>
+                <span style={{ fontSize:10, color:T.aiAccent }}>Get outline →</span>
+              </div>
             </div>
           ))}
         </div>
@@ -709,7 +774,10 @@ const AIAdvisor = ({ theme:T }) => {
             <div key={key} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px' }}>
               <SectionTitle>{title}</SectionTitle>
               {(result[key]||[]).map((g,i)=>(
-                <div key={i} style={{ display:'flex', gap:8, marginBottom:7 }}>
+                <div key={i} style={{ display:'flex', gap:8, marginBottom:7, cursor:'pointer', borderRadius:6, padding:'3px 4px', transition:'background 0.15s' }}
+                  onClick={()=>askMarcus(`Tell me more about this opportunity: "${g}"`)}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.rowHover}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                   <span style={{ color:col, flexShrink:0 }}>{icon}</span>
                   <span style={{ fontSize:12, color:T.text, lineHeight:1.4 }}>{g}</span>
                 </div>
@@ -724,15 +792,19 @@ const AIAdvisor = ({ theme:T }) => {
   // ── News ───────────────────────────────────────────────────────────────────
   const renderNews = () => {
     if(!result) return(
-      <div style={{ textAlign:'center', padding:'32px 20px', color:T.textMuted }}>
-        <div style={{ fontSize:32, marginBottom:10 }}>📰</div>
-        <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>Get live business news for "{category}"</div>
-        <div style={{ fontSize:11 }}>Stay updated on what's happening so you know what to write about</div>
+      <div>
+        <PromptStrip tab="news" />
+        <div style={{ textAlign:'center', padding:'28px 20px', color:T.textMuted }}>
+          <div style={{ fontSize:32, marginBottom:10 }}>📰</div>
+          <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>Get live business news for "{category}"</div>
+          <div style={{ fontSize:11 }}>Stay updated on what's happening so you know what to write about</div>
+        </div>
       </div>
     );
     const sentC = { bullish:'#10b981', bearish:'#ef4444', neutral:'#94a3b8', mixed:'#f59e0b' }[result.marketSentiment]||'#94a3b8';
     return(
       <>
+        <PromptStrip tab="news" />
         <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
             <div style={{ flex:1 }}>
@@ -761,9 +833,16 @@ const AIAdvisor = ({ theme:T }) => {
                 <span style={{ fontSize:10, color:T.textMuted }}>{h.publishedAt}</span>
               </div>
               <p style={{ fontSize:12, color:T.textSub, lineHeight:1.5, margin:'0 0 8px' }}>{h.summary}</p>
-              <div style={{ padding:'8px 10px', background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:8 }}>
-                <span style={{ fontSize:10, color:T.aiAccent, fontWeight:700 }}>✍️ Content idea: </span>
-                <span style={{ fontSize:11, color:T.text }}>{h.contentOpportunity}</span>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                padding:'8px 10px', background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:8, cursor:'pointer' }}
+                onClick={()=>askMarcus(`Help me write an article based on this news: "${h.title}". Give me a full outline, key angles, and how to optimize it for Google traffic.`)}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=T.aiAccent}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=T.aiBorder}>
+                <div>
+                  <span style={{ fontSize:10, color:T.aiAccent, fontWeight:700 }}>✍️ Content idea: </span>
+                  <span style={{ fontSize:11, color:T.text }}>{h.contentOpportunity}</span>
+                </div>
+                <span style={{ fontSize:10, color:T.aiAccent, flexShrink:0, marginLeft:8 }}>Write with Marcus →</span>
               </div>
             </div>
           ))}
@@ -834,7 +913,6 @@ const AIAdvisor = ({ theme:T }) => {
     </div>
   );
 };
-
 // ─────────────────────────────────────────────────────────────────────────────
 // TEAM MANAGER
 // ─────────────────────────────────────────────────────────────────────────────

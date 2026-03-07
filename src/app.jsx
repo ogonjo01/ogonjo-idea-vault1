@@ -6,6 +6,7 @@ import Header from './components/Header/Header';
 import CategoryFilter from './components/CategoryFilter/CategoryFilter';
 import ContentFeed from './components/ContentFeed/ContentFeed';
 import AddSummaryForm from './components/CreateSummaryForm/CreateSummaryForm';
+import EditSummaryForm from './components/EditSummaryForm/EditSummaryForm';
 import AuthForm from './components/AuthForm/AuthForm';
 import UserProfile from './components/UserProfile/UserProfile';
 import SummaryView from './components/SummaryView/SummaryView';
@@ -33,6 +34,28 @@ const ScrollToTop = () => {
   return null;
 };
 
+/* ── Fetch every column for a single article ─────────────────
+   DraftPanel only loads lightweight fields (no summary body,
+   no keywords, no tags, etc.) to keep the list fast.
+   Before opening the editor we always re-fetch the full row
+   so the editor is populated with ALL content.
+─────────────────────────────────────────────────────────── */
+const fetchFullArticle = async (id) => {
+  if (!id) return null;
+  try {
+    const { data, error } = await supabase
+      .from('book_summaries')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error('fetchFullArticle error:', err);
+    return null;
+  }
+};
+
 const AppInner = ({ session }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,11 +67,19 @@ const AppInner = ({ session }) => {
 
   const [selectedCategory, setSelectedCategory] = useState(getCategoryFromSearch());
   const [searchQuery, setSearchQuery]           = useState('');
-  const [showAddForm, setShowAddForm]           = useState(false);
-  const [editingSummary, setEditingSummary]     = useState(null);
-  const [headerHidden, setHeaderHidden]         = useState(false);
-  const [showPopup, setShowPopup]               = useState(false);
-  const [userRole, setUserRole]                 = useState('user'); // ← new
+
+  // CreateSummaryForm (new articles)
+  const [showAddForm, setShowAddForm]       = useState(false);
+  const [editingSummary, setEditingSummary] = useState(null);
+
+  // EditSummaryForm (editing existing / drafts)
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [draftToEdit, setDraftToEdit]   = useState(null);
+  const [editLoading, setEditLoading]   = useState(false);
+
+  const [headerHidden, setHeaderHidden] = useState(false);
+  const [showPopup, setShowPopup]       = useState(false);
+  const [userRole, setUserRole]         = useState('user');
 
   const isHomePage = location.pathname === '/';
 
@@ -57,12 +88,9 @@ const AppInner = ({ session }) => {
   }, [location.search, getCategoryFromSearch]);
 
   useEffect(() => {
-    let lastScrollY = window.scrollY;
     const handleScroll = () => {
       if (isHomePage) { setHeaderHidden(false); return; }
-      const currentScrollY = window.scrollY;
-      setHeaderHidden(currentScrollY > 0);
-      lastScrollY = currentScrollY;
+      setHeaderHidden(window.scrollY > 0);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -93,8 +121,29 @@ const AppInner = ({ session }) => {
     navigate(query ? `/?q=${encodeURIComponent(query)}` : '/', { replace: false });
   }, [navigate]);
 
-  const handleEdit = (summary) => {
-    setEditingSummary(summary);
+  /* ── handleEdit ─────────────────────────────────────────────
+     Called from DraftPanel ✏️ Edit button (and UserProfile).
+     The draft row passed in is PARTIAL — it only has the fields
+     DraftPanel selected (id, title, author, category, slug …).
+     We fetch SELECT * before opening EditSummaryForm so the
+     editor has the full summary body, keywords, tags, image, etc.
+  ─────────────────────────────────────────────────────────── */
+  const handleEdit = useCallback(async (partialSummary) => {
+    if (!partialSummary?.id) return;
+
+    setEditLoading(true);
+
+    const full = await fetchFullArticle(partialSummary.id);
+    const articleToEdit = full || partialSummary; // fall back gracefully
+
+    setDraftToEdit(articleToEdit);
+    setShowEditForm(true);
+    setEditLoading(false);
+  }, []);
+
+  // Header "+ New" button → CreateSummaryForm
+  const handleNewArticle = () => {
+    setEditingSummary(null);
     setShowAddForm(true);
   };
 
@@ -103,12 +152,22 @@ const AppInner = ({ session }) => {
     window.location.reload();
   };
 
+  const handleEditFormClose = () => {
+    setShowEditForm(false);
+    setDraftToEdit(null);
+  };
+
+  const handleEditFormUpdate = () => {
+    setShowEditForm(false);
+    setDraftToEdit(null);
+  };
+
   return (
     <div className="app-container">
       <ScrollToTop />
       <Header
         session={session}
-        onAddClick={() => setShowAddForm(true)}
+        onAddClick={handleNewArticle}
         onSearch={handleSearch}
         isHomePage={isHomePage}
         isHidden={headerHidden}
@@ -148,10 +207,41 @@ const AppInner = ({ session }) => {
           <Route path="/subscribe" element={<SubscriptionPage />} />
         </Routes>
 
+        {/* Loading overlay while fetching full article before edit */}
+        {editLoading && (
+          <div style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999,
+          }}>
+            <div style={{
+              background: '#fff', borderRadius: 12,
+              padding: '32px 48px', fontSize: 15,
+              color: '#374151', fontWeight: 500,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+            }}>
+              ⏳ Loading article…
+            </div>
+          </div>
+        )}
+
+        {/* Create new article */}
         {showAddForm && (
           <AddSummaryForm
             onClose={() => { setShowAddForm(false); setEditingSummary(null); }}
-            summaryToEdit={editingSummary}
+            editingSummary={editingSummary}
+            onNewSummary={() => { setShowAddForm(false); setEditingSummary(null); }}
+          />
+        )}
+
+        {/* Edit draft — key forces full remount if draft switches */}
+        {showEditForm && draftToEdit && (
+          <EditSummaryForm
+            key={draftToEdit.id}
+            summary={draftToEdit}
+            onClose={handleEditFormClose}
+            onUpdate={handleEditFormUpdate}
           />
         )}
       </main>
