@@ -1,0 +1,223 @@
+/* src/components/DraftPanel/DraftPanel.css */
+
+.draft-panel {
+  padding: 24px 0;
+  font-family: inherit;
+}
+
+.draft-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.draft-panel__title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.draft-panel__count {
+  background: #fbbf24;
+  color: #78350f;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ── banners ─────────────────────────────────────────────── */
+.draft-panel__banner {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.draft-panel__banner--ok   { background: #d1fae5; color: #065f46; }
+.draft-panel__banner--warn { background: #fef3c7; color: #92400e; }
+
+/* ── empty state ─────────────────────────────────────────── */
+.draft-panel__empty {
+  text-align: center;
+  padding: 60px 24px;
+  color: #9ca3af;
+}
+.draft-panel__empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.draft-panel__empty p {
+  font-size: 15px;
+  margin: 0;
+}
+
+/* ── loading ─────────────────────────────────────────────── */
+.draft-panel__loading {
+  padding: 40px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* ── bulk bar ────────────────────────────────────────────── */
+.draft-panel__bulk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.draft-panel__bulk-info {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e40af;
+  white-space: nowrap;
+}
+
+.draft-panel__bulk-mode {
+  font-size: 13px;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.draft-panel__bulk-mode label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.draft-panel__bulk-cat {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  background: white;
+  cursor: pointer;
+  min-width: 180px;
+}
+
+/* ── table ───────────────────────────────────────────────── */
+.draft-panel__table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.draft-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.draft-panel__table th {
+  background: #f9fafb;
+  padding: 10px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.draft-panel__table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.draft-panel__table tr:last-child td {
+  border-bottom: none;
+}
+
+.draft-panel__row--selected td {
+  background: #eff6ff;
+}
+
+.draft-panel__title-cell {
+  max-width: 260px;
+  word-break: break-word;
+  font-weight: 500;
+}
+
+.draft-panel__draft-badge {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.draft-panel__cat-select {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  width: 100%;
+  min-width: 140px;
+  background: white;
+  cursor: pointer;
+}
+
+/* ── buttons ─────────────────────────────────────────────── */
+.dp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.dp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.dp-btn:not(:disabled):hover { opacity: 0.85; }
+.dp-btn:not(:disabled):active { transform: scale(0.97); }
+
+.dp-btn--publish   { background: #2563eb; color: #fff; }
+.dp-btn--secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+.dp-btn--edit      { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.dp-btn--danger    { background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; }
+
+/* ── delete confirmation modal ───────────────────────────── */
+.draft-panel__modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.draft-panel__modal {
+  background: white;
+  border-radius: 14px;
+  padding: 32px 28px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
