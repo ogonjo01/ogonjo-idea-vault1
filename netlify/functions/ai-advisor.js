@@ -2,7 +2,7 @@
 // Handles 4 modes: trending | recommendations | news | chat
 // Uses Claude web_search tool for real current data.
 
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = 'claude-haiku-4-5-20251001';
 
 const trendingPrompt = (category) => `Search the web right now for what people are actively searching for and what topics are trending in the "${category}" space — specifically content discoverable via Google Search and Google Discover. Find real current trending searches and questions. Return ONLY valid JSON, no markdown:
 {"category":"${category}","updatedAt":"now","trendingSearces":[{"searchQuery":"exact phrase","volume":"high|medium|rising","contentAngle":"specific article title","reason":"why trending (1 sentence)","googleDiscoverPotential":"high|medium|low"}],"risingTopics":["t1","t2","t3","t4","t5"],"insight":"2-sentence summary of what is driving search interest in ${category} right now"}
