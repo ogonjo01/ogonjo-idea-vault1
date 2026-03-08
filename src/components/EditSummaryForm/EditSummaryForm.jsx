@@ -1,14 +1,4 @@
 // src/components/EditSummaryForm/EditSummaryForm.jsx
-// ─────────────────────────────────────────────────────────────
-//  FULL REWRITE — all original functionality PLUS:
-//   • Default category = draft sentinel → keeps article as draft
-//   • Auto-saves every 30s while editing
-//   • Manual "Save Draft" button
-//   • "Publish" only enabled when a real category is chosen
-//   • Duplicate-title check fires on Publish only
-//   • Delete button with confirmation modal
-//   • Auto-save status indicator in header
-// ─────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import ReactQuill from 'react-quill';
@@ -114,6 +104,29 @@ const extractYouTubeId = (url = '') => {
   return m ? m[1] : null;
 };
 
+/* ── Toast ────────────────────────────────────────────────── */
+const Toast = ({ message, type = 'success', onDone }) => {
+  useEffect(() => {
+    const t = setTimeout(onDone, 3000);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  const bg = type === 'success' ? '#16a34a' : type === 'error' ? '#dc2626' : '#b45309';
+  return (
+    <div style={{
+      position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+      background: bg, color: '#fff', borderRadius: 10, padding: '13px 28px',
+      fontWeight: 600, fontSize: 15, zIndex: 99999,
+      boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+      display: 'flex', alignItems: 'center', gap: 10,
+      animation: 'esf-toast-in 0.22s ease',
+      whiteSpace: 'nowrap',
+    }}>
+      {message}
+      <style>{`@keyframes esf-toast-in { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }`}</style>
+    </div>
+  );
+};
+
 /* ═══════════════════════════════════════════════════════════
    COMPONENT
 ═══════════════════════════════════════════════════════════ */
@@ -127,7 +140,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const [description, setDescription] = useState(summary.description || '');
   const [summaryText, setSummaryText] = useState(summary.summary || '');
 
-  // Category: if editing an existing draft (no category), start in draft mode
   const [category, setCategory] = useState(() => {
     if (summary.category) return summary.category;
     return DRAFT_SENTINEL;
@@ -148,16 +160,20 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
 
   /* ── Draft / status state ─────────────────────────────── */
   const [draftId, setDraftId]           = useState(summary.id || null);
-  const [autoSaveStatus, setAutoSaveStatus] = useState('idle'); // idle|saving|saved|error
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle');
   const autoSaveTimer                   = useRef(null);
   const lastSnapshotRef                 = useRef(null);
 
   /* ── UI state ─────────────────────────────────────────── */
   const [loading, setLoading]           = useState(false);
+  // ── NEW: separate state for Save Draft button ──────────
+  const [draftSaving, setDraftSaving]   = useState(false);
   const [errorMsg, setErrorMsg]         = useState('');
   const [titleDupeWarning, setTitleDupeWarning] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  // ── NEW: toast ─────────────────────────────────────────
+  const [toast, setToast]               = useState(null);
 
   /* ── Portal / Quill ───────────────────────────────────── */
   const portalElRef = useRef(null);
@@ -344,7 +360,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     } catch { return false; }
   };
 
-  /* ── Auto-link toolbar actions ────────────────────────── */
+  /* ── Auto-link toolbar actions (unchanged) ────────────── */
   const removeLinksAndMakeBold = () => {
     const editor = quillRef.current?.getEditor();
     if (!editor) { alert('Editor not ready'); return; }
@@ -538,7 +554,7 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   };
 
   /* ══════════════════════════════════════════════════════
-     AUTO-SAVE
+     AUTO-SAVE  (background, silent — unchanged)
   ══════════════════════════════════════════════════════ */
   const buildSnapshot = useCallback(() =>
     JSON.stringify({ title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordInput, difficulty }),
@@ -568,7 +584,8 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     };
   }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywords, keywordInput, difficulty, editedKeywords, summary]);
 
-  const saveDraft = useCallback(async () => {
+  // Background auto-save — does NOT close form, no toast
+  const _autoSave = useCallback(async () => {
     if (!title.trim() && !summaryText.trim()) return null;
     setAutoSaveStatus('saving');
     try {
@@ -600,40 +617,108 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       }
       lastSnapshotRef.current = buildSnapshot();
       setAutoSaveStatus('saved');
-      return draftId;
     } catch (err) {
       console.error('Auto-save error:', err);
       setAutoSaveStatus('error');
-      return null;
     }
   }, [title, summaryText, buildPayload, draftId, slug, buildSnapshot]);
 
-  // auto-save timer
   useEffect(() => {
     if (!title.trim() && !summaryText.trim()) return;
     if (buildSnapshot() === lastSnapshotRef.current) return;
     clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(saveDraft, AUTO_SAVE_MS);
+    autoSaveTimer.current = setTimeout(_autoSave, AUTO_SAVE_MS);
     return () => clearTimeout(autoSaveTimer.current);
-  }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordInput, difficulty, saveDraft, buildSnapshot]);
+  }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordInput, difficulty, _autoSave, buildSnapshot]);
 
   useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
 
   /* ══════════════════════════════════════════════════════
-     DUPLICATE TITLE CHECK
+     TITLE EXISTS CHECK  (any status — draft or published)
   ══════════════════════════════════════════════════════ */
-  const checkTitleDuplicate = useCallback(async (t, excludeId = null) => {
-    if (!t?.trim()) return false;
+  const checkTitleExists = useCallback(async (t, excludeId = null) => {
+    if (!t?.trim()) return { exists: false };
     try {
-      let q = supabase.from('book_summaries').select('id').ilike('title', t.trim()).eq('status', 'published');
+      let q = supabase.from('book_summaries').select('id, status').ilike('title', t.trim());
       if (excludeId) q = q.neq('id', excludeId);
       const { data } = await q.limit(1).maybeSingle();
-      return !!data;
-    } catch { return false; }
+      return data ? { exists: true, status: data.status } : { exists: false };
+    } catch { return { exists: false }; }
   }, []);
 
   /* ══════════════════════════════════════════════════════
-     SUBMIT (PUBLISH or UPDATE)
+     SAVE DRAFT  (manual button — NEW behaviour)
+     • Checks title duplicate across ALL statuses
+     • Saves once (draftSaving guard prevents double-click)
+     • Closes form
+     • Shows toast
+  ══════════════════════════════════════════════════════ */
+  const handleSaveDraft = useCallback(async () => {
+    if (draftSaving) return;
+    setTitleDupeWarning('');
+    setErrorMsg('');
+
+    if (!title.trim()) {
+      setErrorMsg('Please enter a title before saving.');
+      return;
+    }
+
+    // Title duplicate check — excludes current article's own ID
+    const excludeId = draftId || summary.id || null;
+    const check = await checkTitleExists(title.trim(), excludeId);
+    if (check.exists) {
+      setTitleDupeWarning(
+        `⚠️ An article called "${title.trim()}" already exists${check.status === 'draft' ? ' (as a draft)' : ' (published)'}. Please use a different title.`
+      );
+      return;
+    }
+
+    setDraftSaving(true);
+    try {
+      const payload = await buildPayload('draft');
+      if (!payload.user_id) throw new Error('You must be logged in.');
+
+      if (draftId) {
+        const { error } = await supabase.from('book_summaries')
+          .update(payload).eq('id', draftId).eq('user_id', payload.user_id);
+        if (error) throw error;
+      } else {
+        let finalSlug = slug || slugify(title || `draft-${Date.now()}`, { lower: true, strict: true, replacement: '-' });
+        try {
+          const { data: ex } = await supabase.from('book_summaries').select('id').eq('slug', finalSlug).maybeSingle();
+          if (ex) {
+            let c = 2;
+            while (true) {
+              const ns = `${finalSlug}-${c}`;
+              const { data: ex2 } = await supabase.from('book_summaries').select('id').eq('slug', ns).maybeSingle();
+              if (!ex2) { finalSlug = ns; break; }
+              if (++c > 1000) { finalSlug = `${finalSlug}-${Date.now()}`; break; }
+            }
+          }
+        } catch (_) {}
+        payload.slug = finalSlug;
+        const { data: ins, error } = await supabase.from('book_summaries').insert([payload]).select('id').single();
+        if (error) throw error;
+        setDraftId(ins.id);
+        initialIdRef.current = ins.id;
+      }
+
+      // Signal parent refresh, show toast, close
+      if (typeof onUpdate === 'function') onUpdate(null);
+      setToast({ message: '✅ Draft saved successfully', type: 'success' });
+      setTimeout(() => {
+        if (typeof onClose === 'function') onClose();
+      }, 1200);
+
+    } catch (err) {
+      console.error('Save draft error:', err);
+      setToast({ message: `❌ Could not save: ${err.message}`, type: 'error' });
+      setDraftSaving(false);
+    }
+  }, [draftSaving, title, draftId, summary.id, checkTitleExists, buildPayload, slug, onUpdate, onClose]);
+
+  /* ══════════════════════════════════════════════════════
+     SUBMIT (PUBLISH)
   ══════════════════════════════════════════════════════ */
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -642,12 +727,17 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
     if (!author.trim()) { setErrorMsg('Author is required'); return; }
     if (!category || category === DRAFT_SENTINEL) { setErrorMsg('Category is required to publish.'); return; }
 
-    // Duplicate title check
-    const isDupe = await checkTitleDuplicate(title.trim(), draftId || summary.id || null);
-    if (isDupe) {
-      setTitleDupeWarning(`⚠️ A published article called "${title.trim()}" already exists. Change the title before publishing.`);
-      return;
-    }
+    // Duplicate check for publish — published only
+    try {
+      let q = supabase.from('book_summaries').select('id').ilike('title', title.trim()).eq('status', 'published');
+      const excludeId = draftId || summary.id || null;
+      if (excludeId) q = q.neq('id', excludeId);
+      const { data } = await q.limit(1).maybeSingle();
+      if (data) {
+        setTitleDupeWarning(`⚠️ A published article called "${title.trim()}" already exists. Change the title before publishing.`);
+        return;
+      }
+    } catch (_) {}
 
     setLoading(true);
     try {
@@ -658,7 +748,6 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
       const payload = await buildPayload('published');
       payload.user_id = user.id;
 
-      // For new articles resolve slug collision
       const targetId = draftId || initialIdRef.current;
       if (!targetId) {
         let finalSlug = slug || slugify(title||'', { lower: true, strict: true, replacement: '-' });
@@ -733,325 +822,316 @@ const EditSummaryForm = ({ summary = {}, onClose = () => {}, onUpdate = () => {}
   const autoSaveLabel = { idle:'', saving:'💾 Saving…', saved:'✅ Draft saved', error:'⚠️ Auto-save failed' }[autoSaveStatus];
   const hasId = !!(draftId || summary.id);
 
-  /* ── portal guard ─────────────────────────────────────── */
   if (!portalElRef.current) return null;
 
   const modal = (
-    <div
-      className="modal-overlay"
-      role="presentation"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
+    <>
+      {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+
       <div
-        className="modal-content edit-large"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Edit Summary"
-        onClick={e => e.stopPropagation()}
+        className="modal-overlay"
+        role="presentation"
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       >
-        {/* Header */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <button className="close-button" onClick={onClose} aria-label="Close">&times;</button>
-            <h2 style={{ margin:0 }}>{isEditing ? 'Edit Summary' : 'Create Summary'}</h2>
+        <div
+          className="modal-content edit-large"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Edit Summary"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <button className="close-button" onClick={onClose} aria-label="Close">&times;</button>
+              <h2 style={{ margin:0 }}>{isEditing ? 'Edit Summary' : 'Create Summary'}</h2>
+            </div>
+            <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+              {autoSaveLabel && (
+                <span style={{ fontSize:13, color: autoSaveStatus==='error'?'#ef4444':'#6b7280' }}>
+                  {autoSaveLabel}
+                </span>
+              )}
+              {isDraftMode && (
+                <span style={{ background:'#fef3c7', color:'#92400e', border:'1px solid #fbbf24', borderRadius:20, padding:'2px 10px', fontSize:12, fontWeight:600 }}>
+                  DRAFT
+                </span>
+              )}
+            </div>
           </div>
-          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-            {autoSaveLabel && (
-              <span style={{ fontSize:13, color: autoSaveStatus==='error'?'#ef4444':'#6b7280' }}>
-                {autoSaveLabel}
-              </span>
-            )}
-            {isDraftMode && (
-              <span style={{ background:'#fef3c7', color:'#92400e', border:'1px solid #fbbf24', borderRadius:20, padding:'2px 10px', fontSize:12, fontWeight:600 }}>
-                DRAFT
-              </span>
-            )}
-          </div>
-        </div>
 
-        {/* Alerts */}
-        {errorMsg && <div className="form-error" role="alert">{errorMsg}</div>}
-        {titleDupeWarning && (
-          <div className="form-error" style={{ background:'#fef3c7', borderColor:'#fbbf24', color:'#92400e' }} role="alert">
-            {titleDupeWarning}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="summary-form">
-          {/* Title */}
-          <label htmlFor="es-title">Title</label>
-          <input
-            id="es-title"
-            type="text"
-            value={title}
-            onChange={e => { setTitle(e.target.value); setTitleDupeWarning(''); }}
-            required
-          />
-          <small className="slug-preview">Slug: <code>{slug || '(will be generated)'}</code></small>
-
-          {/* Content ID */}
-          {summary.id && (
-            <div style={{ marginTop:6, marginBottom:8 }}>
-              <small>Content ID: <code style={{ wordBreak:'break-all' }}>{summary.id}</code></small>{' '}
-              <button type="button" className="hf-btn" onClick={copyContentId} style={{ marginLeft:8 }}>Copy ID</button>
+          {errorMsg && <div className="form-error" role="alert">{errorMsg}</div>}
+          {titleDupeWarning && (
+            <div className="form-error" style={{ background:'#fef3c7', borderColor:'#fbbf24', color:'#92400e' }} role="alert">
+              {titleDupeWarning}
             </div>
           )}
 
-          {/* Author */}
-          <label htmlFor="es-author">Author</label>
-          <input id="es-author" type="text" value={author} onChange={e => setAuthor(e.target.value)} required />
+          <form onSubmit={handleSubmit} className="summary-form">
+            {/* Title */}
+            <label htmlFor="es-title">Title</label>
+            <input
+              id="es-title"
+              type="text"
+              value={title}
+              onChange={e => { setTitle(e.target.value); setTitleDupeWarning(''); setErrorMsg(''); }}
+              required
+            />
+            <small className="slug-preview">Slug: <code>{slug || '(will be generated)'}</code></small>
 
-          {/* Category / draft selector */}
-          <label htmlFor="es-category">
-            Category
-            <span style={{ color:'#6b7280', fontWeight:400, fontSize:12, marginLeft:6 }}>
-              — select a category to enable publishing
-            </span>
-          </label>
-          <select id="es-category" value={category} onChange={e => setCategory(e.target.value)}>
-            <option value={DRAFT_SENTINEL}>📝 Keep as Draft (auto-save)</option>
-            {REAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+            {/* Content ID */}
+            {summary.id && (
+              <div style={{ marginTop:6, marginBottom:8 }}>
+                <small>Content ID: <code style={{ wordBreak:'break-all' }}>{summary.id}</code></small>{' '}
+                <button type="button" className="hf-btn" onClick={copyContentId} style={{ marginLeft:8 }}>Copy ID</button>
+              </div>
+            )}
 
-          {/* Difficulty */}
-          <label htmlFor="es-difficulty">Difficulty level (optional)</label>
-          <select id="es-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value)}>
-            {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-          </select>
+            <label htmlFor="es-author">Author</label>
+            <input id="es-author" type="text" value={author} onChange={e => setAuthor(e.target.value)} required />
 
-          {/* Description */}
-          <label htmlFor="es-desc">Short description (feed preview)</label>
-          <input id="es-desc" type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Short 1-2 sentence description" />
-
-          {/* Image */}
-          <label htmlFor="es-img">Cover image URL</label>
-          <input id="es-img" type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
-
-          {/* Affiliate */}
-          <label htmlFor="es-aff">Affiliate link</label>
-          <div className="affiliate-row-edit" style={{ display:'flex', gap:8, alignItems:'center', width:'100%', marginBottom:6 }}>
-            <input id="es-aff" type="url" value={affiliateLink} onChange={e => setAffiliateLink(e.target.value)} placeholder="Paste affiliate link" style={{ flex:1, minWidth:0, padding:'8px 10px' }} />
-            <select value={affiliateType} onChange={e => setAffiliateType(e.target.value)} style={{ width:'12%', minWidth:100, padding:'6px 8px' }}>
-              <option value="book">Get Book</option>
-              <option value="pdf">Get PDF</option>
-              <option value="app">Open App</option>
+            <label htmlFor="es-category">
+              Category
+              <span style={{ color:'#6b7280', fontWeight:400, fontSize:12, marginLeft:6 }}>
+                — select a category to enable publishing
+              </span>
+            </label>
+            <select id="es-category" value={category} onChange={e => setCategory(e.target.value)}>
+              <option value={DRAFT_SENTINEL}>📝 Keep as Draft (auto-save)</option>
+              {REAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-          </div>
-          <small style={{ display:'block', marginTop:6, color:'#666' }}>Choose the type and paste the link.</small>
 
-          {/* YouTube */}
-          <label htmlFor="es-yt">YouTube URL</label>
-          <input id="es-yt" type="url" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="https://youtube.com/..." />
-          {youtubeId && (
-            <div className="youtube-preview">
-              <iframe
-                title="youtube-preview"
-                src={`https://www.youtube.com/embed/${youtubeId}`}
-                frameBorder="0"
-                allowFullScreen
-                style={{ width:'100%', height:200, borderRadius:8 }}
+            <label htmlFor="es-difficulty">Difficulty level (optional)</label>
+            <select id="es-difficulty" value={difficulty} onChange={e => setDifficulty(e.target.value)}>
+              {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+            </select>
+
+            <label htmlFor="es-desc">Short description (feed preview)</label>
+            <input id="es-desc" type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Short 1-2 sentence description" />
+
+            <label htmlFor="es-img">Cover image URL</label>
+            <input id="es-img" type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
+
+            <label htmlFor="es-aff">Affiliate link</label>
+            <div className="affiliate-row-edit" style={{ display:'flex', gap:8, alignItems:'center', width:'100%', marginBottom:6 }}>
+              <input id="es-aff" type="url" value={affiliateLink} onChange={e => setAffiliateLink(e.target.value)} placeholder="Paste affiliate link" style={{ flex:1, minWidth:0, padding:'8px 10px' }} />
+              <select value={affiliateType} onChange={e => setAffiliateType(e.target.value)} style={{ width:'12%', minWidth:100, padding:'6px 8px' }}>
+                <option value="book">Get Book</option>
+                <option value="pdf">Get PDF</option>
+                <option value="app">Open App</option>
+              </select>
+            </div>
+            <small style={{ display:'block', marginTop:6, color:'#666' }}>Choose the type and paste the link.</small>
+
+            <label htmlFor="es-yt">YouTube URL</label>
+            <input id="es-yt" type="url" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="https://youtube.com/..." />
+            {youtubeId && (
+              <div className="youtube-preview">
+                <iframe
+                  title="youtube-preview"
+                  src={`https://www.youtube.com/embed/${youtubeId}`}
+                  frameBorder="0"
+                  allowFullScreen
+                  style={{ width:'100%', height:200, borderRadius:8 }}
+                />
+              </div>
+            )}
+
+            <label htmlFor="es-tags">Tags</label>
+            <div className="tags-input-row">
+              <input
+                id="es-tags"
+                type="text"
+                placeholder="type tag then Enter or comma"
+                value={tagInput}
+                onChange={e => setTagInput(e.target.value)}
+                onKeyDown={handleTagKey}
+              />
+              <button type="button" className="hf-btn" onClick={() => addTagFromInput(tagInput)}>Add</button>
+            </div>
+            <div className="tags-list">
+              {(tags||[]).map(t => (
+                <button type="button" key={t} className="tag-chip" onClick={() => removeTag(t)} title="click to remove">
+                  {t} <span aria-hidden>✕</span>
+                </button>
+              ))}
+            </div>
+
+            <label htmlFor="es-kw">Keywords (optional)</label>
+            <div className="keywords-row" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
+              <input
+                id="es-kw"
+                type="text"
+                value={keywordInput}
+                onChange={e => { setKeywordInput(e.target.value); if (!editedKeywords) setEditedKeywords(true); }}
+                onKeyDown={handleKeywordKey}
+                placeholder="type keyword then Enter or comma"
+                style={{ flex:'1 1 220px', minWidth:0, padding:'8px 10px' }}
+              />
+              <button type="button" className="hf-btn" onClick={() => addKeywordFromInput(keywordInput)}>Add</button>
+              <button type="button" className="hf-btn" onClick={() => { setKeywords([]); setEditedKeywords(true); setKeywordInput(''); }}>Clear</button>
+            </div>
+            <div className="keywords-list" style={{ marginBottom:8 }}>
+              {parsedKeywordsPreview.map(k => (
+                <button key={k} type="button" className="tag-chip" onClick={() => removeKeyword(k)} title="Click to remove" style={{ marginRight:6 }}>
+                  {k} <span aria-hidden>✕</span>
+                </button>
+              ))}
+              {parsedKeywordsPreview.length === 0 && <div style={{ color:'#666', fontSize:13 }}>No keywords yet</div>}
+            </div>
+            <div style={{ fontSize:12, color:'#6b7280', marginBottom:12 }}>
+              {parsedKeywordsPreview.length} / {KEYWORDS_LIMIT} keywords &nbsp;·&nbsp; Click ✕ to remove.
+            </div>
+
+            <label htmlFor="es-summary">Full summary</label>
+            <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
+              <button type="button" className="hf-btn" onClick={removeLinksAndMakeBold}>✂️ Remove links & Bold</button>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldedPhrases}>🔗 Auto-link bolded phrases</button>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldToSlug}>🔗 Bold → Slug Link</button>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldExact}>🎯 Exact auto-link</button>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldKeywords}>🧠 Keyword auto-link</button>
+              <button type="button" className="hf-btn" onClick={resetAndAutoRelink} style={{ background:'#eef2ff' }}>Reset & Auto-Relink</button>
+              <button type="button" className="hf-btn" onClick={() => setShowInternalLinkModal(true)}>🔎 Manual link</button>
+              <span style={{ color:'#6b7280', fontSize:12 }}>All links use /library/ route.</span>
+            </div>
+            <div className="quill-container">
+              <ReactQuill
+                ref={quillRef}
+                theme="snow"
+                value={summaryText}
+                onChange={setSummaryText}
+                modules={modules}
+                formats={quillFormats}
               />
             </div>
-          )}
 
-          {/* Tags */}
-          <label htmlFor="es-tags">Tags</label>
-          <div className="tags-input-row">
-            <input
-              id="es-tags"
-              type="text"
-              placeholder="type tag then Enter or comma"
-              value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={handleTagKey}
-            />
-            <button type="button" className="hf-btn" onClick={() => addTagFromInput(tagInput)}>Add</button>
-          </div>
-          <div className="tags-list">
-            {(tags||[]).map(t => (
-              <button type="button" key={t} className="tag-chip" onClick={() => removeTag(t)} title="click to remove">
-                {t} <span aria-hidden>✕</span>
-              </button>
-            ))}
-          </div>
+            {/* Action bar */}
+            <div style={{ display:'flex', gap:10, marginTop:16, alignItems:'center', flexWrap:'wrap' }}>
 
-          {/* Keywords */}
-          <label htmlFor="es-kw">Keywords (optional)</label>
-          <div className="keywords-row" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
-            <input
-              id="es-kw"
-              type="text"
-              value={keywordInput}
-              onChange={e => { setKeywordInput(e.target.value); if (!editedKeywords) setEditedKeywords(true); }}
-              onKeyDown={handleKeywordKey}
-              placeholder="type keyword then Enter or comma"
-              style={{ flex:'1 1 220px', minWidth:0, padding:'8px 10px' }}
-            />
-            <button type="button" className="hf-btn" onClick={() => addKeywordFromInput(keywordInput)}>Add</button>
-            <button type="button" className="hf-btn" onClick={() => { setKeywords([]); setEditedKeywords(true); setKeywordInput(''); }}>Clear</button>
-          </div>
-          <div className="keywords-list" style={{ marginBottom:8 }}>
-            {parsedKeywordsPreview.map(k => (
-              <button key={k} type="button" className="tag-chip" onClick={() => removeKeyword(k)} title="Click to remove" style={{ marginRight:6 }}>
-                {k} <span aria-hidden>✕</span>
-              </button>
-            ))}
-            {parsedKeywordsPreview.length === 0 && <div style={{ color:'#666', fontSize:13 }}>No keywords yet</div>}
-          </div>
-          <div style={{ fontSize:12, color:'#6b7280', marginBottom:12 }}>
-            {parsedKeywordsPreview.length} / {KEYWORDS_LIMIT} keywords &nbsp;·&nbsp; Click ✕ to remove.
-          </div>
-
-          {/* Summary editor */}
-          <label htmlFor="es-summary">Full summary</label>
-          <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center' }}>
-            <button type="button" className="hf-btn" onClick={removeLinksAndMakeBold}>✂️ Remove links & Bold</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldedPhrases}>🔗 Auto-link bolded phrases</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldToSlug}>🔗 Bold → Slug Link</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldExact}>🎯 Exact auto-link</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldKeywords}>🧠 Keyword auto-link</button>
-            <button type="button" className="hf-btn" onClick={resetAndAutoRelink} style={{ background:'#eef2ff' }}>Reset & Auto-Relink</button>
-            <button type="button" className="hf-btn" onClick={() => setShowInternalLinkModal(true)}>🔎 Manual link</button>
-            <span style={{ color:'#6b7280', fontSize:12 }}>All links use /library/ route.</span>
-          </div>
-          <div className="quill-container">
-            <ReactQuill
-              ref={quillRef}
-              theme="snow"
-              value={summaryText}
-              onChange={setSummaryText}
-              modules={modules}
-              formats={quillFormats}
-            />
-          </div>
-
-          {/* Action bar */}
-          <div style={{ display:'flex', gap:10, marginTop:16, alignItems:'center', flexWrap:'wrap' }}>
-            {/* Save Draft */}
-            <button
-              type="button"
-              className="hf-btn"
-              onClick={saveDraft}
-              disabled={loading}
-              style={{ background:'#f3f4f6', border:'1px solid #d1d5db' }}
-            >
-              💾 Save Draft
-            </button>
-
-            {/* Publish / Save */}
-            <button
-              type="submit"
-              className="hf-btn"
-              disabled={loading || !canPublish}
-              title={!canPublish ? 'Select a category to publish' : ''}
-              style={{
-                background: canPublish ? '#2563eb' : '#9ca3af',
-                color: '#fff',
-                border: 'none',
-                cursor: canPublish ? 'pointer' : 'not-allowed',
-                fontWeight: 600,
-              }}
-            >
-              {loading ? 'Saving…' : (isEditing ? '🚀 Save & Publish' : '🚀 Publish')}
-            </button>
-
-            {!canPublish && (
-              <span style={{ fontSize:12, color:'#9ca3af' }}>Select a category to publish</span>
-            )}
-
-            <button
-              type="button"
-              className="hf-btn"
-              onClick={onClose}
-              disabled={loading}
-            >
-              Cancel
-            </button>
-
-            {/* Delete — only when article exists */}
-            {hasId && (
+              {/* ── FIXED: Save Draft button ── */}
               <button
                 type="button"
-                onClick={() => setShowDeleteConfirm(true)}
+                className="hf-btn"
+                onClick={handleSaveDraft}
+                disabled={draftSaving || loading}
                 style={{
-                  marginLeft: 'auto',
-                  background: '#fff',
-                  color: '#dc2626',
-                  border: '1.5px solid #fca5a5',
-                  borderRadius: 6,
-                  padding: '6px 14px',
-                  cursor: 'pointer',
+                  background: draftSaving ? '#e5e7eb' : '#f3f4f6',
+                  color: draftSaving ? '#9ca3af' : '#374151',
+                  border: '1px solid #d1d5db',
+                  cursor: draftSaving ? 'not-allowed' : 'pointer',
+                  minWidth: 130,
                   fontWeight: 500,
-                  fontSize: 13,
                 }}
               >
-                🗑 Delete Article
+                {draftSaving ? '💾 Saving…' : '💾 Save Draft'}
               </button>
-            )}
-          </div>
-        </form>
 
-        {/* Internal link modal */}
-        {showInternalLinkModal && (
-          <div className="internal-link-modal" role="dialog" aria-modal="true" onClick={() => { setShowInternalLinkModal(false); setLinkSearch(''); setLinkResults([]); }}>
-            <div className="internal-link-box" onClick={e => e.stopPropagation()}>
-              <h4>Link to summary</h4>
-              <input type="text" placeholder="Search summaries by title…" value={linkSearch} onChange={e => setLinkSearch(e.target.value)} autoFocus />
-              <div className="link-results" style={{ maxHeight:240, overflowY:'auto', marginTop:8 }}>
-                {linkResults.length === 0 && <div style={{ padding:8, color:'#666' }}>No results</div>}
-                <ul style={{ listStyle:'none', padding:0, margin:0 }}>
-                  {linkResults.map(r => (
-                    <li key={r.id} style={{ marginBottom:6 }}>
-                      <button type="button" className="hf-btn" onClick={() => insertInternalLink(r)} style={{ width:'100%', textAlign:'left' }}>{r.title}</button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div style={{ display:'flex', gap:8, marginTop:10 }}>
-                <button className="hf-btn" onClick={() => { setShowInternalLinkModal(false); setLinkSearch(''); setLinkResults([]); }}>Cancel</button>
-              </div>
-            </div>
-          </div>
-        )}
+              {/* Publish */}
+              <button
+                type="submit"
+                className="hf-btn"
+                disabled={loading || !canPublish || draftSaving}
+                title={!canPublish ? 'Select a category to publish' : ''}
+                style={{
+                  background: canPublish ? '#2563eb' : '#9ca3af',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: canPublish ? 'pointer' : 'not-allowed',
+                  fontWeight: 600,
+                }}
+              >
+                {loading ? 'Saving…' : (isEditing ? '🚀 Save & Publish' : '🚀 Publish')}
+              </button>
 
-        {/* Delete confirmation modal */}
-        {showDeleteConfirm && (
-          <div
-            className="internal-link-modal"
-            role="dialog"
-            aria-modal="true"
-            onClick={() => !deleteLoading && setShowDeleteConfirm(false)}
-            style={{ zIndex:9999 }}
-          >
-            <div className="internal-link-box" onClick={e => e.stopPropagation()} style={{ maxWidth:420, textAlign:'center' }}>
-              <div style={{ fontSize:44, marginBottom:8 }}>⚠️</div>
-              <h3 style={{ margin:'0 0 8px', color:'#dc2626' }}>Delete this article?</h3>
-              <p style={{ color:'#6b7280', marginBottom:20, fontSize:14 }}>
-                <strong>"{title || 'this article'}"</strong> will be permanently deleted and cannot be undone.
-              </p>
-              <div style={{ display:'flex', gap:12, justifyContent:'center' }}>
+              {!canPublish && (
+                <span style={{ fontSize:12, color:'#9ca3af' }}>Select a category to publish</span>
+              )}
+
+              <button
+                type="button"
+                className="hf-btn"
+                onClick={onClose}
+                disabled={loading || draftSaving}
+              >
+                Cancel
+              </button>
+
+              {hasId && (
                 <button
                   type="button"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  disabled={deleteLoading}
-                  style={{ padding:'9px 22px', borderRadius:6, border:'1px solid #d1d5db', background:'#f9fafb', cursor:'pointer', fontWeight:500 }}
+                  onClick={() => setShowDeleteConfirm(true)}
+                  style={{
+                    marginLeft: 'auto',
+                    background: '#fff',
+                    color: '#dc2626',
+                    border: '1.5px solid #fca5a5',
+                    borderRadius: 6,
+                    padding: '6px 14px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    fontSize: 13,
+                  }}
                 >
-                  Cancel
+                  🗑 Delete Article
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={deleteLoading}
-                  style={{ padding:'9px 22px', borderRadius:6, border:'none', background:'#dc2626', color:'#fff', cursor:'pointer', fontWeight:600 }}
-                >
-                  {deleteLoading ? 'Deleting…' : 'Yes, Delete'}
-                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Internal link modal */}
+          {showInternalLinkModal && (
+            <div className="internal-link-modal" role="dialog" aria-modal="true" onClick={() => { setShowInternalLinkModal(false); setLinkSearch(''); setLinkResults([]); }}>
+              <div className="internal-link-box" onClick={e => e.stopPropagation()}>
+                <h4>Link to summary</h4>
+                <input type="text" placeholder="Search summaries by title…" value={linkSearch} onChange={e => setLinkSearch(e.target.value)} autoFocus />
+                <div className="link-results" style={{ maxHeight:240, overflowY:'auto', marginTop:8 }}>
+                  {linkResults.length === 0 && <div style={{ padding:8, color:'#666' }}>No results</div>}
+                  <ul style={{ listStyle:'none', padding:0, margin:0 }}>
+                    {linkResults.map(r => (
+                      <li key={r.id} style={{ marginBottom:6 }}>
+                        <button type="button" className="hf-btn" onClick={() => insertInternalLink(r)} style={{ width:'100%', textAlign:'left' }}>{r.title}</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div style={{ display:'flex', gap:8, marginTop:10 }}>
+                  <button className="hf-btn" onClick={() => { setShowInternalLinkModal(false); setLinkSearch(''); setLinkResults([]); }}>Cancel</button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Delete confirmation modal */}
+          {showDeleteConfirm && (
+            <div
+              className="internal-link-modal"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => !deleteLoading && setShowDeleteConfirm(false)}
+              style={{ zIndex:9999 }}
+            >
+              <div className="internal-link-box" onClick={e => e.stopPropagation()} style={{ maxWidth:420, textAlign:'center' }}>
+                <div style={{ fontSize:44, marginBottom:8 }}>⚠️</div>
+                <h3 style={{ margin:'0 0 8px', color:'#dc2626' }}>Delete this article?</h3>
+                <p style={{ color:'#6b7280', marginBottom:20, fontSize:14 }}>
+                  <strong>"{title || 'this article'}"</strong> will be permanently deleted and cannot be undone.
+                </p>
+                <div style={{ display:'flex', gap:12, justifyContent:'center' }}>
+                  <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deleteLoading}
+                    style={{ padding:'9px 22px', borderRadius:6, border:'1px solid #d1d5db', background:'#f9fafb', cursor:'pointer', fontWeight:500 }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleDelete} disabled={deleteLoading}
+                    style={{ padding:'9px 22px', borderRadius:6, border:'none', background:'#dc2626', color:'#fff', cursor:'pointer', fontWeight:600 }}>
+                    {deleteLoading ? 'Deleting…' : 'Yes, Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 
   return createPortal(modal, portalElRef.current);

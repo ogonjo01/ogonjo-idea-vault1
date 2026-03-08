@@ -76,22 +76,39 @@ const fetchFullRow = async (id) => {
   }
 };
 
+/* ── Toast component ─────────────────────────────────────── */
+const Toast = ({ message, type = "success", onDone }) => {
+  useEffect(() => {
+    const t = setTimeout(onDone, 3000);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  const bg = type === "success" ? "#16a34a" : type === "error" ? "#dc2626" : "#b45309";
+  return (
+    <div style={{
+      position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+      background: bg, color: "#fff", borderRadius: 10, padding: "13px 28px",
+      fontWeight: 600, fontSize: 15, zIndex: 99999,
+      boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
+      display: "flex", alignItems: "center", gap: 10,
+      animation: "csf-toast-in 0.22s ease",
+    }}>
+      {message}
+    </div>
+  );
+};
+
 /* ═══════════════════════════════════════════════════════════
    COMPONENT
 ═══════════════════════════════════════════════════════════ */
 const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => {
-
-  /* ── Loading state while fetching full row ───────────── */
   const [initLoading, setInitLoading] = useState(false);
-  const [initData, setInitData]       = useState(null); // fully loaded row
+  const [initData, setInitData]       = useState(null);
 
-  /* ── Fetch full row if editingSummary is a partial draft ─ */
   useEffect(() => {
     if (!editingSummary?.id) {
       setInitData(editingSummary);
       return;
     }
-    // Always fetch full row from DB to ensure summary/keywords etc. are loaded
     setInitLoading(true);
     fetchFullRow(editingSummary.id).then((row) => {
       setInitData(row || editingSummary);
@@ -99,7 +116,6 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
     });
   }, [editingSummary?.id]);
 
-  /* ── Don't render form until we have full data ───────── */
   if (initLoading || (editingSummary?.id && !initData)) {
     return (
       <div className="modal-overlay">
@@ -114,9 +130,7 @@ const CreateSummaryForm = ({ onClose, onNewSummary, editingSummary = null }) => 
 };
 
 /* ─────────────────────────────────────────────────────────
-   INNER COMPONENT  — only mounts once initData is ready
-   The `key` on CreateSummaryInner forces a full remount
-   whenever the article being edited changes.
+   INNER COMPONENT
 ───────────────────────────────────────────────────────── */
 const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
 
@@ -155,10 +169,14 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
 
   /* ── UI state ─────────────────────────────────────────── */
   const [loading, setLoading]               = useState(false);
+  // ── NEW: separate state for Save Draft button ──────────
+  const [draftSaving, setDraftSaving]       = useState(false);
   const [errorMsg, setErrorMsg]             = useState("");
   const [titleDupeWarning, setTitleDupeWarning] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading]   = useState(false);
+  // ── NEW: toast state ───────────────────────────────────
+  const [toast, setToast]                   = useState(null); // { message, type }
 
   /* ── Quill / link modal ───────────────────────────────── */
   const quillRef                        = useRef(null);
@@ -232,19 +250,124 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
   }, [linkSearch]);
 
   /* ══════════════════════════════════════════════════════
-     AUTO-SAVE
+     AUTO-SAVE (background, silent — unchanged)
   ══════════════════════════════════════════════════════ */
   const buildSnapshot = useCallback(() =>
     JSON.stringify({ title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty }),
     [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty]
   );
 
-  const saveDraft = useCallback(async () => {
+  // Internal auto-save — does NOT close form, no toast
+  const _autoSave = useCallback(async () => {
     if (!title.trim() && !summaryText.trim()) return null;
     setAutoSaveStatus("saving");
     try {
       const { data: { user } = {} } = await supabase.auth.getUser();
       if (!user) { setAutoSaveStatus("error"); return null; }
+
+      let finalSlug = slug || slugify(title || `draft-${Date.now()}`, { lower:true, strict:true, replacement:"-" });
+      const payload = {
+        title:            title.trim() || "Untitled Draft",
+        author:           author.trim() || "",
+        description:      description?.trim() || null,
+        summary:          summaryText || null,
+        category:         category === DRAFT_SENTINEL ? null : category,
+        user_id:          user.id,
+        image_url:        imageUrl || null,
+        affiliate_link:   affiliateLink?.trim() ? `${affiliateType}|${affiliateLink.trim()}` : null,
+        youtube_url:      youtubeUrl || null,
+        tags:             (tags||"").split(",").map(t=>t.trim().toLowerCase()).filter(Boolean),
+        keywords:         parseKeywords(keywordsInput,8).length ? parseKeywords(keywordsInput,8) : null,
+        slug:             finalSlug,
+        difficulty_level: ["Beginner","Intermediate","Advanced"].includes(difficulty) ? difficulty : null,
+        status:           "draft",
+        auto_saved_at:    new Date().toISOString(),
+      };
+
+      if (draftId) {
+        const { error } = await supabase.from("book_summaries")
+          .update(payload).eq("id", draftId).eq("user_id", user.id);
+        if (error) throw error;
+      } else {
+        try {
+          const { data: ex } = await supabase.from("book_summaries").select("id").eq("slug", finalSlug).maybeSingle();
+          if (ex) {
+            let c = 2;
+            while (true) {
+              const ns = `${finalSlug}-${c}`;
+              const { data: ex2 } = await supabase.from("book_summaries").select("id").eq("slug", ns).maybeSingle();
+              if (!ex2) { finalSlug = ns; payload.slug = finalSlug; break; }
+              if (++c > 1000) { finalSlug = `${finalSlug}-${Date.now()}`; payload.slug = finalSlug; break; }
+            }
+          }
+        } catch (_) {}
+        const { data: ins, error } = await supabase.from("book_summaries").insert([payload]).select("id").single();
+        if (error) throw error;
+        setDraftId(ins.id);
+      }
+
+      lastSnapshotRef.current = buildSnapshot();
+      setAutoSaveStatus("saved");
+    } catch (err) {
+      console.error("Auto-save error:", err);
+      setAutoSaveStatus("error");
+    }
+  }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty, draftId, slug, buildSnapshot]);
+
+  useEffect(() => {
+    if (!title.trim() && !summaryText.trim()) return;
+    if (buildSnapshot() === lastSnapshotRef.current) return;
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(_autoSave, AUTO_SAVE_MS);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty, _autoSave, buildSnapshot]);
+
+  useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
+
+  /* ══════════════════════════════════════════════════════
+     DUPLICATE TITLE CHECK
+  ══════════════════════════════════════════════════════ */
+  // Checks ALL statuses (draft + published) so you can't save duplicate titles at all
+  const checkTitleExists = useCallback(async (t, excludeId = null) => {
+    if (!t?.trim()) return false;
+    try {
+      let q = supabase.from("book_summaries").select("id, title, status").ilike("title", t.trim());
+      if (excludeId) q = q.neq("id", excludeId);
+      const { data } = await q.limit(1).maybeSingle();
+      return data ? { exists: true, status: data.status } : { exists: false };
+    } catch { return { exists: false }; }
+  }, []);
+
+  /* ══════════════════════════════════════════════════════
+     SAVE DRAFT  (manual button — NEW behaviour)
+     • Checks title duplicate first
+     • Saves once (draftSaving guard)
+     • Closes form
+     • Shows toast
+  ══════════════════════════════════════════════════════ */
+  const handleSaveDraft = useCallback(async () => {
+    if (draftSaving) return; // prevent double-click
+    setTitleDupeWarning("");
+    setErrorMsg("");
+
+    if (!title.trim()) {
+      setErrorMsg("Please enter a title before saving.");
+      return;
+    }
+
+    // Title duplicate check
+    const check = await checkTitleExists(title.trim(), draftId || null);
+    if (check.exists) {
+      setTitleDupeWarning(
+        `⚠️ An article called "${title.trim()}" already exists${check.status === "draft" ? " (as a draft)" : " (published)"}. Please use a different title.`
+      );
+      return;
+    }
+
+    setDraftSaving(true);
+    try {
+      const { data: { user } = {} } = await supabase.auth.getUser();
+      if (!user) throw new Error("You must be logged in.");
 
       let finalSlug = slug || slugify(title || `draft-${Date.now()}`, { lower:true, strict:true, replacement:"-" });
       const payload = {
@@ -288,38 +411,20 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
         setDraftId(ins.id);
       }
 
-      lastSnapshotRef.current = buildSnapshot();
-      setAutoSaveStatus("saved");
-      return draftId;
+      // Signal parent to refresh, show toast, close
+      if (typeof onNewSummary === "function") onNewSummary();
+      setToast({ message: "✅ Draft saved successfully", type: "success" });
+      // Small delay so user sees the toast before the form closes
+      setTimeout(() => {
+        if (typeof onClose === "function") onClose();
+      }, 1200);
+
     } catch (err) {
-      console.error("Auto-save error:", err);
-      setAutoSaveStatus("error");
-      return null;
+      console.error("Save draft error:", err);
+      setToast({ message: `❌ Could not save draft: ${err.message}`, type: "error" });
+      setDraftSaving(false);
     }
-  }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty, draftId, slug, buildSnapshot]);
-
-  useEffect(() => {
-    if (!title.trim() && !summaryText.trim()) return;
-    if (buildSnapshot() === lastSnapshotRef.current) return;
-    clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(saveDraft, AUTO_SAVE_MS);
-    return () => clearTimeout(autoSaveTimer.current);
-  }, [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty, saveDraft, buildSnapshot]);
-
-  useEffect(() => () => clearTimeout(autoSaveTimer.current), []);
-
-  /* ══════════════════════════════════════════════════════
-     DUPLICATE TITLE CHECK
-  ══════════════════════════════════════════════════════ */
-  const checkTitleDuplicate = useCallback(async (t, excludeId = null) => {
-    if (!t?.trim()) return false;
-    try {
-      let q = supabase.from("book_summaries").select("id").ilike("title", t.trim()).eq("status","published");
-      if (excludeId) q = q.neq("id", excludeId);
-      const { data } = await q.limit(1).maybeSingle();
-      return !!data;
-    } catch { return false; }
-  }, []);
+  }, [draftSaving, title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty, draftId, slug, checkTitleExists, onNewSummary, onClose]);
 
   /* ══════════════════════════════════════════════════════
      PUBLISH
@@ -330,16 +435,18 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
     if (!title.trim())  { setErrorMsg("Title is required."); return; }
     if (!author.trim()) { setErrorMsg("Author is required."); return; }
     const publishCategory = category === DRAFT_SENTINEL ? null : category;
+    if (!publishCategory) { await _autoSave(); return; }
 
-    // No category = save as draft
-    if (!publishCategory) { await saveDraft(); return; }
-
-    // Duplicate check
-    const isDupe = await checkTitleDuplicate(title.trim(), draftId);
-    if (isDupe) {
-      setTitleDupeWarning(`⚠️ A published article called "${title.trim()}" already exists. Change the title before publishing.`);
-      return;
-    }
+    // Duplicate check for publish — published only
+    try {
+      let q = supabase.from("book_summaries").select("id").ilike("title", title.trim()).eq("status","published");
+      if (draftId) q = q.neq("id", draftId);
+      const { data } = await q.limit(1).maybeSingle();
+      if (data) {
+        setTitleDupeWarning(`⚠️ A published article called "${title.trim()}" already exists. Change the title before publishing.`);
+        return;
+      }
+    } catch (_) {}
 
     setLoading(true);
     try {
@@ -445,200 +552,218 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
      RENDER
   ══════════════════════════════════════════════════════ */
   return (
-    <div className="modal-overlay">
-      <div className="modal-content large">
-        <button className="close-button" onClick={onClose}>&times;</button>
+    <>
+      {/* Toast */}
+      {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
 
-        {/* Header */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-          <h2 style={{ margin:0 }}>
-            {isEditing ? "Edit Summary" : "Create New Summary"}
-          </h2>
-          <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-            {autoSaveLabel && (
-              <span style={{ fontSize:13, color: autoSaveStatus==="error"?"#ef4444":"#6b7280" }}>
-                {autoSaveLabel}
-              </span>
-            )}
-            {isDraftMode && (
-              <span style={{ background:"#fef3c7", color:"#92400e", border:"1px solid #fbbf24", borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:600 }}>
-                DRAFT
-              </span>
-            )}
+      <div className="modal-overlay">
+        <div className="modal-content large">
+          <button className="close-button" onClick={onClose}>&times;</button>
+
+          {/* Header */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+            <h2 style={{ margin:0 }}>
+              {isEditing ? "Edit Summary" : "Create New Summary"}
+            </h2>
+            <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+              {autoSaveLabel && (
+                <span style={{ fontSize:13, color: autoSaveStatus==="error"?"#ef4444":"#6b7280" }}>
+                  {autoSaveLabel}
+                </span>
+              )}
+              {isDraftMode && (
+                <span style={{ background:"#fef3c7", color:"#92400e", border:"1px solid #fbbf24", borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:600 }}>
+                  DRAFT
+                </span>
+              )}
+            </div>
           </div>
-        </div>
 
-        {errorMsg && <div className="form-error">{errorMsg}</div>}
-        {titleDupeWarning && (
-          <div className="form-error" style={{ background:"#fef3c7", borderColor:"#fbbf24", color:"#92400e" }}>
-            {titleDupeWarning}
-          </div>
-        )}
+          {errorMsg && <div className="form-error">{errorMsg}</div>}
+          {titleDupeWarning && (
+            <div className="form-error" style={{ background:"#fef3c7", borderColor:"#fbbf24", color:"#92400e" }}>
+              {titleDupeWarning}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="summary-form">
+          <form onSubmit={handleSubmit} className="summary-form">
 
-          <label>Title</label>
-          <input type="text" value={title} onChange={e=>{setTitle(e.target.value);setTitleDupeWarning("");}} required />
-          {slug && <small className="slug-preview">Slug: <code>/library/{slug}</code></small>}
+            <label>Title</label>
+            <input type="text" value={title} onChange={e=>{setTitle(e.target.value);setTitleDupeWarning("");setErrorMsg("");}} required />
+            {slug && <small className="slug-preview">Slug: <code>/library/{slug}</code></small>}
 
-          <label>Author</label>
-          <input type="text" value={author} onChange={e=>setAuthor(e.target.value)} required />
+            <label>Author</label>
+            <input type="text" value={author} onChange={e=>setAuthor(e.target.value)} required />
 
-          <label>
-            Category
-            <span style={{ color:"#6b7280", fontWeight:400, fontSize:12, marginLeft:6 }}>
-              — select a category to enable publishing
-            </span>
-          </label>
-          <select value={category} onChange={e=>setCategory(e.target.value)}>
-            <option value={DRAFT_SENTINEL}>📝 Keep as Draft (auto-save)</option>
-            {REAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-
-          <label>Difficulty level (optional)</label>
-          <select value={difficulty} onChange={e=>setDifficulty(e.target.value)}>
-            {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-          </select>
-
-          <label>Description (short preview for feeds)</label>
-          <textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="Short description (150-250 chars)" maxLength={300} rows={3} />
-
-          <label>Book Cover Image URL</label>
-          <input type="url" value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://example.com/cover.jpg" />
-
-          <label>Affiliate Link</label>
-          <div style={{ display:"flex", gap:8, alignItems:"center", width:"100%", marginBottom:6 }}>
-            <input type="url" value={affiliateLink} onChange={e=>setAffiliateLink(e.target.value)} placeholder="Affiliate link (https://...)" style={{ flex:1, minWidth:0, padding:"8px 10px" }} />
-            <select value={affiliateType} onChange={e=>setAffiliateType(e.target.value)} style={{ width:"12%", minWidth:100, padding:"6px 8px" }}>
-              <option value="book">Get Book</option>
-              <option value="pdf">Get PDF</option>
-              <option value="app">Open App</option>
+            <label>
+              Category
+              <span style={{ color:"#6b7280", fontWeight:400, fontSize:12, marginLeft:6 }}>
+                — select a category to enable publishing
+              </span>
+            </label>
+            <select value={category} onChange={e=>setCategory(e.target.value)}>
+              <option value={DRAFT_SENTINEL}>📝 Keep as Draft (auto-save)</option>
+              {REAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-          </div>
 
-          <label>YouTube URL</label>
-          <input type="url" value={youtubeUrl} onChange={e=>setYoutubeUrl(e.target.value)} placeholder="https://youtube.com/..." />
+            <label>Difficulty level (optional)</label>
+            <select value={difficulty} onChange={e=>setDifficulty(e.target.value)}>
+              {DIFFICULTIES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+            </select>
 
-          <label>Tags (comma separated)</label>
-          <input type="text" value={tags} onChange={e=>setTags(e.target.value)} placeholder="business, leadership, strategy" />
+            <label>Description (short preview for feeds)</label>
+            <textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="Short description (150-250 chars)" maxLength={300} rows={3} />
 
-          <label>Keywords (optional, comma separated)</label>
-          <input type="text" value={keywordsInput} onChange={e=>setKeywordsInput(e.target.value)} placeholder="e.g. business strategy, growth" />
-          <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>
-            {parsedKeywordsPreview.length} / 8 keywords
-          </div>
+            <label>Book Cover Image URL</label>
+            <input type="url" value={imageUrl} onChange={e=>setImageUrl(e.target.value)} placeholder="https://example.com/cover.jpg" />
 
-          <label>Summary</label>
-          <div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldTextBySlug}>🔗 Slug-link</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldTextExact}>🎯 Exact auto-link</button>
-            <button type="button" className="hf-btn" onClick={autoLinkBoldTextKeywords}>🧠 Keyword auto-link</button>
-            <button type="button" className="hf-btn" onClick={removeInternalLinksAndBold}>✂️ Remove links</button>
-            <button type="button" className="hf-btn" onClick={()=>setShowLinkModal(true)}>🔎 Manual link</button>
-          </div>
-          <div className="quill-container">
-            <ReactQuill
-              ref={quillRef}
-              value={summaryText}
-              onChange={setSummaryText}
-              modules={quillModules}
-              formats={quillFormats}
-              theme="snow"
-            />
-          </div>
+            <label>Affiliate Link</label>
+            <div style={{ display:"flex", gap:8, alignItems:"center", width:"100%", marginBottom:6 }}>
+              <input type="url" value={affiliateLink} onChange={e=>setAffiliateLink(e.target.value)} placeholder="Affiliate link (https://...)" style={{ flex:1, minWidth:0, padding:"8px 10px" }} />
+              <select value={affiliateType} onChange={e=>setAffiliateType(e.target.value)} style={{ width:"12%", minWidth:100, padding:"6px 8px" }}>
+                <option value="book">Get Book</option>
+                <option value="pdf">Get PDF</option>
+                <option value="app">Open App</option>
+              </select>
+            </div>
 
-          {/* Action bar */}
-          <div style={{ display:"flex", gap:10, marginTop:16, alignItems:"center", flexWrap:"wrap" }}>
-            <button
-              type="button"
-              onClick={saveDraft}
-              disabled={loading}
-              style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 18px", cursor:"pointer", fontWeight:500 }}
-            >
-              💾 Save Draft
-            </button>
+            <label>YouTube URL</label>
+            <input type="url" value={youtubeUrl} onChange={e=>setYoutubeUrl(e.target.value)} placeholder="https://youtube.com/..." />
 
-            <button
-              type="submit"
-              disabled={loading || !canPublish}
-              title={!canPublish ? "Select a category above to publish" : ""}
-              style={{
-                background: canPublish ? "#2563eb" : "#9ca3af",
-                color:"#fff", border:"none", borderRadius:6,
-                padding:"8px 22px",
-                cursor: canPublish ? "pointer" : "not-allowed",
-                fontWeight:600
-              }}
-            >
-              {loading ? "Publishing…" : (isEditing ? "🚀 Save & Publish" : "🚀 Publish")}
-            </button>
+            <label>Tags (comma separated)</label>
+            <input type="text" value={tags} onChange={e=>setTags(e.target.value)} placeholder="business, leadership, strategy" />
 
-            {!canPublish && (
-              <span style={{ fontSize:12, color:"#9ca3af" }}>Select a category to publish</span>
-            )}
+            <label>Keywords (optional, comma separated)</label>
+            <input type="text" value={keywordsInput} onChange={e=>setKeywordsInput(e.target.value)} placeholder="e.g. business strategy, growth" />
+            <div style={{ fontSize:12, color:"#6b7280", marginBottom:8 }}>
+              {parsedKeywordsPreview.length} / 8 keywords
+            </div>
 
-            <button type="button" onClick={onClose} disabled={loading}
-              style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 16px", cursor:"pointer" }}>
-              Cancel
-            </button>
+            <label>Summary</label>
+            <div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldTextBySlug}>🔗 Slug-link</button>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldTextExact}>🎯 Exact auto-link</button>
+              <button type="button" className="hf-btn" onClick={autoLinkBoldTextKeywords}>🧠 Keyword auto-link</button>
+              <button type="button" className="hf-btn" onClick={removeInternalLinksAndBold}>✂️ Remove links</button>
+              <button type="button" className="hf-btn" onClick={()=>setShowLinkModal(true)}>🔎 Manual link</button>
+            </div>
+            <div className="quill-container">
+              <ReactQuill
+                ref={quillRef}
+                value={summaryText}
+                onChange={setSummaryText}
+                modules={quillModules}
+                formats={quillFormats}
+                theme="snow"
+              />
+            </div>
 
-            {draftId && (
+            {/* Action bar */}
+            <div style={{ display:"flex", gap:10, marginTop:16, alignItems:"center", flexWrap:"wrap" }}>
+
+              {/* ── FIXED: Save Draft button ── */}
               <button
                 type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                style={{ marginLeft:"auto", background:"#fff", color:"#dc2626", border:"1.5px solid #fca5a5", borderRadius:6, padding:"8px 16px", cursor:"pointer", fontWeight:500 }}
+                onClick={handleSaveDraft}
+                disabled={draftSaving || loading}
+                style={{
+                  background: draftSaving ? "#e5e7eb" : "#f3f4f6",
+                  color: draftSaving ? "#9ca3af" : "#374151",
+                  border:"1px solid #d1d5db", borderRadius:6,
+                  padding:"8px 18px",
+                  cursor: draftSaving ? "not-allowed" : "pointer",
+                  fontWeight:500,
+                  minWidth: 130,
+                }}
               >
-                🗑 Delete Article
+                {draftSaving ? "💾 Saving…" : "💾 Save Draft"}
               </button>
-            )}
-          </div>
-        </form>
 
-        {/* Internal Link Modal */}
-        {showLinkModal && (
-          <div className="internal-link-modal" onClick={()=>{setShowLinkModal(false);setLinkSearch("");setLinkResults([]);}}>
-            <div className="internal-link-box" onClick={e=>e.stopPropagation()}>
-              <h4>Link to summary</h4>
-              <input value={linkSearch} onChange={e=>setLinkSearch(e.target.value)} placeholder="Search summaries by title…" autoFocus />
-              <div style={{ maxHeight:260, overflowY:"auto", marginTop:8 }}>
-                {linkResults.length===0 && <div style={{ padding:8, color:"#666" }}>No results</div>}
-                <ul style={{ listStyle:"none", padding:0, margin:0 }}>
-                  {linkResults.map(r=>(
-                    <li key={r.id}>
-                      <button type="button" className="hf-btn" onClick={()=>insertInternalLink(r)} style={{ width:"100%", textAlign:"left", marginBottom:6 }}>{r.title}</button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <button className="hf-btn" style={{ marginTop:10 }} onClick={()=>{setShowLinkModal(false);setLinkSearch("");setLinkResults([]);}}>Cancel</button>
-            </div>
-          </div>
-        )}
+              <button
+                type="submit"
+                disabled={loading || !canPublish || draftSaving}
+                title={!canPublish ? "Select a category above to publish" : ""}
+                style={{
+                  background: canPublish ? "#2563eb" : "#9ca3af",
+                  color:"#fff", border:"none", borderRadius:6,
+                  padding:"8px 22px",
+                  cursor: canPublish ? "pointer" : "not-allowed",
+                  fontWeight:600
+                }}
+              >
+                {loading ? "Publishing…" : (isEditing ? "🚀 Save & Publish" : "🚀 Publish")}
+              </button>
 
-        {/* Delete Confirmation Modal */}
-        {showDeleteConfirm && (
-          <div className="internal-link-modal" onClick={()=>!deleteLoading&&setShowDeleteConfirm(false)} style={{ zIndex:9999 }}>
-            <div className="internal-link-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:420, textAlign:"center" }}>
-              <div style={{ fontSize:44, marginBottom:8 }}>⚠️</div>
-              <h3 style={{ margin:"0 0 8px", color:"#dc2626" }}>Delete this article?</h3>
-              <p style={{ color:"#6b7280", marginBottom:20, fontSize:14 }}>
-                <strong>"{title || "this article"}"</strong> will be permanently deleted and cannot be undone.
-              </p>
-              <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
-                <button type="button" onClick={()=>setShowDeleteConfirm(false)} disabled={deleteLoading}
-                  style={{ padding:"9px 22px", borderRadius:6, border:"1px solid #d1d5db", background:"#f9fafb", cursor:"pointer", fontWeight:500 }}>
-                  Cancel
+              {!canPublish && (
+                <span style={{ fontSize:12, color:"#9ca3af" }}>Select a category to publish</span>
+              )}
+
+              <button type="button" onClick={onClose} disabled={loading || draftSaving}
+                style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:6, padding:"8px 16px", cursor:"pointer" }}>
+                Cancel
+              </button>
+
+              {draftId && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  style={{ marginLeft:"auto", background:"#fff", color:"#dc2626", border:"1.5px solid #fca5a5", borderRadius:6, padding:"8px 16px", cursor:"pointer", fontWeight:500 }}
+                >
+                  🗑 Delete Article
                 </button>
-                <button type="button" onClick={handleDelete} disabled={deleteLoading}
-                  style={{ padding:"9px 22px", borderRadius:6, border:"none", background:"#dc2626", color:"#fff", cursor:"pointer", fontWeight:600 }}>
-                  {deleteLoading ? "Deleting…" : "Yes, Delete"}
-                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Internal Link Modal */}
+          {showLinkModal && (
+            <div className="internal-link-modal" onClick={()=>{setShowLinkModal(false);setLinkSearch("");setLinkResults([]);}}>
+              <div className="internal-link-box" onClick={e=>e.stopPropagation()}>
+                <h4>Link to summary</h4>
+                <input value={linkSearch} onChange={e=>setLinkSearch(e.target.value)} placeholder="Search summaries by title…" autoFocus />
+                <div style={{ maxHeight:260, overflowY:"auto", marginTop:8 }}>
+                  {linkResults.length===0 && <div style={{ padding:8, color:"#666" }}>No results</div>}
+                  <ul style={{ listStyle:"none", padding:0, margin:0 }}>
+                    {linkResults.map(r=>(
+                      <li key={r.id}>
+                        <button type="button" className="hf-btn" onClick={()=>insertInternalLink(r)} style={{ width:"100%", textAlign:"left", marginBottom:6 }}>{r.title}</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <button className="hf-btn" style={{ marginTop:10 }} onClick={()=>{setShowLinkModal(false);setLinkSearch("");setLinkResults([]);}}>Cancel</button>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteConfirm && (
+            <div className="internal-link-modal" onClick={()=>!deleteLoading&&setShowDeleteConfirm(false)} style={{ zIndex:9999 }}>
+              <div className="internal-link-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:420, textAlign:"center" }}>
+                <div style={{ fontSize:44, marginBottom:8 }}>⚠️</div>
+                <h3 style={{ margin:"0 0 8px", color:"#dc2626" }}>Delete this article?</h3>
+                <p style={{ color:"#6b7280", marginBottom:20, fontSize:14 }}>
+                  <strong>"{title || "this article"}"</strong> will be permanently deleted and cannot be undone.
+                </p>
+                <div style={{ display:"flex", gap:12, justifyContent:"center" }}>
+                  <button type="button" onClick={()=>setShowDeleteConfirm(false)} disabled={deleteLoading}
+                    style={{ padding:"9px 22px", borderRadius:6, border:"1px solid #d1d5db", background:"#f9fafb", cursor:"pointer", fontWeight:500 }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleDelete} disabled={deleteLoading}
+                    style={{ padding:"9px 22px", borderRadius:6, border:"none", background:"#dc2626", color:"#fff", cursor:"pointer", fontWeight:600 }}>
+                    {deleteLoading ? "Deleting…" : "Yes, Delete"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Toast keyframe — injected once */}
+      <style>{`@keyframes csf-toast-in { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }`}</style>
+    </>
   );
 };
 
