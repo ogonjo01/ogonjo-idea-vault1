@@ -221,7 +221,6 @@
   width: 90%;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
-/* Add this to your existing DraftPanel.css */
 
 .draft-panel__title-link {
   background: none;
@@ -242,3 +241,280 @@
 .draft-panel__title-link:hover {
   color: #1e40af;
 }
+
+/* ════════════════════════════════════════════════════════════
+   ADD THESE RULES TO YOUR EXISTING DraftPanel.css
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Auto-link button ─────────────────────────────────────── */
+.dp-btn--autolink {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.dp-btn--autolink:hover  { background: #dbeafe; border-color: #93c5fd; }
+.dp-btn--autolink:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Bulk bar divider ─────────────────────────────────────── */
+.dp-bulk-divider { color: #e5e7eb; margin: 0 6px; user-select: none; }
+
+/* ── Spinner ──────────────────────────────────────────────── */
+.dp-spinner {
+  width: 28px; height: 28px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: dp-spin 0.7s linear infinite;
+}
+@keyframes dp-spin { to { transform: rotate(360deg); } }
+
+/* ── Auto-link modal sizing ───────────────────────────────── */
+.dp-autolink-modal {
+  max-width: 700px;
+  width: 96vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ── Modal header ─────────────────────────────────────────── */
+.dp-autolink-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+/* ══════════════════════════════════════════════════════════
+   SCANNING / PROGRESS BAR
+══════════════════════════════════════════════════════════ */
+.dp-scan-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 24px 40px;
+  gap: 6px;
+  text-align: center;
+}
+
+.dp-scan-phrase {
+  font-size: 13px;
+  color: #6366f1;
+  font-style: italic;
+  min-height: 20px;
+  margin: 2px 0 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dp-scan-counter {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 10px;
+}
+.dp-scan-counter__current {
+  font-size: 22px;
+  font-weight: 800;
+  color: #2563eb;
+  min-width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  transition: all 0.15s;
+}
+.dp-scan-eta {
+  margin-left: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+/* Progress track + fill */
+.dp-progress-track {
+  width: 100%;
+  max-width: 480px;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.dp-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #2563eb, #06b6d4);
+  background-size: 200% 100%;
+  border-radius: 99px;
+  transition: width 0.25s ease;
+  animation: dp-shimmer 1.8s linear infinite;
+}
+@keyframes dp-shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   TAB BAR
+══════════════════════════════════════════════════════════ */
+.dp-tab-bar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.dp-tab {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.dp-tab:hover { color: #2563eb; }
+.dp-tab--active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.dp-tab-badge {
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 99px;
+  min-width: 20px;
+  text-align: center;
+}
+.dp-tab-badge--active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* ── Tab description text ─────────────────────────────────── */
+.dp-tab-desc {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0 0 10px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+/* ── Toolbar row ──────────────────────────────────────────── */
+.dp-autolink-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Scrollable area ──────────────────────────────────────── */
+.dp-autolink-scroll {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  min-height: 0;
+}
+
+/* ── Per-draft section ────────────────────────────────────── */
+.dp-autolink-section + .dp-autolink-section { border-top: 2px solid #f3f4f6; }
+.dp-autolink-section__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* ── Table ────────────────────────────────────────────────── */
+.dp-autolink-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.dp-autolink-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.dp-autolink-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.dp-autolink-table tr:last-child td { border-bottom: none; }
+
+/* ── Footer ───────────────────────────────────────────────── */
+.dp-autolink-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+  flex-shrink: 0;
+}
+
+/* ── Empty state ──────────────────────────────────────────── */
+.dp-empty-state {
+  text-align: center;
+  padding: 36px 0;
+  color: #6b7280;
+  flex: 1;
+}
+
+/* ══════════════════════════════════════════════════════════
+   FREQUENCY BADGES  (count pill in Linked / Unmatched tabs)
+══════════════════════════════════════════════════════════ */
+.dp-freq-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 9px;
+  border-radius: 99px;
+  text-align: center;
+  min-width: 28px;
+  font-variant-numeric: tabular-nums;
+}
+/* already linked — blue */
+.dp-freq-badge--linked  { background: #dbeafe; color: #1d4ed8; }
+/* 5+ repeats — red hot */
+.dp-freq-badge--hot     { background: #fee2e2; color: #dc2626; }
+/* 2-4 repeats — amber warm */
+.dp-freq-badge--warm    { background: #fef3c7; color: #b45309; }
+/* 1 repeat — grey cold */
+.dp-freq-badge--cold    { background: #f3f4f6; color: #6b7280; }
