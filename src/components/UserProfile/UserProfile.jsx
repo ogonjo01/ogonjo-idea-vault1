@@ -6,9 +6,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// THEMES
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── THEMES ──────────────────────────────────────────────────────────────────
 const THEMES = {
   dark: {
     id:'dark', label:'🌑 Dark',
@@ -54,25 +52,17 @@ const THEMES = {
   },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROLE CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── ROLE CONFIG ──────────────────────────────────────────────────────────────
 const ROLES = { USER:'user', TEAM:'team', ADMIN:'admin' };
 const ROLE_LABELS  = { user:'User', team:'Team', admin:'Admin' };
 const ROLE_COLOURS = { user:'#64748b', team:'#06b6d4', admin:'#8b5cf6' };
 const canSeeDashboard = (r) => r===ROLES.ADMIN || r===ROLES.TEAM;
 const canManageRoles  = (r) => r===ROLES.ADMIN;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PERIOD CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
 const PERIODS   = ['Today','Week','Month','Year'];
 const periodMs  = { Today:864e5, Week:6048e5, Month:2592e6, Year:3154e7 };
 const periodTrunc={ Today:'hour', Week:'day', Month:'day', Year:'month' };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CHART / METRIC CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
 const METRICS = [
   { id:'views',    label:'Views',     icon:'👁',  color:'#06b6d4' },
   { id:'likes',    label:'Likes',     icon:'❤️',  color:'#f97316' },
@@ -81,9 +71,6 @@ const METRICS = [
 ];
 const CAT_COLOURS=['#06b6d4','#f97316','#8b5cf6','#10b981','#f59e0b','#ef4444','#ec4899'];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 const fmt = (n) => n>=1000?(n/1000).toFixed(1)+'k':String(n??0);
 const pct = (a,b) => b?+((a-b)/b*100).toFixed(1):0;
 const ago = (iso) => {
@@ -91,9 +78,7 @@ const ago = (iso) => {
   return m<60?`${m}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── SHARED COMPONENTS ───────────────────────────────────────────────────────
 const ThemeSwitcher = ({ theme, setTheme }) => (
   <div style={{ display:'flex', gap:4 }}>
     {Object.values(THEMES).map(t=>(
@@ -133,19 +118,18 @@ const StatCard = ({ label, value, delta, accent, icon, theme:T }) => (
   </div>
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ANALYTICS DASHBOARD
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── ANALYTICS DASHBOARD ─────────────────────────────────────────────────────
 const AnalyticsDashboard = ({ theme:T }) => {
-  const [period, setPeriod]       = useState('Week');
-  const [activeMetric, setMetric] = useState('views');
-  const [stats, setStats]         = useState({ views:0, likes:0, ratings:0, newUsers:0 });
-  const [prev, setPrev]           = useState({ views:0, likes:0, ratings:0, newUsers:0 });
-  const [chartData, setChart]     = useState([]);
-  const [topContent, setTop]      = useState([]);
-  const [catData, setCat]         = useState([]);
-  const [comments, setComments]   = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [period, setPeriod]           = useState('Week');
+  const [activeMetric, setMetric]     = useState('views');
+  const [stats, setStats]             = useState({ views:0, likes:0, ratings:0, newUsers:0 });
+  const [prev, setPrev]               = useState({ views:0, likes:0, ratings:0, newUsers:0 });
+  const [chartData, setChart]         = useState([]);
+  const [topContent, setTop]          = useState([]);
+  const [showAllContent, setShowAll]  = useState(false);  // FIX: expand top content
+  const [catData, setCat]             = useState([]);
+  const [comments, setComments]       = useState([]);
+  const [loading, setLoading]         = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,7 +140,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
       const sinceB = new Date(now - curMs*2).toISOString();
       const trunc  = periodTrunc[period];
 
-      // ── Counts current + previous ─────────────────────────────────────────
       const [vA,lA,rA,uA, vB,lB,rB,uB] = await Promise.all([
         supabase.from('views').select('id',{count:'exact',head:true}).gte('created_at',sinceA),
         supabase.from('likes').select('id',{count:'exact',head:true}).gte('created_at',sinceA),
@@ -170,7 +153,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
       setStats({ views:vA.count??0, likes:lA.count??0, ratings:rA.count??0, newUsers:uA.count??0 });
       setPrev ({ views:vB.count??0, likes:lB.count??0, ratings:rB.count??0, newUsers:uB.count??0 });
 
-      // ── Time-series for active metric ──────────────────────────────────────
       const bucketKey = (iso) => {
         const d=new Date(iso);
         if(trunc==='hour')  return `${String(d.getHours()).padStart(2,'0')}:00`;
@@ -178,7 +160,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
         return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       };
 
-      // Fetch time-series for views + likes + ratings in period
       const [{data:rv},{data:rl},{data:rr}] = await Promise.all([
         supabase.from('views').select('created_at').gte('created_at',sinceA),
         supabase.from('likes').select('created_at').gte('created_at',sinceA),
@@ -191,37 +172,23 @@ const AnalyticsDashboard = ({ theme:T }) => {
       const allKeys=[...new Set([...Object.keys(bkt.views),...Object.keys(bkt.likes),...Object.keys(bkt.ratings)])].sort();
       setChart(allKeys.map(k=>({ date:k, views:bkt.views[k]||0, likes:bkt.likes[k]||0, ratings:bkt.ratings[k]||0 })));
 
-      // ── Top content for THIS period (by views in period) ──────────────────
-      // Get content IDs viewed in this period, count them, join with content details
+      // Top content — NO slice limit, fetch all viewed in period
       const { data:periodViews } = await supabase
-        .from('views')
-        .select('post_id')
-        .gte('created_at', sinceA)
-        .not('post_id','is',null);
+        .from('views').select('post_id').gte('created_at',sinceA).not('post_id','is',null);
 
       if(periodViews && periodViews.length > 0) {
-        // Count views per post in this period
         const viewCounts = {};
         (periodViews||[]).forEach(r=>{ viewCounts[r.post_id]=(viewCounts[r.post_id]||0)+1; });
-        const topIds = Object.entries(viewCounts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([id])=>id);
-
+        const topIds = Object.entries(viewCounts).sort((a,b)=>b[1]-a[1]).map(([id])=>id);
         const { data:contentDetails } = await supabase
-          .from('book_summaries')
-          .select('id,title,category,views_count,likes_count,avg_rating')
-          .in('id', topIds);
-
-        // Sort by period view count and attach it
+          .from('book_summaries').select('id,title,category,views_count,likes_count,avg_rating').in('id',topIds);
         const enriched = (contentDetails||[]).map(c=>({
-          ...c,
-          period_views: viewCounts[c.id]||0,
+          ...c, period_views: viewCounts[c.id]||0,
         })).sort((a,b)=>b.period_views-a.period_views);
-
         setTop(enriched);
-      } else {
-        setTop([]);
-      }
+      } else { setTop([]); }
 
-      // ── Category breakdown (all-time) ─────────────────────────────────────
+      // Category breakdown — ALL categories
       const { data:cats } = await supabase
         .from('book_summaries').select('category,views_count').not('category','is',null);
       const catMap={};
@@ -230,13 +197,10 @@ const AnalyticsDashboard = ({ theme:T }) => {
       setCat(Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,7)
         .map(([name,value],i)=>({ name, value:Math.round(value/total*100), color:CAT_COLOURS[i] })));
 
-      // ── Recent comments in this period ────────────────────────────────────
-      const { data:comms } = await supabase
-        .from('comments')
+      // Recent comments
+      const { data:comms } = await supabase.from('comments')
         .select('id,content,created_at,profiles(username),book_summaries(title)')
-        .gte('created_at', sinceA)
-        .order('created_at',{ascending:false})
-        .limit(5);
+        .gte('created_at',sinceA).order('created_at',{ascending:false}).limit(5);
       setComments(comms||[]);
 
     } catch(err){ console.error('Dashboard error',err); }
@@ -323,33 +287,45 @@ const AnalyticsDashboard = ({ theme:T }) => {
         }
       </div>
 
-      {/* Top content (period-filtered) + category */}
+      {/* Top content + category */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 200px', gap:10, marginBottom:12 }}>
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px' }}>
-          <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:10 }}>
-            Top Content — {period}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+            <span style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub }}>
+              Top Content — {period}
+            </span>
+            {topContent.length > 8 && (
+              <button onClick={()=>setShowAll(v=>!v)} style={{
+                background:'none', border:`1px solid ${T.border}`, borderRadius:20,
+                color:T.textMuted, fontSize:10, fontWeight:600, padding:'2px 10px', cursor:'pointer',
+              }}>
+                {showAllContent ? '▲ Show Less' : `▼ View All (${topContent.length})`}
+              </button>
+            )}
           </div>
           {topContent.length===0
             ?<div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>
                No views recorded {period==='Today'?'today':period==='Week'?'this week':period==='Month'?'this month':'this year'} yet
              </div>
-            :topContent.map((c,i)=>(
-              <div key={c.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-                padding:'7px 0', borderBottom:i<topContent.length-1?`1px solid ${T.border}`:'none' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                  <span style={{ fontSize:10, color:T.textMuted, fontWeight:700, width:14, flexShrink:0 }}>#{i+1}</span>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ fontSize:11, fontWeight:600, color:T.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:210 }}>{c.title}</div>
-                    <div style={{ fontSize:10, color:T.textMuted, marginTop:1 }}>{c.category||'Uncategorized'}</div>
+            :<div style={{ maxHeight:showAllContent?500:300, overflowY:'auto', paddingRight:2 }}>
+              {(showAllContent?topContent:topContent.slice(0,8)).map((c,i,arr)=>(
+                <div key={c.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                  padding:'7px 0', borderBottom:i<arr.length-1?`1px solid ${T.border}`:'none' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                    <span style={{ fontSize:10, color:T.textMuted, fontWeight:700, width:18, flexShrink:0 }}>#{i+1}</span>
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:T.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:200 }}>{c.title}</div>
+                      <div style={{ fontSize:10, color:T.textMuted, marginTop:1 }}>{c.category||'Uncategorized'}</div>
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', gap:10, flexShrink:0, fontSize:11 }}>
+                    <span style={{ color:'#06b6d4', fontWeight:600 }} title="Views this period">{fmt(c.period_views)}</span>
+                    <span style={{ color:'#f97316' }}>{fmt(c.likes_count)}</span>
+                    <span style={{ color:'#f59e0b' }}>★{c.avg_rating??'—'}</span>
                   </div>
                 </div>
-                <div style={{ display:'flex', gap:10, flexShrink:0, fontSize:11 }}>
-                  <span style={{ color:'#06b6d4', fontWeight:600 }} title="Views this period">{fmt(c.period_views)} {period==='Today'?'today':''}</span>
-                  <span style={{ color:'#f97316' }}>{fmt(c.likes_count)}</span>
-                  <span style={{ color:'#f59e0b' }}>★{c.avg_rating??'—'}</span>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           }
         </div>
 
@@ -380,7 +356,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
         </div>
       </div>
 
-      {/* Comments (period-filtered) */}
+      {/* Comments */}
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px' }}>
         <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:10 }}>
           Recent Comments — {period}
@@ -420,65 +396,70 @@ const AnalyticsDashboard = ({ theme:T }) => {
 // AI ADVISOR — Trending / Recommendations / News / Chat
 // ─────────────────────────────────────────────────────────────────────────────
 const AIAdvisor = ({ theme:T }) => {
-  const [subTab, setSubTab]         = useState('chat');
-  const [category, setCategory]     = useState('');
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading]       = useState(false);
-  const [result, setResult]         = useState(null);
-  const [error, setError]           = useState(null);
-  const [platformData, setPlatform] = useState(null);
+  const [subTab, setSubTab]           = useState('chat');
+  const [category, setCategory]       = useState('');
+  const [categories, setCategories]   = useState([]);
+  const [customQuery, setCustomQuery] = useState('');   // free-type search
+  const [loading, setLoading]         = useState(false);
+  const [result, setResult]           = useState(null);
+  const [error, setError]             = useState(null);
+  const [platformData, setPlatform]   = useState(null);
 
   // Chat state
-  const [messages, setMessages]     = useState([
+  const [messages, setMessages]       = useState([
     { role:'assistant', content:"Hey — I'm Marcus, your business consultant for Ogonjo.\n\nI'm here to help you grow this platform into a real revenue machine. I can tell you what's trending right now on Google, what content to create this week, how to monetize your traffic better, and any business strategy question you have.\n\nI search the web in real-time, so my answers are based on what's actually happening today — not outdated data.\n\nWhat do you want to work on?" }
   ]);
-  const [chatInput, setChatInput]   = useState('');
+  const [chatInput, setChatInput]     = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const chatBottomRef               = useRef(null);
+  const chatBottomRef                 = useRef(null);
 
   const SUB_TABS = [
-    { id:'chat',           label:'💬 Ask Marcus'       },
-    { id:'trending',       label:'🔍 Trending'         },
-    { id:'recommendations',label:'💡 Content Ideas'    },
-    { id:'news',           label:'📰 Business News'    },
+    { id:'chat',           label:'💬 Ask Marcus'    },
+    { id:'trending',       label:'🔍 Trending'      },
+    { id:'recommendations',label:'💡 Content Ideas' },
+    { id:'news',           label:'📰 Business News' },
   ];
 
-  // Dynamic suggested prompts — fetched fresh on every load
-  const [suggestedPrompts, setSuggestedPrompts] = useState({
+  const SUGGESTED_PROMPTS = {
     chat: [
       "What business topics are trending on Google right now?",
-      "How can I monetize Ogonjo\'s traffic better?",
+      "How can I monetize Ogonjo's traffic better?",
       "What content should I create this week to grow traffic?",
+      "What are the most profitable content niches in business right now?",
+      "How do platforms like HBR and Investopedia make money?",
+      "What's the fastest way to grow from 10k to 100k monthly visitors?",
       "Which African business trends should I be covering?",
       "How do I get my content into Google Discover?",
+      "What business books are people searching for right now?",
+      "How should I price a premium membership on Ogonjo?",
     ],
-    trending: [
-      "What niche has the highest search demand right now?",
-      "What are entrepreneurs searching for most this week?",
-      "Which business concepts are going viral right now?",
-    ],
-    recommendations: [
-      "What content gaps am I missing right now?",
-      "What\'s the highest traffic opportunity this month?",
-      "What type of content gets the most Google Discover clicks?",
-    ],
-    news: [
-      "What business news should I turn into content today?",
-      "What\'s the biggest economic story affecting entrepreneurs?",
-      "What market trend should I write about this week?",
-    ],
-  });
-  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
+    trending:       ["What's trending in AI business tools?","What are entrepreneurs searching for most right now?","Which business concepts are going viral this week?"],
+    recommendations:["What content gaps am I missing in this category?","What's the highest traffic opportunity right now?","What type of content gets the most Google Discover clicks?"],
+    news:           ["What business news should I turn into content today?","What's the biggest economic story affecting entrepreneurs?","What market trends should I write about this week?"],
+  };
 
   const IMPACT_C = { high:'#ef4444', hot:'#ef4444', medium:'#f97316', low:'#f59e0b', rising:'#10b981' };
   const VOLUME_C = { high:'#06b6d4', medium:'#f97316', rising:'#10b981' };
 
-  // Load categories + platform snapshot
+  const QUERY_PLACEHOLDER = {
+    trending:       'Or type any topic, company, or industry to search…',
+    recommendations:'Or type any topic to get content ideas for…',
+    news:           'Or type any topic to get the latest news on…',
+  };
+
+  const QUERY_LABEL = {
+    trending:       '🔍 Find Trending Searches',
+    recommendations:'💡 Generate Content Ideas',
+    news:           '📰 Load Business News',
+  };
+
+  // ── Load ALL categories ────────────────────────────────────────────────────
   useEffect(()=>{
     let mounted=true;
     const load=async()=>{
       try {
-        const { data:catData } = await supabase.from('book_summaries').select('category',{distinct:true}).not('category','is',null);
+        const { data:catData } = await supabase
+          .from('book_summaries').select('category').not('category','is',null);
         const unique=[...new Set((catData||[]).map(d=>d.category).filter(Boolean))].sort();
         if(mounted && unique.length>0){ setCategories(unique); setCategory(unique[0]); }
 
@@ -491,63 +472,47 @@ const AIAdvisor = ({ theme:T }) => {
         (cats||[]).forEach(r=>{ const c=r.category||'Other'; catMap[c]=(catMap[c]||0)+1; });
         const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,count])=>({name,count}));
         if(mounted) setPlatform({ topContent:top||[], topCategories:topCats, totalContent:count||0 });
-
-        // Suggestions are refreshed manually to preserve quota
-        if(mounted) setSuggestionsLoading(false);
-
       } catch(err){ console.error('AIAdvisor init',err); }
     };
     load();
     return()=>{ mounted=false; };
   },[]);
 
-  useEffect(()=>{ setResult(null); setError(null); },[subTab,category]);
+  useEffect(()=>{ setResult(null); setError(null); setCustomQuery(''); },[subTab]);
+  useEffect(()=>{ setResult(null); setError(null); },[category]);
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({ behavior:'smooth' }); },[messages]);
+
+  // effectiveTopic: custom query wins if typed, else selected category
+  const effectiveTopic = customQuery.trim() || category;
 
   // ── Chat send ──────────────────────────────────────────────────────────────
   const sendChat = async (overrideText) => {
     const text = (overrideText || chatInput).trim();
     if(!text || chatLoading) return;
-
     const userMsg = { role:'user', content:text };
     const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setChatInput('');
-    setChatLoading(true);
-
+    setMessages(newMessages); setChatInput(''); setChatLoading(true);
     try {
       const res = await fetch('/api/ai-advisor', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          mode:'chat',
-          message: text,
-          history: newMessages.slice(-12),
-          platformData,
-          categories,
-        }),
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ mode:'chat', message:text, history:newMessages.slice(-12), platformData, categories }),
       });
       const data = await res.json();
       if(!res.ok || data.error) throw new Error(data.error||'Request failed');
       setMessages(prev=>[...prev, { role:'assistant', content:data.reply }]);
     } catch(err){
       setMessages(prev=>[...prev, { role:'assistant', content:`Sorry, I ran into an error: ${err.message}` }]);
-    } finally {
-      setChatLoading(false);
-    }
+    } finally { setChatLoading(false); }
   };
 
   // ── Fetch non-chat tabs ────────────────────────────────────────────────────
   const fetchData = async () => {
+    if(!effectiveTopic) return;
     setLoading(true); setResult(null); setError(null);
     try {
       const res = await fetch('/api/ai-advisor', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          mode:subTab, category,
-          ...(subTab==='recommendations'&&platformData?{platformData}:{}),
-        }),
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ mode:subTab, category:effectiveTopic, ...(subTab==='recommendations'&&platformData?{platformData}:{}) }),
       });
       const data = await res.json();
       if(!res.ok||data.error) throw new Error(data.error||'Request failed');
@@ -556,65 +521,30 @@ const AIAdvisor = ({ theme:T }) => {
     finally{ setLoading(false); }
   };
 
-  // ── Ask Marcus from any tab ────────────────────────────────────────────────
-  const askMarcus = (question) => {
-    setSubTab('chat');
-    setTimeout(() => sendChat(question), 100);
-  };
+  const askMarcus = (question) => { setSubTab('chat'); setTimeout(() => sendChat(question), 100); };
 
-  // ── Badge ──────────────────────────────────────────────────────────────────
+  // ── UI helpers ─────────────────────────────────────────────────────────────
   const Badge = ({ label, colour }) => (
     <span style={{ fontSize:10, fontWeight:700, color:colour||T.aiAccent,
       background:(colour||T.aiAccent)+'18', padding:'2px 8px', borderRadius:20,
       textTransform:'uppercase', whiteSpace:'nowrap', flexShrink:0 }}>{label}</span>
   );
-
   const SectionTitle = ({ children }) => (
     <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:10 }}>{children}</div>
   );
-
-  // ── Refresh suggestions manually ──────────────────────────────────────────
-  const refreshSuggestions = async () => {
-    setSuggestionsLoading(true);
-    try {
-      const res = await fetch('/api/ai-advisor', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ mode:'suggestions', category:'business' }),
-      });
-      if(res.ok) {
-        const data = await res.json();
-        if(!data.error && data.chat) setSuggestedPrompts(data);
-      }
-    } catch(e){ console.log('Suggestions refresh failed'); }
-    finally{ setSuggestionsLoading(false); }
-  };
-
-  // ── Prompt suggestions strip ───────────────────────────────────────────────
   const PromptStrip = ({ tab }) => {
-    const prompts = suggestedPrompts[tab] || [];
-    const isChat = tab === 'chat';
+    const prompts = SUGGESTED_PROMPTS[tab] || [];
+    const isC = tab === 'chat';
     return (
       <div style={{ marginBottom:10 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
-          <div style={{ fontSize:10, color:T.textMuted, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
-            {isChat ? '💡 Suggested questions' : '💬 Ask Marcus'}
-          </div>
-          <button onClick={refreshSuggestions} disabled={suggestionsLoading} title="Refresh suggestions based on today's trends"
-            style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:10, padding:'1px 7px', fontSize:9, color:T.textMuted, cursor:suggestionsLoading?'default':'pointer', transition:'all 0.15s' }}
-            onMouseEnter={e=>{ if(!suggestionsLoading){ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}}
-            onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}
-          >{suggestionsLoading ? 'updating…' : '↻ refresh'}</button>
+        <div style={{ fontSize:10, color:T.textMuted, marginBottom:6, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
+          {isC ? '💡 Suggested questions' : '💬 Ask Marcus about this'}
         </div>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {prompts.slice(0, isChat ? 5 : 3).map((p,i)=>(
-            <button key={i}
-              onClick={() => isChat ? setChatInput(p) : askMarcus(p)}
-              style={{
-                background:T.surface, border:`1px solid ${T.border}`, borderRadius:20,
-                padding:'5px 12px', fontSize:11, color:T.textSub, cursor:'pointer',
-                transition:'all 0.15s',
-              }}
+          {prompts.slice(0, isC ? 5 : 3).map((p,i)=>(
+            <button key={i} onClick={() => isC ? setChatInput(p) : askMarcus(p)}
+              style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:20,
+                padding:'5px 12px', fontSize:11, color:T.textSub, cursor:'pointer', transition:'all 0.15s' }}
               onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}
               onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textSub; }}
             >{p}</button>
@@ -624,68 +554,43 @@ const AIAdvisor = ({ theme:T }) => {
     );
   };
 
-  // ── Chat UI ────────────────────────────────────────────────────────────────
+  // ── Chat ───────────────────────────────────────────────────────────────────
   const renderChat = () => (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
       <PromptStrip tab="chat" />
-
-      {/* Messages */}
       <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, paddingBottom:8, minHeight:200, maxHeight:'calc(90vh - 400px)' }}>
         {messages.map((m,i)=>{
           const isUser = m.role==='user';
           return(
             <div key={i} style={{ display:'flex', justifyContent:isUser?'flex-end':'flex-start', gap:10, alignItems:'flex-end' }}>
-              {!isUser && (
-                <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0,
-                  background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
-                  display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', letterSpacing:-0.5 }}>M</div>
-              )}
-              <div style={{
-                maxWidth:'80%', padding:'11px 15px',
-                borderRadius:isUser?'16px 16px 4px 16px':'16px 16px 16px 4px',
-                background:isUser?T.chatUserBg:T.chatAiBg,
-                border:`1px solid ${isUser?T.aiAccent+'55':T.border}`,
-                fontSize:12.5, color:T.text, lineHeight:1.65,
-                whiteSpace:'pre-wrap', wordBreak:'break-word',
-              }}>{m.content}</div>
-              {isUser && (
-                <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0,
-                  background:`hsl(200,60%,35%)`,
-                  display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'#fff' }}>You</div>
-              )}
+              {!isUser&&<div style={{ width:32,height:32,borderRadius:'50%',flexShrink:0,background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:800,color:'#fff' }}>M</div>}
+              <div style={{ maxWidth:'80%',padding:'11px 15px',borderRadius:isUser?'16px 16px 4px 16px':'16px 16px 16px 4px',
+                background:isUser?T.chatUserBg:T.chatAiBg,border:`1px solid ${isUser?T.aiAccent+'55':T.border}`,
+                fontSize:12.5,color:T.text,lineHeight:1.65,whiteSpace:'pre-wrap',wordBreak:'break-word' }}>{m.content}</div>
+              {isUser&&<div style={{ width:32,height:32,borderRadius:'50%',flexShrink:0,background:'hsl(200,60%,35%)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#fff' }}>You</div>}
             </div>
           );
         })}
-        {chatLoading && (
+        {chatLoading&&(
           <div style={{ display:'flex', gap:10, alignItems:'flex-end' }}>
-            <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0,
-              background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
-              display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff' }}>M</div>
-            <div style={{ padding:'11px 15px', borderRadius:'16px 16px 16px 4px',
-              background:T.chatAiBg, border:`1px solid ${T.border}`, color:T.textMuted, fontSize:12 }}>
-              Searching the web…
-            </div>
+            <div style={{ width:32,height:32,borderRadius:'50%',flexShrink:0,background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:800,color:'#fff' }}>M</div>
+            <div style={{ padding:'11px 15px',borderRadius:'16px 16px 16px 4px',background:T.chatAiBg,border:`1px solid ${T.border}`,color:T.textMuted,fontSize:12 }}>Searching the web…</div>
           </div>
         )}
         <div ref={chatBottomRef}/>
       </div>
-
-      {/* Input */}
       <div style={{ display:'flex', gap:8, marginTop:8 }}>
-        <input
-          value={chatInput}
-          onChange={e=>setChatInput(e.target.value)}
+        <input value={chatInput} onChange={e=>setChatInput(e.target.value)}
           onKeyDown={e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }}
           placeholder="Ask Marcus anything about your business, content, or growth…"
-          style={{ flex:1, padding:'11px 14px', background:T.inputBg, border:`1px solid ${T.inputBorder}`,
-            borderRadius:10, color:T.text, fontSize:12.5, outline:'none', boxSizing:'border-box' }}
+          style={{ flex:1,padding:'11px 14px',background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:10,color:T.text,fontSize:12.5,outline:'none',boxSizing:'border-box' }}
         />
         <button onClick={()=>sendChat()} disabled={chatLoading||!chatInput.trim()} style={{
-          padding:'11px 20px', borderRadius:10, border:'none',
+          padding:'11px 20px',borderRadius:10,border:'none',
           background:chatLoading||!chatInput.trim()?T.surface:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
           color:chatLoading||!chatInput.trim()?T.textMuted:'#fff',
           cursor:chatLoading||!chatInput.trim()?'default':'pointer',
-          fontSize:13, fontWeight:700, transition:'all 0.15s', flexShrink:0,
+          fontSize:13,fontWeight:700,transition:'all 0.15s',flexShrink:0,
         }}>Send</button>
       </div>
     </div>
@@ -694,252 +599,271 @@ const AIAdvisor = ({ theme:T }) => {
   // ── Trending ───────────────────────────────────────────────────────────────
   const renderTrending = () => {
     if(!result) return(
-      <div>
-        <PromptStrip tab="trending" />
-        <div style={{ textAlign:'center', padding:'28px 20px', color:T.textMuted }}>
-          <div style={{ fontSize:32, marginBottom:10 }}>🔍</div>
-          <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>See what people are searching for in "{category}"</div>
+      <div><PromptStrip tab="trending" />
+        <div style={{ textAlign:'center',padding:'28px 20px',color:T.textMuted }}>
+          <div style={{ fontSize:32,marginBottom:10 }}>🔍</div>
+          <div style={{ fontSize:13,color:T.text,marginBottom:4 }}>See what people are searching for in "{effectiveTopic}"</div>
           <div style={{ fontSize:11 }}>Results pulled live from the web — real search demand right now</div>
         </div>
       </div>
     );
-    return(
-      <>
-        <PromptStrip tab="trending" />
-        <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
-          <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>📊 Search Intelligence — {result.category}</div>
-          <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.insight}</p>
+    return(<>
+      <PromptStrip tab="trending" />
+      <div style={{ background:T.aiSurface,border:`1px solid ${T.aiBorder}`,borderRadius:10,padding:'12px 16px',marginBottom:12 }}>
+        <div style={{ fontSize:11,color:T.aiAccent,fontWeight:700,marginBottom:4 }}>📊 Search Intelligence — {result.category}</div>
+        <p style={{ fontSize:12,color:T.text,lineHeight:1.6,margin:0 }}>{result.insight}</p>
+      </div>
+      {result.risingTopics?.length>0&&(
+        <div style={{ marginBottom:12 }}>
+          <SectionTitle>🚀 Rising Topics</SectionTitle>
+          <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
+            {result.risingTopics.map((t,i)=>(
+              <button key={i} onClick={()=>askMarcus(`Tell me more about the trend: "${t}" and how I should create content about it`)}
+                style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:20,padding:'4px 12px',fontSize:11,color:T.text,cursor:'pointer',transition:'all 0.15s' }}
+                onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}
+                onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.text; }}
+              >{t} →</button>
+            ))}
+          </div>
         </div>
-        {result.risingTopics?.length>0&&(
-          <div style={{ marginBottom:12 }}>
-            <SectionTitle>🚀 Rising Topics</SectionTitle>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {result.risingTopics.map((t,i)=>(
-                <button key={i} onClick={()=>askMarcus(`Tell me more about the trend: "${t}" and how I should create content about it`)}
-                  style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:20, padding:'4px 12px', fontSize:11, color:T.text, cursor:'pointer', transition:'all 0.15s' }}
-                  onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.aiAccent; e.currentTarget.style.color=T.aiAccent; }}
-                  onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.text; }}
-                >{t} →</button>
-              ))}
+      )}
+      <SectionTitle>🔍 What People Are Searching For</SectionTitle>
+      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+        {(result.trendingSearces||result.trendingSearches||[]).map((item,i)=>(
+          <div key={i} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',transition:'border-color 0.15s',cursor:'pointer' }}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
+            onClick={()=>askMarcus(`How should I write an article about "${item.contentAngle}" to capture the search query "${item.searchQuery}"?`)}>
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:6 }}>
+              <span style={{ fontSize:12,fontWeight:700,color:T.text,lineHeight:1.3 }}>"{item.searchQuery}"</span>
+              <Badge label={item.volume} colour={VOLUME_C[item.volume]}/>
+            </div>
+            <div style={{ fontSize:11,color:T.aiAccent,marginBottom:6,fontWeight:600 }}>✍️ {item.contentAngle}</div>
+            <div style={{ fontSize:11,color:T.textSub,lineHeight:1.4,marginBottom:8 }}>{item.reason}</div>
+            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between' }}>
+              <div style={{ display:'flex',alignItems:'center',gap:6 }}>
+                <span style={{ fontSize:10,color:T.textMuted }}>Discover:</span>
+                <Badge label={item.googleDiscoverPotential} colour={IMPACT_C[item.googleDiscoverPotential]}/>
+              </div>
+              <span style={{ fontSize:10,color:T.aiAccent }}>Ask Marcus →</span>
             </div>
           </div>
-        )}
-        <SectionTitle>🔍 What People Are Searching For</SectionTitle>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-          {(result.trendingSearces||result.trendingSearches||[]).map((item,i)=>(
-            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px', transition:'border-color 0.15s', cursor:'pointer' }}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
-              onClick={()=>askMarcus(`How should I write an article about "${item.contentAngle}" to capture the search query "${item.searchQuery}"?`)}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, marginBottom:6 }}>
-                <span style={{ fontSize:12, fontWeight:700, color:T.text, lineHeight:1.3 }}>"{item.searchQuery}"</span>
-                <Badge label={item.volume} colour={VOLUME_C[item.volume]}/>
-              </div>
-              <div style={{ fontSize:11, color:T.aiAccent, marginBottom:6, fontWeight:600 }}>✍️ {item.contentAngle}</div>
-              <div style={{ fontSize:11, color:T.textSub, lineHeight:1.4, marginBottom:8 }}>{item.reason}</div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={{ fontSize:10, color:T.textMuted }}>Discover:</span>
-                  <Badge label={item.googleDiscoverPotential} colour={IMPACT_C[item.googleDiscoverPotential]}/>
-                </div>
-                <span style={{ fontSize:10, color:T.aiAccent }}>Ask Marcus →</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </>
-    );
+        ))}
+      </div>
+    </>);
   };
 
   // ── Recommendations ────────────────────────────────────────────────────────
   const renderRecommendations = () => {
     if(!result) return(
-      <div>
-        <PromptStrip tab="recommendations" />
-        <div style={{ textAlign:'center', padding:'28px 20px', color:T.textMuted }}>
-          <div style={{ fontSize:32, marginBottom:10 }}>💡</div>
-          <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>Get content ideas for "{category}" based on real search demand</div>
+      <div><PromptStrip tab="recommendations" />
+        <div style={{ textAlign:'center',padding:'28px 20px',color:T.textMuted }}>
+          <div style={{ fontSize:32,marginBottom:10 }}>💡</div>
+          <div style={{ fontSize:13,color:T.text,marginBottom:4 }}>Get content ideas for "{effectiveTopic}" based on real search demand</div>
           <div style={{ fontSize:11 }}>AI cross-references live Google trends with your platform's content</div>
         </div>
       </div>
     );
-    return(
-      <>
-        <PromptStrip tab="recommendations" />
-        <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
-          <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>🎯 Strategy — {result.category}</div>
-          <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.summary}</p>
-        </div>
-        <SectionTitle>📝 What to Create Next</SectionTitle>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
-          {(result.recommendations||[]).map((r,i)=>(
-            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px', transition:'border-color 0.15s', cursor:'pointer' }}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
-              onClick={()=>askMarcus(`Help me write an outline for: "${r.title}" — including the best structure, key points to cover, and how to optimize it for Google traffic.`)}>
-              <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginBottom:6 }}>
-                <span style={{ fontSize:12, fontWeight:700, color:T.text, lineHeight:1.3 }}>{r.title}</span>
-                <Badge label={r.urgency} colour={IMPACT_C[r.urgency]}/>
-              </div>
-              <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap' }}>
-                <Badge label={r.type} colour={T.aiAccent}/>
-                {r.searchDemand&&<Badge label={`demand: ${r.searchDemand}`} colour={VOLUME_C[r.searchDemand]}/>}
-              </div>
-              <div style={{ fontSize:11, color:T.textSub, lineHeight:1.4, marginBottom:6 }}>{r.reason}</div>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <div style={{ fontSize:10, color:T.textMuted, fontStyle:'italic' }}>📈 {r.estimatedImpact}</div>
-                <span style={{ fontSize:10, color:T.aiAccent }}>Get outline →</span>
-              </div>
+    return(<>
+      <PromptStrip tab="recommendations" />
+      <div style={{ background:T.aiSurface,border:`1px solid ${T.aiBorder}`,borderRadius:10,padding:'12px 16px',marginBottom:12 }}>
+        <div style={{ fontSize:11,color:T.aiAccent,fontWeight:700,marginBottom:4 }}>🎯 Strategy — {result.category}</div>
+        <p style={{ fontSize:12,color:T.text,lineHeight:1.6,margin:0 }}>{result.summary}</p>
+      </div>
+      <SectionTitle>📝 What to Create Next</SectionTitle>
+      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12 }}>
+        {(result.recommendations||[]).map((r,i)=>(
+          <div key={i} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px',transition:'border-color 0.15s',cursor:'pointer' }}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}
+            onClick={()=>askMarcus(`Help me write an outline for: "${r.title}" — including the best structure, key points to cover, and how to optimize it for Google traffic.`)}>
+            <div style={{ display:'flex',justifyContent:'space-between',gap:8,marginBottom:6 }}>
+              <span style={{ fontSize:12,fontWeight:700,color:T.text,lineHeight:1.3 }}>{r.title}</span>
+              <Badge label={r.urgency} colour={IMPACT_C[r.urgency]}/>
             </div>
-          ))}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-          {[['🕳 Content Gaps','contentGaps','#ef4444','○'],['⚡ Quick Wins','quickWins','#34d399','✓']].map(([title,key,col,icon])=>(
-            <div key={key} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 14px' }}>
-              <SectionTitle>{title}</SectionTitle>
-              {(result[key]||[]).map((g,i)=>(
-                <div key={i} style={{ display:'flex', gap:8, marginBottom:7, cursor:'pointer', borderRadius:6, padding:'3px 4px', transition:'background 0.15s' }}
-                  onClick={()=>askMarcus(`Tell me more about this opportunity: "${g}"`)}
-                  onMouseEnter={e=>e.currentTarget.style.background=T.rowHover}
-                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <span style={{ color:col, flexShrink:0 }}>{icon}</span>
-                  <span style={{ fontSize:12, color:T.text, lineHeight:1.4 }}>{g}</span>
-                </div>
-              ))}
+            <div style={{ display:'flex',gap:6,marginBottom:8,flexWrap:'wrap' }}>
+              <Badge label={r.type} colour={T.aiAccent}/>
+              {r.searchDemand&&<Badge label={`demand: ${r.searchDemand}`} colour={VOLUME_C[r.searchDemand]}/>}
             </div>
-          ))}
-        </div>
-      </>
-    );
+            <div style={{ fontSize:11,color:T.textSub,lineHeight:1.4,marginBottom:6 }}>{r.reason}</div>
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center' }}>
+              <div style={{ fontSize:10,color:T.textMuted,fontStyle:'italic' }}>📈 {r.estimatedImpact}</div>
+              <span style={{ fontSize:10,color:T.aiAccent }}>Get outline →</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+        {[['🕳 Content Gaps','contentGaps','#ef4444','○'],['⚡ Quick Wins','quickWins','#34d399','✓']].map(([title,key,col,icon])=>(
+          <div key={key} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:'12px 14px' }}>
+            <SectionTitle>{title}</SectionTitle>
+            {(result[key]||[]).map((g,i)=>(
+              <div key={i} style={{ display:'flex',gap:8,marginBottom:7,cursor:'pointer',borderRadius:6,padding:'3px 4px',transition:'background 0.15s' }}
+                onClick={()=>askMarcus(`Tell me more about this opportunity: "${g}"`)}
+                onMouseEnter={e=>e.currentTarget.style.background=T.rowHover}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <span style={{ color:col,flexShrink:0 }}>{icon}</span>
+                <span style={{ fontSize:12,color:T.text,lineHeight:1.4 }}>{g}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </>);
   };
 
   // ── News ───────────────────────────────────────────────────────────────────
   const renderNews = () => {
     if(!result) return(
-      <div>
-        <PromptStrip tab="news" />
-        <div style={{ textAlign:'center', padding:'28px 20px', color:T.textMuted }}>
-          <div style={{ fontSize:32, marginBottom:10 }}>📰</div>
-          <div style={{ fontSize:13, color:T.text, marginBottom:4 }}>Get live business news for "{category}"</div>
+      <div><PromptStrip tab="news" />
+        <div style={{ textAlign:'center',padding:'28px 20px',color:T.textMuted }}>
+          <div style={{ fontSize:32,marginBottom:10 }}>📰</div>
+          <div style={{ fontSize:13,color:T.text,marginBottom:4 }}>Get live business news for "{effectiveTopic}"</div>
           <div style={{ fontSize:11 }}>Stay updated on what's happening so you know what to write about</div>
         </div>
       </div>
     );
-    const sentC = { bullish:'#10b981', bearish:'#ef4444', neutral:'#94a3b8', mixed:'#f59e0b' }[result.marketSentiment]||'#94a3b8';
-    return(
-      <>
-        <PromptStrip tab="news" />
-        <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>🌐 Market Pulse — {result.category}</div>
-              <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:'0 0 6px' }}>{result.editorNote}</p>
-              <div style={{ fontSize:11, color:T.textMuted }}>Key theme: <strong style={{ color:T.text }}>{result.keyTheme}</strong></div>
-            </div>
-            <div style={{ textAlign:'center', flexShrink:0 }}>
-              <div style={{ fontSize:10, color:T.textMuted, marginBottom:4 }}>Sentiment</div>
-              <span style={{ fontSize:12, fontWeight:700, color:sentC, background:sentC+'18', padding:'4px 12px', borderRadius:20, textTransform:'uppercase', border:`1px solid ${sentC}44` }}>{result.marketSentiment}</span>
-            </div>
+    const sentC = { bullish:'#10b981',bearish:'#ef4444',neutral:'#94a3b8',mixed:'#f59e0b' }[result.marketSentiment]||'#94a3b8';
+    return(<>
+      <PromptStrip tab="news" />
+      <div style={{ background:T.aiSurface,border:`1px solid ${T.aiBorder}`,borderRadius:10,padding:'12px 16px',marginBottom:12 }}>
+        <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:11,color:T.aiAccent,fontWeight:700,marginBottom:4 }}>🌐 Market Pulse — {result.category}</div>
+            <p style={{ fontSize:12,color:T.text,lineHeight:1.6,margin:'0 0 6px' }}>{result.editorNote}</p>
+            <div style={{ fontSize:11,color:T.textMuted }}>Key theme: <strong style={{ color:T.text }}>{result.keyTheme}</strong></div>
+          </div>
+          <div style={{ textAlign:'center',flexShrink:0 }}>
+            <div style={{ fontSize:10,color:T.textMuted,marginBottom:4 }}>Sentiment</div>
+            <span style={{ fontSize:12,fontWeight:700,color:sentC,background:sentC+'18',padding:'4px 12px',borderRadius:20,textTransform:'uppercase',border:`1px solid ${sentC}44` }}>{result.marketSentiment}</span>
           </div>
         </div>
-        <SectionTitle>📰 Latest Headlines</SectionTitle>
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          {(result.headlines||[]).map((h,i)=>(
-            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'14px 16px', transition:'border-color 0.15s' }}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:6 }}>
-                <span style={{ fontSize:13, fontWeight:700, color:T.text, lineHeight:1.3, flex:1 }}>{h.title}</span>
-                <Badge label={h.impact} colour={IMPACT_C[h.impact]}/>
-              </div>
-              <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-                <span style={{ fontSize:10, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, padding:'1px 8px', borderRadius:20 }}>{h.source}</span>
-                <span style={{ fontSize:10, color:T.textMuted }}>{h.publishedAt}</span>
-              </div>
-              <p style={{ fontSize:12, color:T.textSub, lineHeight:1.5, margin:'0 0 8px' }}>{h.summary}</p>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-                padding:'8px 10px', background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:8, cursor:'pointer' }}
-                onClick={()=>askMarcus(`Help me write an article based on this news: "${h.title}". Give me a full outline, key angles, and how to optimize it for Google traffic.`)}
-                onMouseEnter={e=>e.currentTarget.style.borderColor=T.aiAccent}
-                onMouseLeave={e=>e.currentTarget.style.borderColor=T.aiBorder}>
-                <div>
-                  <span style={{ fontSize:10, color:T.aiAccent, fontWeight:700 }}>✍️ Content idea: </span>
-                  <span style={{ fontSize:11, color:T.text }}>{h.contentOpportunity}</span>
-                </div>
-                <span style={{ fontSize:10, color:T.aiAccent, flexShrink:0, marginLeft:8 }}>Write with Marcus →</span>
-              </div>
+      </div>
+      <SectionTitle>📰 Latest Headlines</SectionTitle>
+      <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
+        {(result.headlines||[]).map((h,i)=>(
+          <div key={i} style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:'14px 16px',transition:'border-color 0.15s' }}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6 }}>
+              <span style={{ fontSize:13,fontWeight:700,color:T.text,lineHeight:1.3,flex:1 }}>{h.title}</span>
+              <Badge label={h.impact} colour={IMPACT_C[h.impact]}/>
             </div>
-          ))}
-        </div>
-      </>
-    );
+            <div style={{ display:'flex',gap:8,marginBottom:8 }}>
+              <span style={{ fontSize:10,color:T.textMuted,background:T.surface,border:`1px solid ${T.border}`,padding:'1px 8px',borderRadius:20 }}>{h.source}</span>
+              <span style={{ fontSize:10,color:T.textMuted }}>{h.publishedAt}</span>
+            </div>
+            <p style={{ fontSize:12,color:T.textSub,lineHeight:1.5,margin:'0 0 8px' }}>{h.summary}</p>
+            <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',
+              padding:'8px 10px',background:T.aiSurface,border:`1px solid ${T.aiBorder}`,borderRadius:8,cursor:'pointer' }}
+              onClick={()=>askMarcus(`Help me write an article based on this news: "${h.title}". Give me a full outline, key angles, and how to optimize it for Google traffic.`)}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=T.aiAccent}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=T.aiBorder}>
+              <div>
+                <span style={{ fontSize:10,color:T.aiAccent,fontWeight:700 }}>✍️ Content idea: </span>
+                <span style={{ fontSize:11,color:T.text }}>{h.contentOpportunity}</span>
+              </div>
+              <span style={{ fontSize:10,color:T.aiAccent,flexShrink:0,marginLeft:8 }}>Write with Marcus →</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>);
   };
 
   // ── Main render ────────────────────────────────────────────────────────────
   const isChat = subTab==='chat';
 
   return(
-    <div style={{ overflowY: isChat?'hidden':'auto', flex:1, paddingRight:4, paddingBottom:8, display:'flex', flexDirection:'column' }}>
-      {/* Sub-tabs + category */}
-      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'12px 14px', marginBottom:12, flexShrink:0 }}>
-        <div style={{ display:'flex', gap:4, marginBottom:isChat?0:12, background:T.bg, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>
+    <div style={{ overflowY:isChat?'hidden':'auto',flex:1,paddingRight:4,paddingBottom:8,display:'flex',flexDirection:'column' }}>
+
+      {/* Sub-tabs + controls */}
+      <div style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'12px 14px',marginBottom:12,flexShrink:0 }}>
+        <div style={{ display:'flex',gap:4,marginBottom:isChat?0:12,background:T.bg,borderRadius:8,padding:3,border:`1px solid ${T.border}` }}>
           {SUB_TABS.map(t=>(
             <button key={t.id} onClick={()=>setSubTab(t.id)} style={{
-              flex:1, background:subTab===t.id?T.tabActive:'transparent', border:'none',
+              flex:1,background:subTab===t.id?T.tabActive:'transparent',border:'none',
               color:subTab===t.id?T.tabText:T.tabInactive,
-              padding:'6px 8px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:600,
-              transition:'all 0.15s', whiteSpace:'nowrap',
+              padding:'6px 8px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600,
+              transition:'all 0.15s',whiteSpace:'nowrap',
             }}>{t.label}</button>
           ))}
         </div>
 
+        {/* Category pills + free-type input (non-chat) */}
         {!isChat&&(
           <>
-            <div style={{ fontSize:11, color:T.textMuted, margin:'10px 0 6px', textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>Category</div>
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+            <div style={{ fontSize:11,color:T.textMuted,margin:'10px 0 6px',textTransform:'uppercase',letterSpacing:1,fontWeight:600 }}>
+              Category <span style={{ fontWeight:400,textTransform:'none',fontSize:10 }}>({categories.length})</span>
+            </div>
+
+            {/* ALL categories, scrollable if many */}
+            <div style={{ display:'flex',gap:5,flexWrap:'wrap',marginBottom:10,maxHeight:110,overflowY:'auto',paddingRight:2 }}>
               {categories.map(c=>(
-                <button key={c} onClick={()=>setCategory(c)} style={{
-                  padding:'4px 12px', borderRadius:20, cursor:'pointer', fontSize:11, fontWeight:600, transition:'all 0.15s',
-                  background:category===c?T.aiAccent+'22':T.surface,
-                  border:`1px solid ${category===c?T.aiAccent:T.border}`,
-                  color:category===c?T.aiAccent:T.textMuted,
+                <button key={c} onClick={()=>{ setCategory(c); setCustomQuery(''); }} style={{
+                  padding:'3px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,transition:'all 0.15s',
+                  background: !customQuery.trim() && category===c ? T.aiAccent+'22' : T.surface,
+                  border:`1px solid ${ !customQuery.trim() && category===c ? T.aiAccent : T.border}`,
+                  color: !customQuery.trim() && category===c ? T.aiAccent : T.textMuted,
                 }}>{c}</button>
               ))}
             </div>
-            <button onClick={fetchData} disabled={loading} style={{
-              width:'100%', padding:'9px',
-              background:loading?T.surface:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
-              border:`1px solid ${T.aiBorder}`, borderRadius:8,
-              cursor:loading?'default':'pointer',
-              color:loading?T.textMuted:'#fff', fontSize:12, fontWeight:700,
-              transition:'all 0.2s', opacity:loading?0.7:1,
+
+            {/* Free-type search */}
+            <div style={{ position:'relative',marginBottom:customQuery.trim()?6:10 }}>
+              <input
+                value={customQuery}
+                onChange={e=>setCustomQuery(e.target.value)}
+                onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); fetchData(); } }}
+                placeholder={QUERY_PLACEHOLDER[subTab]}
+                style={{ width:'100%',padding:'8px 34px 8px 12px',background:T.inputBg,
+                  border:`1px solid ${customQuery.trim()?T.aiAccent:T.inputBorder}`,
+                  borderRadius:8,color:T.text,fontSize:12,outline:'none',boxSizing:'border-box',transition:'border-color 0.15s' }}
+              />
+              {customQuery.trim()&&(
+                <button onClick={()=>setCustomQuery('')}
+                  style={{ position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',
+                    background:'none',border:'none',color:T.textMuted,cursor:'pointer',fontSize:16,lineHeight:1,padding:0 }}>×</button>
+              )}
+            </div>
+
+            {customQuery.trim()&&(
+              <div style={{ fontSize:11,color:T.aiAccent,marginBottom:8,fontWeight:600 }}>
+                🔎 Searching for: "{customQuery.trim()}"
+              </div>
+            )}
+
+            <button onClick={fetchData} disabled={loading||!effectiveTopic} style={{
+              width:'100%',padding:'9px',
+              background:loading||!effectiveTopic?T.surface:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
+              border:`1px solid ${T.aiBorder}`,borderRadius:8,
+              cursor:loading||!effectiveTopic?'default':'pointer',
+              color:loading||!effectiveTopic?T.textMuted:'#fff',fontSize:12,fontWeight:700,
+              transition:'all 0.2s',opacity:loading?0.7:1,
             }}>
-              {loading?`⏳ Searching the web for ${category}…`
-                :subTab==='trending'?`🔍 Find Trending Searches in ${category}`
-                :subTab==='recommendations'?`💡 Generate Ideas for ${category}`
-                :`📰 Load ${category} News`}
+              {loading?`⏳ Searching "${effectiveTopic}"…`:`${QUERY_LABEL[subTab]} in "${effectiveTopic}"`}
             </button>
           </>
         )}
       </div>
 
       {error&&!isChat&&(
-        <div style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:10, padding:'10px 14px', color:'#f87171', fontSize:12, marginBottom:12, flexShrink:0 }}>
+        <div style={{ background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 14px',color:'#f87171',fontSize:12,marginBottom:12,flexShrink:0 }}>
           ⚠️ {error}
         </div>
       )}
 
       {isChat ? renderChat()
-        : subTab==='trending'        ? renderTrending()
-        : subTab==='recommendations' ? renderRecommendations()
+        : subTab==='trending'         ? renderTrending()
+        : subTab==='recommendations'  ? renderRecommendations()
         : renderNews()
       }
     </div>
   );
 };
-// ─────────────────────────────────────────────────────────────────────────────
-// TEAM MANAGER
-// ─────────────────────────────────────────────────────────────────────────────
+
+
+// ─── TEAM MANAGER ────────────────────────────────────────────────────────────
 const TeamManager = ({ theme:T }) => {
   const [users, setUsers]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1031,9 +955,7 @@ const TeamManager = ({ theme:T }) => {
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PROFILE EDIT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── PROFILE EDIT ─────────────────────────────────────────────────────────────
 const ProfileEdit = ({ profile, onSaved, theme:T }) => {
   const [editing, setEditing] = useState(false);
   const [input, setInput]     = useState(profile?.username||'');
@@ -1083,9 +1005,7 @@ const ProfileEdit = ({ profile, onSaved, theme:T }) => {
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN EXPORT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── MAIN EXPORT ─────────────────────────────────────────────────────────────
 const UserProfile = ({ onClose, onUpdated }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1133,7 +1053,7 @@ const UserProfile = ({ onClose, onUpdated }) => {
     </div>
   );
 
-  // ── ELEVATED (admin/team) ─────────────────────────────────────────────────
+  // ── ELEVATED (admin/team) ──────────────────────────────────────────────────
   if(showDash){
     const tabs=[
       {id:'profile',   label:'👤 Profile'},
@@ -1194,7 +1114,7 @@ const UserProfile = ({ onClose, onUpdated }) => {
     );
   }
 
-  // ── NORMAL USER ───────────────────────────────────────────────────────────
+  // ── NORMAL USER ────────────────────────────────────────────────────────────
   return(
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="User profile">
       <div className="modal-panel">
