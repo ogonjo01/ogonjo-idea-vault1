@@ -91,6 +91,10 @@ const ago = (iso) => {
   return m<60?`${m}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`;
 };
 
+// Day helpers for Week drill-down
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,6 +147,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
   const [prev, setPrev]           = useState({ views:0, likes:0, ratings:0, newUsers:0 });
   const [chartData, setChart]     = useState([]);
   const [topContent, setTop]      = useState([]);
+  const [rawViews, setRawViews]   = useState([]); // ── NEW: stores {post_id, created_at} for drill-down
   const [catData, setCat]         = useState([]);
   const [comments, setComments]   = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -151,27 +156,14 @@ const AnalyticsDashboard = ({ theme:T }) => {
   const [catSearch, setCatSearch]           = useState('');
 
   // ── NEW: drill-down state ─────────────────────────────────────────────────
-  // selectedHour: 0–23 or null (Today only)
-  // selectedDay:  0–6 (0=Sun) or null (Week only)
-  const [selectedHour, setSelectedHour] = useState(null);
-  const [selectedDay,  setSelectedDay]  = useState(null);
-  const [drillContent, setDrillContent] = useState([]);   // content for selected hour/day
-  const [drillLoading, setDrillLoading] = useState(false);
-
-  // Reset drill selections when period changes
-  const handlePeriodChange = (p) => {
-    setPeriod(p);
-    setSelectedHour(null);
-    setSelectedDay(null);
-    setDrillContent([]);
-  };
+  const [selectedHour, setSelectedHour] = useState(null); // 0–23, Today only
+  const [selectedDay,  setSelectedDay]  = useState(null); // 0–6 (JS getDay()), Week only
 
   const load = useCallback(async () => {
     setLoading(true);
     setShowAllContent(false);
-    setSelectedHour(null);
-    setSelectedDay(null);
-    setDrillContent([]);
+    setSelectedHour(null); // reset on period change
+    setSelectedDay(null);  // reset on period change
     try {
       const now    = Date.now();
       const curMs  = periodMs[period];
@@ -211,8 +203,11 @@ const AnalyticsDashboard = ({ theme:T }) => {
       const allKeys=[...new Set([...Object.keys(bkt.views),...Object.keys(bkt.likes),...Object.keys(bkt.ratings)])].sort();
       setChart(allKeys.map(k=>({ date:k, views:bkt.views[k]||0, likes:bkt.likes[k]||0, ratings:bkt.ratings[k]||0 })));
 
+      // ── Top content — fetch ALL, also store created_at for drill-down ─────
       const { data:periodViews } = await supabase
-        .from('views').select('post_id').gte('created_at', sinceA).not('post_id','is',null);
+        .from('views').select('post_id,created_at').gte('created_at', sinceA).not('post_id','is',null);
+
+      setRawViews(periodViews || []); // ── NEW: save raw rows for client-side filtering
 
       if(periodViews && periodViews.length > 0) {
         const viewCounts = {};
@@ -233,6 +228,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
         setTop([]);
       }
 
+      // ── Category breakdown ────────────────────────────────────────────────
       const { data:cats } = await supabase
         .from('book_summaries').select('category,views_count').not('category','is',null);
       const catMap={};
@@ -255,104 +251,74 @@ const AnalyticsDashboard = ({ theme:T }) => {
 
   useEffect(()=>{ load(); },[load]);
 
-  // ── NEW: load content for a specific hour (Today) ─────────────────────────
-  const loadHour = async (hour) => {
-    setSelectedHour(hour);
-    setDrillLoading(true);
-    setDrillContent([]);
-    try {
-      const now   = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
-      const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 59, 59);
-
-      const { data:viewRows } = await supabase
-        .from('views')
-        .select('post_id')
-        .gte('created_at', start.toISOString())
-        .lte('created_at', end.toISOString())
-        .not('post_id','is',null);
-
-      if (!viewRows || viewRows.length === 0) { setDrillContent([]); return; }
-
-      const counts = {};
-      viewRows.forEach(r=>{ counts[r.post_id]=(counts[r.post_id]||0)+1; });
-      const ids = Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([id])=>id);
-
-      const { data:details } = await supabase
-        .from('book_summaries')
-        .select('id,title,category,views_count,likes_count,avg_rating')
-        .in('id', ids);
-
-      setDrillContent((details||[]).map(c=>({ ...c, drill_views: counts[c.id]||0 }))
-        .sort((a,b)=>b.drill_views-a.drill_views));
-    } catch(err){ console.error('Hour drill error',err); }
-    finally{ setDrillLoading(false); }
-  };
-
-  // ── NEW: load content for a specific day of the week (Week) ───────────────
-  const loadDay = async (dayOfWeek) => {
-    // dayOfWeek: 0=Sun,1=Mon,...,6=Sat
-    setSelectedDay(dayOfWeek);
-    setDrillLoading(true);
-    setDrillContent([]);
-    try {
-      // Find the most recent occurrence of that day within the last 7 days
-      const now   = new Date();
-      const today = now.getDay();
-      let diff = today - dayOfWeek;
-      if (diff < 0) diff += 7;
-      const targetDate = new Date(now);
-      targetDate.setDate(now.getDate() - diff);
-
-      const start = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0);
-      const end   = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59);
-
-      const { data:viewRows } = await supabase
-        .from('views')
-        .select('post_id')
-        .gte('created_at', start.toISOString())
-        .lte('created_at', end.toISOString())
-        .not('post_id','is',null);
-
-      if (!viewRows || viewRows.length === 0) { setDrillContent([]); return; }
-
-      const counts = {};
-      viewRows.forEach(r=>{ counts[r.post_id]=(counts[r.post_id]||0)+1; });
-      const ids = Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([id])=>id);
-
-      const { data:details } = await supabase
-        .from('book_summaries')
-        .select('id,title,category,views_count,likes_count,avg_rating')
-        .in('id', ids);
-
-      setDrillContent((details||[]).map(c=>({ ...c, drill_views: counts[c.id]||0 }))
-        .sort((a,b)=>b.drill_views-a.drill_views));
-    } catch(err){ console.error('Day drill error',err); }
-    finally{ setDrillLoading(false); }
-  };
-
   const activeMetricObj = METRICS.find(m=>m.id===activeMetric)||METRICS[0];
 
   const filteredCats = catSearch.trim()
     ? catData.filter(c => c.name.toLowerCase().includes(catSearch.trim().toLowerCase()))
     : catData;
 
-  const visibleContent = showAllContent ? topContent : topContent.slice(0, 8);
-
-  // ── NEW: drill-down label helpers ─────────────────────────────────────────
-  const DAYS_LABEL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const hourLabel  = (h) => {
-    if (h === null) return '';
-    const suffix = h < 12 ? 'AM' : 'PM';
-    const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${display}:00 ${suffix}`;
+  // ── NEW: compute drill-filtered content ───────────────────────────────────
+  // Build a set of post_ids that had views in the selected hour (Today) or day (Week)
+  const getDrillContent = () => {
+    if (period === 'Today' && selectedHour !== null) {
+      const idsInHour = new Set(
+        rawViews
+          .filter(r => new Date(r.created_at).getHours() === selectedHour)
+          .map(r => r.post_id)
+      );
+      // Re-count views for this hour only
+      const hourCounts = {};
+      rawViews.forEach(r => {
+        if (new Date(r.created_at).getHours() === selectedHour) {
+          hourCounts[r.post_id] = (hourCounts[r.post_id] || 0) + 1;
+        }
+      });
+      return topContent
+        .filter(c => idsInHour.has(c.id))
+        .map(c => ({ ...c, period_views: hourCounts[c.id] || 0 }))
+        .sort((a, b) => b.period_views - a.period_views);
+    }
+    if (period === 'Week' && selectedDay !== null) {
+      const idsInDay = new Set(
+        rawViews
+          .filter(r => new Date(r.created_at).getDay() === selectedDay)
+          .map(r => r.post_id)
+      );
+      const dayCounts = {};
+      rawViews.forEach(r => {
+        if (new Date(r.created_at).getDay() === selectedDay) {
+          dayCounts[r.post_id] = (dayCounts[r.post_id] || 0) + 1;
+        }
+      });
+      return topContent
+        .filter(c => idsInDay.has(c.id))
+        .map(c => ({ ...c, period_views: dayCounts[c.id] || 0 }))
+        .sort((a, b) => b.period_views - a.period_views);
+    }
+    return topContent;
   };
+
+  const drillContent   = getDrillContent();
+  const visibleContent = showAllContent ? drillContent : drillContent.slice(0, 8);
+
+  // ── NEW: build hour options — only hours that actually have views ──────────
+  const hoursWithViews = [...new Set(rawViews.map(r => new Date(r.created_at).getHours()))].sort((a,b)=>a-b);
+  // ── NEW: build day options — only days that actually have views ───────────
+  const daysWithViews  = [...new Set(rawViews.map(r => new Date(r.created_at).getDay()))].sort((a,b)=>a-b);
 
   if(loading) return(
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:260, color:T.textMuted, fontSize:13 }}>
       Loading analytics…
     </div>
   );
+
+  // Shared select style
+  const selectStyle = {
+    padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:600,
+    background: T.inputBg, border:`1px solid ${T.inputBorder}`,
+    color: T.text, outline:'none', appearance:'none', WebkitAppearance:'none',
+    paddingRight:24,
+  };
 
   return(
     <div style={{ overflowY:'auto', flex:1, paddingRight:4, paddingBottom:8 }}>
@@ -366,7 +332,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
           <button onClick={load} title="Refresh" style={{ background:'none', border:'none', color:T.textMuted, cursor:'pointer', fontSize:15 }}>↻</button>
           <div style={{ display:'flex', gap:3, background:T.surface, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>
             {PERIODS.map(p=>(
-              <button key={p} onClick={()=>handlePeriodChange(p)} style={{
+              <button key={p} onClick={()=>setPeriod(p)} style={{
                 background:period===p?T.tabActive:'transparent', border:'none',
                 color:period===p?T.tabText:T.tabInactive,
                 padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:600, transition:'all 0.15s',
@@ -430,175 +396,125 @@ const AnalyticsDashboard = ({ theme:T }) => {
         {/* Top Content */}
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px' }}>
 
-          {/* ── Header row with title + drill-down dropdown ── */}
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10, flexWrap:'wrap', gap:8 }}>
+          {/* Header row */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
             <span style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub }}>
               Top Content — {period}
             </span>
+            {drillContent.length > 8 && (
+              <button
+                onClick={() => setShowAllContent(v => !v)}
+                style={{
+                  background:'none', border:`1px solid ${T.border}`, borderRadius:20,
+                  color:T.accent, fontSize:10, fontWeight:700, cursor:'pointer',
+                  padding:'2px 10px', transition:'all 0.15s',
+                }}
+              >
+                {showAllContent ? '▲ Show less' : `View all ${drillContent.length} →`}
+              </button>
+            )}
+          </div>
 
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-
-              {/* ── NEW: Hour dropdown for Today ── */}
-              {period === 'Today' && (
-                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={{ fontSize:10, color:T.textMuted }}>Hour:</span>
-                  <select
-                    value={selectedHour ?? ''}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        setSelectedHour(null);
-                        setDrillContent([]);
-                      } else {
-                        loadHour(Number(val));
-                      }
-                    }}
-                    style={{
-                      background:T.inputBg, border:`1px solid ${T.inputBorder}`,
-                      borderRadius:6, color:T.text, fontSize:11, padding:'3px 8px',
-                      cursor:'pointer', outline:'none',
-                    }}
-                  >
-                    <option value="">All day</option>
-                    {Array.from({length:24},(_,h)=>(
-                      <option key={h} value={h}>{hourLabel(h)}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* ── NEW: Day dropdown for Week ── */}
-              {period === 'Week' && (
-                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={{ fontSize:10, color:T.textMuted }}>Day:</span>
-                  <select
-                    value={selectedDay ?? ''}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        setSelectedDay(null);
-                        setDrillContent([]);
-                      } else {
-                        loadDay(Number(val));
-                      }
-                    }}
-                    style={{
-                      background:T.inputBg, border:`1px solid ${T.inputBorder}`,
-                      borderRadius:6, color:T.text, fontSize:11, padding:'3px 8px',
-                      cursor:'pointer', outline:'none',
-                    }}
-                  >
-                    <option value="">All week</option>
-                    {DAYS_LABEL.map((d,i)=>(
-                      <option key={i} value={i}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* View all button — only shown when not in drill mode */}
-              {selectedHour === null && selectedDay === null && topContent.length > 8 && (
-                <button
-                  onClick={() => setShowAllContent(v => !v)}
-                  style={{
-                    background:'none', border:`1px solid ${T.border}`, borderRadius:20,
-                    color:T.accent, fontSize:10, fontWeight:700, cursor:'pointer',
-                    padding:'2px 10px', transition:'all 0.15s',
+          {/* ── NEW: Drill-down controls ─────────────────────────────────── */}
+          {period === 'Today' && hoursWithViews.length > 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, padding:'8px 10px', background:T.headerRow, borderRadius:8, border:`1px solid ${T.border}` }}>
+              <span style={{ fontSize:10, color:T.textMuted, fontWeight:600, textTransform:'uppercase', letterSpacing:0.8, flexShrink:0 }}>🕐 Hour</span>
+              <div style={{ position:'relative', flex:1 }}>
+                <select
+                  value={selectedHour ?? ''}
+                  onChange={e => {
+                    setShowAllContent(false);
+                    setSelectedHour(e.target.value === '' ? null : Number(e.target.value));
                   }}
+                  style={{ ...selectStyle, width:'100%' }}
                 >
-                  {showAllContent ? '▲ Show less' : `View all ${topContent.length} →`}
+                  <option value="">All hours</option>
+                  {hoursWithViews.map(h => (
+                    <option key={h} value={h}>
+                      {String(h).padStart(2,'0')}:00 — {String(h).padStart(2,'0')}:59
+                    </option>
+                  ))}
+                </select>
+                <span style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', fontSize:9, color:T.textMuted }}>▼</span>
+              </div>
+              {selectedHour !== null && (
+                <button onClick={() => { setSelectedHour(null); setShowAllContent(false); }}
+                  style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:6, color:T.textMuted, padding:'3px 8px', cursor:'pointer', fontSize:10, flexShrink:0 }}>
+                  ✕ Clear
                 </button>
               )}
             </div>
-          </div>
+          )}
 
-          {/* ── NEW: Drill-down results (hour or day selected) ── */}
-          {(selectedHour !== null || selectedDay !== null) ? (
-            <>
-              {/* Drill label */}
-              <div style={{
-                fontSize:11, color:T.aiAccent, fontWeight:600, marginBottom:8,
-                padding:'4px 10px', background:T.aiSurface || T.surface,
-                border:`1px solid ${T.aiBorder || T.border}`, borderRadius:6,
-                display:'inline-block',
-              }}>
-                {selectedHour !== null
-                  ? `👁 Views at ${hourLabel(selectedHour)}`
-                  : `👁 Views on ${DAYS_LABEL[selectedDay]}`
-                }
-              </div>
-
-              {drillLoading ? (
-                <div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>
-                  Loading…
-                </div>
-              ) : drillContent.length === 0 ? (
-                <div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>
-                  No views recorded {selectedHour !== null ? `at ${hourLabel(selectedHour)}` : `on ${DAYS_LABEL[selectedDay]}`}
-                </div>
-              ) : (
-                <div style={{ overflowY:'auto', maxHeight:340 }}>
-                  {drillContent.map((c,i)=>(
-                    <div key={c.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-                      padding:'7px 0', borderBottom:i<drillContent.length-1?`1px solid ${T.border}`:'none' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                        <span style={{ fontSize:10, color:T.textMuted, fontWeight:700, width:20, flexShrink:0 }}>#{i+1}</span>
-                        <div style={{ minWidth:0 }}>
-                          <div style={{ fontSize:11, fontWeight:600, color:T.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:210 }}>{c.title}</div>
-                          <div style={{ fontSize:10, color:T.textMuted, marginTop:1 }}>{c.category||'Uncategorized'}</div>
-                        </div>
-                      </div>
-                      <div style={{ display:'flex', gap:10, flexShrink:0, fontSize:11 }}>
-                        <span style={{ color:'#06b6d4', fontWeight:600 }}>{fmt(c.drill_views)} views</span>
-                        <span style={{ color:'#f97316' }}>{fmt(c.likes_count)}</span>
-                        <span style={{ color:'#f59e0b' }}>★{c.avg_rating??'—'}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            /* ── Normal top content list ── */
-            <>
-              {topContent.length===0
-                ?<div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>
-                   No views recorded {period==='Today'?'today':period==='Week'?'this week':period==='Month'?'this month':'this year'} yet
-                 </div>
-                : visibleContent.map((c,i)=>(
-                  <div key={c.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-                    padding:'7px 0', borderBottom:i<visibleContent.length-1?`1px solid ${T.border}`:'none' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                      <span style={{ fontSize:10, color:T.textMuted, fontWeight:700, width:20, flexShrink:0 }}>#{i+1}</span>
-                      <div style={{ minWidth:0 }}>
-                        <div style={{ fontSize:11, fontWeight:600, color:T.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:210 }}>{c.title}</div>
-                        <div style={{ fontSize:10, color:T.textMuted, marginTop:1 }}>{c.category||'Uncategorized'}</div>
-                      </div>
-                    </div>
-                    <div style={{ display:'flex', gap:10, flexShrink:0, fontSize:11 }}>
-                      <span style={{ color:'#06b6d4', fontWeight:600 }}>{fmt(c.period_views)}</span>
-                      <span style={{ color:'#f97316' }}>{fmt(c.likes_count)}</span>
-                      <span style={{ color:'#f59e0b' }}>★{c.avg_rating??'—'}</span>
-                    </div>
-                  </div>
-                ))
-              }
-
-              {topContent.length > 8 && (
-                <button
-                  onClick={() => setShowAllContent(v => !v)}
-                  style={{
-                    marginTop:10, width:'100%', padding:'7px',
-                    background:'none', border:`1px dashed ${T.border}`, borderRadius:8,
-                    color:T.textMuted, fontSize:11, cursor:'pointer', transition:'all 0.15s',
+          {period === 'Week' && daysWithViews.length > 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, padding:'8px 10px', background:T.headerRow, borderRadius:8, border:`1px solid ${T.border}` }}>
+              <span style={{ fontSize:10, color:T.textMuted, fontWeight:600, textTransform:'uppercase', letterSpacing:0.8, flexShrink:0 }}>📅 Day</span>
+              <div style={{ position:'relative', flex:1 }}>
+                <select
+                  value={selectedDay ?? ''}
+                  onChange={e => {
+                    setShowAllContent(false);
+                    setSelectedDay(e.target.value === '' ? null : Number(e.target.value));
                   }}
-                  onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.color=T.accent; }}
-                  onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}
+                  style={{ ...selectStyle, width:'100%' }}
                 >
-                  {showAllContent ? '▲ Show top 8 only' : `▼ View all ${topContent.length} articles`}
+                  <option value="">All days</option>
+                  {daysWithViews.map(d => (
+                    <option key={d} value={d}>{DAY_NAMES[d]}</option>
+                  ))}
+                </select>
+                <span style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', fontSize:9, color:T.textMuted }}>▼</span>
+              </div>
+              {selectedDay !== null && (
+                <button onClick={() => { setSelectedDay(null); setShowAllContent(false); }}
+                  style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:6, color:T.textMuted, padding:'3px 8px', cursor:'pointer', fontSize:10, flexShrink:0 }}>
+                  ✕ Clear
                 </button>
               )}
-            </>
+            </div>
+          )}
+          {/* ── END drill-down controls ──────────────────────────────────── */}
+
+          {drillContent.length === 0
+            ? <div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>
+                {(period==='Today'&&selectedHour!==null) || (period==='Week'&&selectedDay!==null)
+                  ? `No views recorded for this ${period==='Today'?'hour':'day'}`
+                  : `No views recorded ${period==='Today'?'today':period==='Week'?'this week':period==='Month'?'this month':'this year'} yet`
+                }
+              </div>
+            : visibleContent.map((c,i)=>(
+              <div key={c.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                padding:'7px 0', borderBottom:i<visibleContent.length-1?`1px solid ${T.border}`:'none' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                  <span style={{ fontSize:10, color:T.textMuted, fontWeight:700, width:20, flexShrink:0 }}>#{i+1}</span>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:11, fontWeight:600, color:T.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:210 }}>{c.title}</div>
+                    <div style={{ fontSize:10, color:T.textMuted, marginTop:1 }}>{c.category||'Uncategorized'}</div>
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:10, flexShrink:0, fontSize:11 }}>
+                  <span style={{ color:'#06b6d4', fontWeight:600 }}>{fmt(c.period_views)}</span>
+                  <span style={{ color:'#f97316' }}>{fmt(c.likes_count)}</span>
+                  <span style={{ color:'#f59e0b' }}>★{c.avg_rating??'—'}</span>
+                </div>
+              </div>
+            ))
+          }
+
+          {/* Expand/collapse footer button */}
+          {drillContent.length > 8 && (
+            <button
+              onClick={() => setShowAllContent(v => !v)}
+              style={{
+                marginTop:10, width:'100%', padding:'7px',
+                background:'none', border:`1px dashed ${T.border}`, borderRadius:8,
+                color:T.textMuted, fontSize:11, cursor:'pointer', transition:'all 0.15s',
+              }}
+              onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.color=T.accent; }}
+              onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}
+            >
+              {showAllContent ? '▲ Show top 8 only' : `▼ View all ${drillContent.length} articles`}
+            </button>
           )}
         </div>
 
@@ -700,10 +616,13 @@ const AIAdvisor = ({ theme:T }) => {
   const [error, setError]           = useState(null);
   const [platformData, setPlatform] = useState(null);
 
+  // ── FIX 3: Per-tab custom topic inputs ─────────────────────────────────────
+  // Each tab has its own free-text input. When filled, it overrides the category selection.
   const [trendingInput,       setTrendingInput]       = useState('');
   const [recommendInput,      setRecommendInput]      = useState('');
   const [newsInput,           setNewsInput]           = useState('');
 
+  // Chat state
   const [messages, setMessages]     = useState([
     { role:'assistant', content:"Hey — I'm Marcus, your business consultant for Ogonjo.\n\nI'm here to help you grow this platform into a real revenue machine. I can tell you what's trending right now on Google, what content to create this week, how to monetize your traffic better, and any business strategy question you have.\n\nI search the web in real-time, so my answers are based on what's actually happening today — not outdated data.\n\nWhat do you want to work on?" }
   ]);
@@ -774,6 +693,7 @@ const AIAdvisor = ({ theme:T }) => {
   useEffect(()=>{ setResult(null); setError(null); },[subTab,category]);
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({ behavior:'smooth' }); },[messages]);
 
+  // ── Resolve the effective topic for a tab ─────────────────────────────────
   const effectiveTopic = (tab) => {
     if (tab === 'trending')        return trendingInput.trim()  || category;
     if (tab === 'recommendations') return recommendInput.trim() || category;
@@ -879,6 +799,7 @@ const AIAdvisor = ({ theme:T }) => {
     );
   };
 
+  // ── Chat UI ────────────────────────────────────────────────────────────────
   const renderChat = () => (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
       <PromptStrip tab="chat" />
@@ -939,6 +860,7 @@ const AIAdvisor = ({ theme:T }) => {
     </div>
   );
 
+  // ── Trending ───────────────────────────────────────────────────────────────
   const renderTrending = () => {
     if(!result) return(
       <div>
@@ -1000,6 +922,7 @@ const AIAdvisor = ({ theme:T }) => {
     );
   };
 
+  // ── Recommendations ────────────────────────────────────────────────────────
   const renderRecommendations = () => {
     if(!result) return(
       <div>
@@ -1063,6 +986,7 @@ const AIAdvisor = ({ theme:T }) => {
     );
   };
 
+  // ── News ───────────────────────────────────────────────────────────────────
   const renderNews = () => {
     if(!result) return(
       <div>
@@ -1126,6 +1050,7 @@ const AIAdvisor = ({ theme:T }) => {
     );
   };
 
+  // ── Tab controls with custom input ────────────────────────────────────────
   const isChat = subTab==='chat';
 
   const tabInputMap = {
@@ -1146,7 +1071,9 @@ const AIAdvisor = ({ theme:T }) => {
   return(
     <div style={{ overflowY: isChat?'hidden':'auto', flex:1, paddingRight:4, paddingBottom:8, display:'flex', flexDirection:'column' }}>
 
+      {/* Sub-tabs + controls */}
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'12px 14px', marginBottom:12, flexShrink:0 }}>
+        {/* Tab bar */}
         <div style={{ display:'flex', gap:4, marginBottom:isChat?0:12, background:T.bg, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>
           {SUB_TABS.map(t=>(
             <button key={t.id} onClick={()=>setSubTab(t.id)} style={{
@@ -1160,6 +1087,7 @@ const AIAdvisor = ({ theme:T }) => {
 
         {!isChat && (
           <>
+            {/* Custom topic input per tab */}
             <div style={{ marginTop:10, marginBottom:8 }}>
               <div style={{ fontSize:11, color:T.textMuted, marginBottom:5, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
                 🔎 Custom topic (optional)
@@ -1194,6 +1122,7 @@ const AIAdvisor = ({ theme:T }) => {
               }
             </div>
 
+            {/* Category pills */}
             <div style={{ fontSize:11, color:T.textMuted, marginBottom:6, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>Category</div>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, maxHeight:120, overflowY:'auto' }}>
               {categories.map(c=>(
@@ -1207,6 +1136,7 @@ const AIAdvisor = ({ theme:T }) => {
               ))}
             </div>
 
+            {/* Action button */}
             <button onClick={fetchData} disabled={loading} style={{
               width:'100%', padding:'9px',
               background:loading?T.surface:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
