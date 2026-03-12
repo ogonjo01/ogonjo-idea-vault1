@@ -52,7 +52,7 @@ const HorizontalCarousel = ({
     const base = sortMap[sortKey] || 'more content';
     if (tag)      return `Explore More From ${base} In "${tag}"`;
     if (category) return `Explore More From ${base} In ${category}`;
-    return `Explore More From ${base}`;   // ← bug fix: was missing this return
+   
   }, []);
 
   const SeeMoreCTA = ({ href, text }) => {
