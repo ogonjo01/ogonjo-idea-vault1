@@ -67,6 +67,8 @@ COMMUNICATION STYLE:
 - Reference what top platforms like HBR, Forbes, Investopedia do — and how Ogonjo can compete
 - When relevant, mention African/emerging market angles since the platform likely serves this audience
 
+IMPORTANT: Always write complete, full responses. Never cut off mid-sentence or mid-thought. If outlining steps or a framework, always complete every single step. Do not truncate or summarize at the end — write the full answer.
+
 Always search the web for current information before answering questions about trends, news, or what is popular right now. Today is March 2026.`;
 
 const suggestionsPrompt = () => `You are a business intelligence analyst. Based on what is currently trending in the business world in March 2026, generate smart, specific questions that a business content platform owner would want to ask their AI advisor right now. Make them highly relevant to current events, trending topics, and real business opportunities.
@@ -114,7 +116,6 @@ export default async (request) => {
   }
 
   // ── Simple in-memory cache (resets on function cold start, ~6hr TTL) ────────
-  // For production, swap this with a Supabase table read/write
   const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
   if (!globalThis._aiCache) globalThis._aiCache = {};
 
@@ -167,10 +168,11 @@ export default async (request) => {
         system_instruction: { parts: [{ text: chatSystemPrompt(platformData, categories) }] },
         contents,
         tools: [groundingTool],
-        generationConfig: { maxOutputTokens: 2000, temperature: 0.75 },
+        // FIX: Increased from 2000 to 8192 so Marcus never cuts off mid-response
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.75 },
       };
     } else {
-      if (!category) {
+      if (!category && mode !== 'suggestions') {
         return new Response(JSON.stringify({ error: 'Missing category.' }), { status: 400 });
       }
 
@@ -178,13 +180,14 @@ export default async (request) => {
       if (mode === 'trending')             prompt = trendingPrompt(category);
       else if (mode === 'recommendations') prompt = recommendationsPrompt(category, platformData);
       else if (mode === 'news')            prompt = newsPrompt(category);
-      else if (mode === 'suggestions') prompt = suggestionsPrompt();
+      else if (mode === 'suggestions')     prompt = suggestionsPrompt();
       else return new Response(JSON.stringify({ error: 'Invalid mode.' }), { status: 400 });
 
       // No grounding tool for structured modes — it injects extra text that breaks JSON
       geminiBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 4000, temperature: 0.3 },
+        // FIX: Increased from 4000 to 8192 for structured modes too
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
       };
     }
 
@@ -210,6 +213,14 @@ export default async (request) => {
     // We want only non-thought text parts
     const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
     console.log('Parts count:', allParts.length, 'types:', allParts.map(p => p.thought ? 'thought' : p.text ? 'text' : 'other').join(','));
+
+    // FIX: Also check finishReason — log it so we can debug truncation
+    const finishReason = data.candidates?.[0]?.finishReason;
+    console.log('Finish reason:', finishReason);
+    if (finishReason === 'MAX_TOKENS') {
+      console.warn('WARNING: Response was cut off due to token limit. Consider increasing maxOutputTokens further.');
+    }
+
     const textBlocks = allParts
       .filter(p => p.text && !p.thought)
       .map(p => p.text)

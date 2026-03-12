@@ -503,3 +503,342 @@ background: linear-gradient(
     scroll-snap-align: none; /* grid doesn't need snap */
   }
 }
+/* ═══════════════════════════════════════════════════════════
+   BRIEFS FEED — add to bottom of ContentFeed.css
+═══════════════════════════════════════════════════════════ */
+
+/* ── Wrapper ── */
+.briefs-feed {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 16px 64px;
+}
+
+/* ── Header ── */
+.briefs-feed-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 32px 0 24px;
+  border-bottom: 2px solid #111;
+  flex-wrap: wrap;
+}
+
+.briefs-feed-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #111;
+  margin: 0 0 4px;
+}
+
+.briefs-feed-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* ── Sort bar ── */
+.briefs-sort-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.briefs-sort-btn {
+  padding: 6px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.briefs-sort-btn:hover {
+  border-color: #111;
+  color: #111;
+}
+
+.briefs-sort-btn.active {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+/* ── List ── */
+.briefs-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Brief row ── */
+.brief-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 16px;
+  align-items: start;
+  padding: 20px 0;
+  border-bottom: 1px solid #f0f0f0;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s ease;
+  border-radius: 4px;
+}
+
+.brief-row:hover {
+  background: #fafafa;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin: 0 -8px;
+}
+
+.brief-row:hover .brief-row-title {
+  color: #000;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Index number */
+.brief-row-index {
+  font-size: 13px;
+  font-weight: 700;
+  color: #d1d5db;
+  font-variant-numeric: tabular-nums;
+  padding-top: 3px;
+  text-align: right;
+}
+
+/* Body */
+.brief-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.brief-row-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.35;
+  margin: 0;
+  transition: color 0.12s ease;
+}
+
+.brief-row-desc {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Meta — right side */
+.brief-row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  min-width: 72px;
+  padding-top: 2px;
+}
+
+.brief-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.brief-meta-icon {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.brief-meta-star {
+  color: #f59e0b;
+  opacity: 1;
+}
+
+.brief-meta-date {
+  font-size: 11px;
+  color: #d1d5db;
+  margin-top: 2px;
+}
+
+/* ── Loading skeletons ── */
+.briefs-loading {
+  display: flex;
+  flex-direction: column;
+}
+
+.brief-row-skeleton {
+  display: grid;
+  grid-template-columns: 36px 1fr 80px;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid #f0f0f0;
+  animation: brs-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes brs-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.brs-index {
+  width: 24px;
+  height: 14px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  margin-top: 4px;
+  margin-left: auto;
+}
+
+.brs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.brs-title {
+  height: 16px;
+  width: 70%;
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+
+.brs-desc {
+  height: 12px;
+  width: 90%;
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+.brs-meta {
+  width: 60px;
+  height: 50px;
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+/* ── Empty state ── */
+.briefs-empty {
+  padding: 48px 0;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 15px;
+}
+
+/* ── Footer CTA ── */
+.briefs-footer-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 0 16px;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 8px;
+}
+
+.briefs-footer-text {
+  font-size: 14px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+.briefs-footer-btn {
+  padding: 10px 24px;
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.briefs-footer-btn:hover {
+  background: #333;
+  transform: translateY(-1px);
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .briefs-feed-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .brief-row {
+    grid-template-columns: 28px 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .brief-row-meta {
+    grid-column: 2;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: unset;
+    padding-top: 0;
+  }
+
+  .brief-meta-date {
+    margin-top: 0;
+  }
+
+  .briefs-feed-title {
+    font-size: 22px;
+  }
+}
+
+/* ── Load more ── */
+.briefs-load-more-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0 8px;
+}
+
+.briefs-load-more-btn {
+  padding: 11px 32px;
+  background: #fff;
+  color: #111;
+  border: 1.5px solid #111;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.briefs-load-more-btn:hover:not(:disabled) {
+  background: #111;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.briefs-load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Count label ── */
+.briefs-count {
+  text-align: center;
+  font-size: 12px;
+  color: #d1d5db;
+  margin: 16px 0 0;
+}

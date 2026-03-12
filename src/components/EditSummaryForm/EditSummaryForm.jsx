@@ -10,7 +10,7 @@ import './EditSummaryForm.css';
 
 /* ── constants ────────────────────────────────────────────── */
 const REAL_CATEGORIES = [
-  "Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
+  "Ogonjo Briefs","Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
   "Business Ideas","Business Legends","Business Strategy & Systems","Career Development",
   "Companies & Organizations","Concepts","Concepts Abbreviations","Courses & Learning Paths",
   "Digital Skills & Technology","Entrepreneurship","Leadership & Management","Marketing & Sales",

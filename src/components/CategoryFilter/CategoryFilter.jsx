@@ -5,9 +5,7 @@ import { supabase } from '../../supabase/supabaseClient';
 import './CategoryFilter.css';
 
 /* ── Fetch every distinct non-null category ──────────────────
-   Supabase hard-caps a single request at 1000 rows by default.
-   We page through in batches of 1000 until we get everything,
-   then deduplicate in JS.
+   Paginate in batches of 1000 to bypass Supabase row cap.
 ──────────────────────────────────────────────────────────── */
 const fetchAllCategories = async () => {
   const PAGE = 1000;
@@ -26,12 +24,11 @@ const fetchAllCategories = async () => {
 
     data.forEach(row => {
       const cat = (row.category || '').toString().trim();
-      if (cat) allCategories.add(cat);
+      // exclude the briefs category from the dynamic list — it has its own pinned tab
+      if (cat && cat !== 'Ogonjo Briefs') allCategories.add(cat);
     });
 
-    // If we got fewer rows than the page size, we've reached the end
     if (data.length < PAGE) break;
-
     from += PAGE;
   }
 
@@ -73,8 +70,9 @@ const CategoryFilter = ({
         const unique = await fetchAllCategories();
 
         if (mounted) {
-          const draftTab = (role === 'admin' || role === 'team') ? ['📝 Drafts'] : [];
-          setCategories([...draftTab, 'For You', ...unique]);
+          const draftTab  = (role === 'admin' || role === 'team') ? ['📝 Drafts'] : [];
+          // 📰 Ogonjo Briefs is ALWAYS first, visible to all users
+          setCategories([...draftTab, '📰 Ogonjo Briefs', 'For You', ...unique]);
           setLoading(false);
         }
       } catch (err) {
@@ -110,7 +108,12 @@ const CategoryFilter = ({
             key={c}
             type="button"
             data-category={c}
-            className={`category-item ${selectedCategory === c ? 'active' : ''} ${c === '📝 Drafts' ? 'category-item--drafts' : ''}`}
+            className={[
+              'category-item',
+              selectedCategory === c        ? 'active'                  : '',
+              c === '📝 Drafts'             ? 'category-item--drafts'   : '',
+              c === '📰 Ogonjo Briefs'      ? 'category-item--briefs'   : '',
+            ].filter(Boolean).join(' ')}
             onClick={() => typeof onSelectCategory === 'function' && onSelectCategory(c)}
             onKeyDown={(e) => handleKey(e, c)}
             whileHover={{ scale: 1.03 }}

@@ -1,3 +1,4 @@
+// src/components/HorizontalCarousel/HorizontalCarousel.jsx
 import React, { useRef, useCallback, useMemo } from 'react';
 import './HorizontalCarousel.css';
 
@@ -12,20 +13,6 @@ const CardSkeleton = () => (
   </div>
 );
 
-/**
- * HorizontalCarousel
- * Props:
- *  - title: string
- *  - children: React nodes (rendered items)
- *  - items: array (data backing the items)
- *  - sortKey: string (newest, likes, rating, views)
- *  - category: string | null
- *  - tag: string | null
- *  - viewAllLink: string | null (fallback manual link)
- *  - loading: bool
- *  - skeletonCount: number
- *  - emptyMessage: string
- */
 const HorizontalCarousel = ({
   title,
   children,
@@ -46,16 +33,11 @@ const HorizontalCarousel = ({
     s.scrollBy({ left: delta, behavior: 'smooth' });
   }, []);
 
-  // Build explore link (same as ContentFeed)
-  const buildViewAllLink = useCallback((sk = 'newest', cat = null, tg = null, fields = 'id,title,description,author,created_at,tags') => {
+  const buildViewAllLink = useCallback((sk = 'newest', cat = null, tg = null) => {
     const params = new URLSearchParams();
-    if (sk) params.set('sort', sk);
+    if (sk)  params.set('sort', sk);
     if (cat) params.set('category', cat);
-    if (tg) {
-      params.set('tag', tg);
-      params.set('tag_only', '1');
-    }
-    if (fields) params.set('fields', fields);
+    if (tg)  { params.set('tag', tg); params.set('tag_only', '1'); }
     const s = params.toString();
     return s ? `/explore?${s}` : '/explore';
   }, []);
@@ -63,26 +45,26 @@ const HorizontalCarousel = ({
   const buildSeeMoreText = useCallback(({ sortKey = 'newest', category = null, tag = null } = {}) => {
     const sortMap = {
       newest: 'Newest Content',
-      likes: 'Most Liked content',
+      likes:  'Most Liked content',
       rating: 'Most Rated Content',
-      views: 'Most Viewed Content',
+      views:  'Most Viewed Content',
     };
     const base = sortMap[sortKey] || 'more content';
-    if (tag) return `Explore More From ${base} In "${tag}"`;
+    if (tag)      return `Explore More From ${base} In "${tag}"`;
     if (category) return `Explore More From ${base} In ${category}`;
-    
+    return `Explore More From ${base}`;   // ← bug fix: was missing this return
   }, []);
 
   const SeeMoreCTA = ({ href, text }) => {
-    if (!href) return null;
+    if (!href || !text) return null;
     return (
-      <div className="hf-viewall-wrapper" aria-hidden={false} style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+      <div className="hf-viewall-wrapper" style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
         <a href={href} className="hf-viewall" role="button">{text}</a>
       </div>
     );
   };
 
-  const hasItems = Array.isArray(items) && items.length > 0;
+  const hasItems    = Array.isArray(items) && items.length > 0;
   const seeMoreHref = useMemo(() => viewAllLink || buildViewAllLink(sortKey, category, tag), [viewAllLink, buildViewAllLink, sortKey, category, tag]);
   const seeMoreText = useMemo(() => buildSeeMoreText({ sortKey, category, tag }), [buildSeeMoreText, sortKey, category, tag]);
 
@@ -120,13 +102,8 @@ const HorizontalCarousel = ({
           role="list"
           aria-label={`${title} items`}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowRight') {
-              e.preventDefault();
-              handleScrollBy(320);
-            } else if (e.key === 'ArrowLeft') {
-              e.preventDefault();
-              handleScrollBy(-320);
-            }
+            if (e.key === 'ArrowRight') { e.preventDefault(); handleScrollBy(320);  }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); handleScrollBy(-320); }
           }}
         >
           {loading ? (

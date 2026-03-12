@@ -96,6 +96,69 @@ const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','
 const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// COPY BUTTON COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+const CopyButton = ({ text, theme: T }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      // Fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : 'Copy to clipboard'}
+      style={{
+        background: copied ? (T.aiAccent + '22') : 'none',
+        border: `1px solid ${copied ? T.aiAccent : T.border}`,
+        borderRadius: 6,
+        color: copied ? T.aiAccent : T.textMuted,
+        padding: '3px 8px',
+        cursor: 'pointer',
+        fontSize: 10,
+        fontWeight: 600,
+        transition: 'all 0.15s',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        flexShrink: 0,
+      }}
+      onMouseEnter={e => {
+        if (!copied) {
+          e.currentTarget.style.borderColor = T.aiAccent;
+          e.currentTarget.style.color = T.aiAccent;
+        }
+      }}
+      onMouseLeave={e => {
+        if (!copied) {
+          e.currentTarget.style.borderColor = T.border;
+          e.currentTarget.style.color = T.textMuted;
+        }
+      }}
+    >
+      {copied ? '✓ Copied' : '⎘ Copy'}
+    </button>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SHARED COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 const ThemeSwitcher = ({ theme, setTheme }) => (
@@ -147,7 +210,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
   const [prev, setPrev]           = useState({ views:0, likes:0, ratings:0, newUsers:0 });
   const [chartData, setChart]     = useState([]);
   const [topContent, setTop]      = useState([]);
-  const [rawViews, setRawViews]   = useState([]); // ── NEW: stores {post_id, created_at} for drill-down
+  const [rawViews, setRawViews]   = useState([]);
   const [catData, setCat]         = useState([]);
   const [comments, setComments]   = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -155,15 +218,14 @@ const AnalyticsDashboard = ({ theme:T }) => {
   const [showAllContent, setShowAllContent] = useState(false);
   const [catSearch, setCatSearch]           = useState('');
 
-  // ── NEW: drill-down state ─────────────────────────────────────────────────
-  const [selectedHour, setSelectedHour] = useState(null); // 0–23, Today only
-  const [selectedDay,  setSelectedDay]  = useState(null); // 0–6 (JS getDay()), Week only
+  const [selectedHour, setSelectedHour] = useState(null);
+  const [selectedDay,  setSelectedDay]  = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setShowAllContent(false);
-    setSelectedHour(null); // reset on period change
-    setSelectedDay(null);  // reset on period change
+    setSelectedHour(null);
+    setSelectedDay(null);
     try {
       const now    = Date.now();
       const curMs  = periodMs[period];
@@ -203,11 +265,10 @@ const AnalyticsDashboard = ({ theme:T }) => {
       const allKeys=[...new Set([...Object.keys(bkt.views),...Object.keys(bkt.likes),...Object.keys(bkt.ratings)])].sort();
       setChart(allKeys.map(k=>({ date:k, views:bkt.views[k]||0, likes:bkt.likes[k]||0, ratings:bkt.ratings[k]||0 })));
 
-      // ── Top content — fetch ALL, also store created_at for drill-down ─────
       const { data:periodViews } = await supabase
         .from('views').select('post_id,created_at').gte('created_at', sinceA).not('post_id','is',null);
 
-      setRawViews(periodViews || []); // ── NEW: save raw rows for client-side filtering
+      setRawViews(periodViews || []);
 
       if(periodViews && periodViews.length > 0) {
         const viewCounts = {};
@@ -228,7 +289,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
         setTop([]);
       }
 
-      // ── Category breakdown ────────────────────────────────────────────────
       const { data:cats } = await supabase
         .from('book_summaries').select('category,views_count').not('category','is',null);
       const catMap={};
@@ -257,8 +317,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
     ? catData.filter(c => c.name.toLowerCase().includes(catSearch.trim().toLowerCase()))
     : catData;
 
-  // ── NEW: compute drill-filtered content ───────────────────────────────────
-  // Build a set of post_ids that had views in the selected hour (Today) or day (Week)
   const getDrillContent = () => {
     if (period === 'Today' && selectedHour !== null) {
       const idsInHour = new Set(
@@ -266,7 +324,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
           .filter(r => new Date(r.created_at).getHours() === selectedHour)
           .map(r => r.post_id)
       );
-      // Re-count views for this hour only
       const hourCounts = {};
       rawViews.forEach(r => {
         if (new Date(r.created_at).getHours() === selectedHour) {
@@ -301,9 +358,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
   const drillContent   = getDrillContent();
   const visibleContent = showAllContent ? drillContent : drillContent.slice(0, 8);
 
-  // ── NEW: build hour options — only hours that actually have views ──────────
   const hoursWithViews = [...new Set(rawViews.map(r => new Date(r.created_at).getHours()))].sort((a,b)=>a-b);
-  // ── NEW: build day options — only days that actually have views ───────────
   const daysWithViews  = [...new Set(rawViews.map(r => new Date(r.created_at).getDay()))].sort((a,b)=>a-b);
 
   if(loading) return(
@@ -312,7 +367,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
     </div>
   );
 
-  // Shared select style
   const selectStyle = {
     padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:600,
     background: T.inputBg, border:`1px solid ${T.inputBorder}`,
@@ -415,7 +469,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
             )}
           </div>
 
-          {/* ── NEW: Drill-down controls ─────────────────────────────────── */}
           {period === 'Today' && hoursWithViews.length > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, padding:'8px 10px', background:T.headerRow, borderRadius:8, border:`1px solid ${T.border}` }}>
               <span style={{ fontSize:10, color:T.textMuted, fontWeight:600, textTransform:'uppercase', letterSpacing:0.8, flexShrink:0 }}>🕐 Hour</span>
@@ -473,7 +526,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
               )}
             </div>
           )}
-          {/* ── END drill-down controls ──────────────────────────────────── */}
 
           {drillContent.length === 0
             ? <div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>
@@ -501,7 +553,6 @@ const AnalyticsDashboard = ({ theme:T }) => {
             ))
           }
 
-          {/* Expand/collapse footer button */}
           {drillContent.length > 8 && (
             <button
               onClick={() => setShowAllContent(v => !v)}
@@ -518,7 +569,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
           )}
         </div>
 
-        {/* Category — ALL categories + search filter */}
+        {/* Category */}
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 12px', display:'flex', flexDirection:'column' }}>
           <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:8 }}>
             Categories ({catData.length})
@@ -616,19 +667,17 @@ const AIAdvisor = ({ theme:T }) => {
   const [error, setError]           = useState(null);
   const [platformData, setPlatform] = useState(null);
 
-  // ── FIX 3: Per-tab custom topic inputs ─────────────────────────────────────
-  // Each tab has its own free-text input. When filled, it overrides the category selection.
-  const [trendingInput,       setTrendingInput]       = useState('');
-  const [recommendInput,      setRecommendInput]      = useState('');
-  const [newsInput,           setNewsInput]           = useState('');
+  const [trendingInput,  setTrendingInput]  = useState('');
+  const [recommendInput, setRecommendInput] = useState('');
+  const [newsInput,      setNewsInput]      = useState('');
 
   // Chat state
-  const [messages, setMessages]     = useState([
+  const [messages, setMessages]       = useState([
     { role:'assistant', content:"Hey — I'm Marcus, your business consultant for Ogonjo.\n\nI'm here to help you grow this platform into a real revenue machine. I can tell you what's trending right now on Google, what content to create this week, how to monetize your traffic better, and any business strategy question you have.\n\nI search the web in real-time, so my answers are based on what's actually happening today — not outdated data.\n\nWhat do you want to work on?" }
   ]);
-  const [chatInput, setChatInput]   = useState('');
+  const [chatInput, setChatInput]     = useState('');
   const [chatLoading, setChatLoading] = useState(false);
-  const chatBottomRef               = useRef(null);
+  const chatBottomRef                 = useRef(null);
 
   const SUB_TABS = [
     { id:'chat',           label:'💬 Ask Marcus'    },
@@ -693,7 +742,6 @@ const AIAdvisor = ({ theme:T }) => {
   useEffect(()=>{ setResult(null); setError(null); },[subTab,category]);
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({ behavior:'smooth' }); },[messages]);
 
-  // ── Resolve the effective topic for a tab ─────────────────────────────────
   const effectiveTopic = (tab) => {
     if (tab === 'trending')        return trendingInput.trim()  || category;
     if (tab === 'recommendations') return recommendInput.trim() || category;
@@ -803,7 +851,8 @@ const AIAdvisor = ({ theme:T }) => {
   const renderChat = () => (
     <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
       <PromptStrip tab="chat" />
-      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, paddingBottom:8, minHeight:200, maxHeight:'calc(90vh - 400px)' }}>
+      {/* FIX: Removed maxHeight cap — messages now scroll freely within the modal's flex layout */}
+      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, paddingBottom:8, minHeight:200 }}>
         {messages.map((m,i)=>{
           const isUser = m.role==='user';
           return(
@@ -813,13 +862,19 @@ const AIAdvisor = ({ theme:T }) => {
                   background:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,
                   display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', letterSpacing:-0.5 }}>M</div>
               )}
-              <div style={{
-                maxWidth:'80%', padding:'11px 15px',
-                borderRadius:isUser?'16px 16px 4px 16px':'16px 16px 16px 4px',
-                background:isUser?T.chatUserBg:T.chatAiBg,
-                border:`1px solid ${isUser?T.aiAccent+'55':T.border}`,
-                fontSize:12.5, color:T.text, lineHeight:1.65, whiteSpace:'pre-wrap', wordBreak:'break-word',
-              }}>{m.content}</div>
+              <div style={{ maxWidth:'80%', display:'flex', flexDirection:'column', gap:4, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  padding:'11px 15px',
+                  borderRadius:isUser?'16px 16px 4px 16px':'16px 16px 16px 4px',
+                  background:isUser?T.chatUserBg:T.chatAiBg,
+                  border:`1px solid ${isUser?T.aiAccent+'55':T.border}`,
+                  fontSize:12.5, color:T.text, lineHeight:1.65, whiteSpace:'pre-wrap', wordBreak:'break-word',
+                }}>{m.content}</div>
+                {/* FIX: Copy button appears below each AI message */}
+                {!isUser && (
+                  <CopyButton text={m.content} theme={T} />
+                )}
+              </div>
               {isUser && (
                 <div style={{ width:32, height:32, borderRadius:'50%', flexShrink:0, background:`hsl(200,60%,35%)`,
                   display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'#fff' }}>You</div>
@@ -840,7 +895,7 @@ const AIAdvisor = ({ theme:T }) => {
         )}
         <div ref={chatBottomRef}/>
       </div>
-      <div style={{ display:'flex', gap:8, marginTop:8 }}>
+      <div style={{ display:'flex', gap:8, marginTop:8, flexShrink:0 }}>
         <input
           value={chatInput}
           onChange={e=>setChatInput(e.target.value)}
@@ -878,8 +933,13 @@ const AIAdvisor = ({ theme:T }) => {
       <>
         <PromptStrip tab="trending" />
         <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
-          <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>📊 Search Intelligence — {result.category}</div>
-          <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.insight}</p>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>📊 Search Intelligence — {result.category}</div>
+              <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.insight}</p>
+            </div>
+            <CopyButton text={result.insight} theme={T} />
+          </div>
         </div>
         {result.risingTopics?.length>0&&(
           <div style={{ marginBottom:12 }}>
@@ -940,8 +1000,13 @@ const AIAdvisor = ({ theme:T }) => {
       <>
         <PromptStrip tab="recommendations" />
         <div style={{ background:T.aiSurface, border:`1px solid ${T.aiBorder}`, borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
-          <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>🎯 Strategy — {result.category}</div>
-          <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.summary}</p>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:11, color:T.aiAccent, fontWeight:700, marginBottom:4 }}>🎯 Strategy — {result.category}</div>
+              <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:0 }}>{result.summary}</p>
+            </div>
+            <CopyButton text={result.summary} theme={T} />
+          </div>
         </div>
         <SectionTitle>📝 What to Create Next</SectionTitle>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
@@ -1011,9 +1076,12 @@ const AIAdvisor = ({ theme:T }) => {
               <p style={{ fontSize:12, color:T.text, lineHeight:1.6, margin:'0 0 6px' }}>{result.editorNote}</p>
               <div style={{ fontSize:11, color:T.textMuted }}>Key theme: <strong style={{ color:T.text }}>{result.keyTheme}</strong></div>
             </div>
-            <div style={{ textAlign:'center', flexShrink:0 }}>
-              <div style={{ fontSize:10, color:T.textMuted, marginBottom:4 }}>Sentiment</div>
-              <span style={{ fontSize:12, fontWeight:700, color:sentC, background:sentC+'18', padding:'4px 12px', borderRadius:20, textTransform:'uppercase', border:`1px solid ${sentC}44` }}>{result.marketSentiment}</span>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6, flexShrink:0 }}>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize:10, color:T.textMuted, marginBottom:4 }}>Sentiment</div>
+                <span style={{ fontSize:12, fontWeight:700, color:sentC, background:sentC+'18', padding:'4px 12px', borderRadius:20, textTransform:'uppercase', border:`1px solid ${sentC}44` }}>{result.marketSentiment}</span>
+              </div>
+              <CopyButton text={`${result.editorNote}\n\nKey theme: ${result.keyTheme}`} theme={T} />
             </div>
           </div>
         </div>
@@ -1025,7 +1093,10 @@ const AIAdvisor = ({ theme:T }) => {
               onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:6 }}>
                 <span style={{ fontSize:13, fontWeight:700, color:T.text, lineHeight:1.3, flex:1 }}>{h.title}</span>
-                <Badge label={h.impact} colour={IMPACT_C[h.impact]}/>
+                <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
+                  <Badge label={h.impact} colour={IMPACT_C[h.impact]}/>
+                  <CopyButton text={`${h.title}\n\n${h.summary}\n\nContent idea: ${h.contentOpportunity}`} theme={T} />
+                </div>
               </div>
               <div style={{ display:'flex', gap:8, marginBottom:8 }}>
                 <span style={{ fontSize:10, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, padding:'1px 8px', borderRadius:20 }}>{h.source}</span>
@@ -1087,7 +1158,6 @@ const AIAdvisor = ({ theme:T }) => {
 
         {!isChat && (
           <>
-            {/* Custom topic input per tab */}
             <div style={{ marginTop:10, marginBottom:8 }}>
               <div style={{ fontSize:11, color:T.textMuted, marginBottom:5, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>
                 🔎 Custom topic (optional)
@@ -1122,7 +1192,6 @@ const AIAdvisor = ({ theme:T }) => {
               }
             </div>
 
-            {/* Category pills */}
             <div style={{ fontSize:11, color:T.textMuted, marginBottom:6, textTransform:'uppercase', letterSpacing:1, fontWeight:600 }}>Category</div>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10, maxHeight:120, overflowY:'auto' }}>
               {categories.map(c=>(
@@ -1136,7 +1205,6 @@ const AIAdvisor = ({ theme:T }) => {
               ))}
             </div>
 
-            {/* Action button */}
             <button onClick={fetchData} disabled={loading} style={{
               width:'100%', padding:'9px',
               background:loading?T.surface:`linear-gradient(135deg,${T.aiAccent},${T.accent})`,

@@ -62,3 +62,20 @@
     padding: 4px 8px;
   }
 }
+/* Add this to the BOTTOM of your existing CategoryFilter.css */
+
+/* ── Ogonjo Briefs tab — always stands out ── */
+.category-item--briefs {
+  background: #8e8e8e;
+  color: #fff;
+  border-color: #111;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.category-item--briefs:hover,
+.category-item--briefs.active {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}

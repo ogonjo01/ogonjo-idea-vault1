@@ -22,6 +22,8 @@ import ResetPassword from "./pages/ResetPassword";
 import SubscriptionPopup from './components/SubscriptionPopup/SubscriptionPopup';
 import './App.css';
 
+const BRIEFS_TAB = '📰 Ogonjo Briefs';
+
 const ScrollToTop = () => {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -35,10 +37,8 @@ const ScrollToTop = () => {
 };
 
 /* ── Fetch every column for a single article ─────────────────
-   DraftPanel only loads lightweight fields (no summary body,
-   no keywords, no tags, etc.) to keep the list fast.
-   Before opening the editor we always re-fetch the full row
-   so the editor is populated with ALL content.
+   DraftPanel only loads lightweight fields to keep the list fast.
+   Before opening the editor we always re-fetch the full row.
 ─────────────────────────────────────────────────────────── */
 const fetchFullArticle = async (id) => {
   if (!id) return null;
@@ -78,8 +78,14 @@ const AppInner = ({ session }) => {
   const [editLoading, setEditLoading]   = useState(false);
 
   const [headerHidden, setHeaderHidden] = useState(false);
-  const [showPopup, setShowPopup]       = useState(false);
   const [userRole, setUserRole]         = useState('user');
+
+  // ── Popup: show once per session, not on every visit ─────
+  // sessionStorage clears when the tab/browser closes.
+  // So it returns on every new session but not mid-session.
+  const [showPopup, setShowPopup] = useState(
+    () => !sessionStorage.getItem('briefPopupDismissed')
+  );
 
   const isHomePage = location.pathname === '/';
 
@@ -96,18 +102,6 @@ const AppInner = ({ session }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isHomePage]);
 
-  useEffect(() => {
-    const checkPopup = () => {
-      const subscribedAt = localStorage.getItem('subscribedAt');
-      const dismissedAt  = localStorage.getItem('popupDismissedAt');
-      const now = Date.now();
-      if (subscribedAt) return;
-      if (!dismissedAt || now - parseInt(dismissedAt) > 4 * 24 * 60 * 60 * 1000) setShowPopup(true);
-    };
-    const timer = setTimeout(checkPopup, 10000);
-    return () => clearTimeout(timer);
-  }, []);
-
   const handleNavClick = useCallback((category) => {
     const cat = category || 'For You';
     setSelectedCategory(cat);
@@ -122,26 +116,19 @@ const AppInner = ({ session }) => {
   }, [navigate]);
 
   /* ── handleEdit ─────────────────────────────────────────────
-     Called from DraftPanel ✏️ Edit button (and UserProfile).
-     The draft row passed in is PARTIAL — it only has the fields
-     DraftPanel selected (id, title, author, category, slug …).
-     We fetch SELECT * before opening EditSummaryForm so the
-     editor has the full summary body, keywords, tags, image, etc.
+     Fetch full article before opening EditSummaryForm so the
+     editor has the complete body, keywords, tags, image, etc.
   ─────────────────────────────────────────────────────────── */
   const handleEdit = useCallback(async (partialSummary) => {
     if (!partialSummary?.id) return;
-
     setEditLoading(true);
-
     const full = await fetchFullArticle(partialSummary.id);
-    const articleToEdit = full || partialSummary; // fall back gracefully
-
+    const articleToEdit = full || partialSummary;
     setDraftToEdit(articleToEdit);
     setShowEditForm(true);
     setEditLoading(false);
   }, []);
 
-  // Header "+ New" button → CreateSummaryForm
   const handleNewArticle = () => {
     setEditingSummary(null);
     setShowAddForm(true);
@@ -161,6 +148,19 @@ const AppInner = ({ session }) => {
     setShowEditForm(false);
     setDraftToEdit(null);
   };
+
+  // ── Popup handlers ────────────────────────────────────────
+  const handlePopupClose = useCallback(() => {
+    sessionStorage.setItem('briefPopupDismissed', '1');
+    setShowPopup(false);
+  }, []);
+
+  // "Read The Brief" button — switch to Briefs tab + close popup
+  const handleReadBriefs = useCallback(() => {
+    sessionStorage.setItem('briefPopupDismissed', '1');
+    setShowPopup(false);
+    handleNavClick(BRIEFS_TAB);
+  }, [handleNavClick]);
 
   return (
     <div className="app-container">
@@ -192,19 +192,25 @@ const AppInner = ({ session }) => {
               userRole={userRole}
             />
           } />
-          <Route path="/auth" element={!session ? <AuthForm /> : <p className="logged-in-message">You are already logged in!</p>} />
-          <Route path="/profile/:userId" element={<UserProfile onEdit={handleEdit} onDelete={handleDelete} />} />
+          <Route path="/auth" element={
+            !session
+              ? <AuthForm />
+              : <p className="logged-in-message">You are already logged in!</p>
+          } />
+          <Route path="/profile/:userId" element={
+            <UserProfile onEdit={handleEdit} onDelete={handleDelete} />
+          } />
           <Route path="/library/:param" element={<SummaryView />} />
-          <Route path="/summary/:param" element={<SummaryView />} />
-          <Route path="/explore" element={<ExplorePage />} />
-          <Route path="/features" element={<Features />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route path="/privacy" element={<Privacy />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/faq" element={<FAQ />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/subscribe" element={<SubscriptionPage />} />
+          <Route path="/summary/:param"  element={<SummaryView />} />
+          <Route path="/explore"         element={<ExplorePage />} />
+          <Route path="/features"        element={<Features />} />
+          <Route path="/contact"         element={<Contact />} />
+          <Route path="/terms"           element={<Terms />} />
+          <Route path="/privacy"         element={<Privacy />} />
+          <Route path="/reset-password"  element={<ResetPassword />} />
+          <Route path="/faq"             element={<FAQ />} />
+          <Route path="/about"           element={<About />} />
+          <Route path="/subscribe"       element={<SubscriptionPage />} />
         </Routes>
 
         {/* Loading overlay while fetching full article before edit */}
@@ -247,7 +253,14 @@ const AppInner = ({ session }) => {
       </main>
 
       <Footer />
-      {showPopup && <SubscriptionPopup onClose={() => setShowPopup(false)} />}
+
+      {/* Brief popup — session-based, promotes Ogonjo Briefs */}
+      {showPopup && (
+        <SubscriptionPopup
+          onClose={handlePopupClose}
+          onReadBriefs={handleReadBriefs}
+        />
+      )}
     </div>
   );
 };
