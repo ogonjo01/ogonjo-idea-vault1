@@ -1,178 +1,166 @@
 /* src/components/SubscriptionPopup/SubscriptionPopup.css */
-:root {
-  --header-height: 56px;
-  --category-height: 48px;
-}
 
-.sp-popup-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-  padding-top: calc(var(--header-height) + var(--category-height) + 16px);
-}
-
-.sp-popup {
-  background: white;
-  border-radius: 16px;
-  max-width: 480px;
-  width: 90%;
-  padding: 32px;
-  position: relative;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  max-height: calc(100vh - var(--header-height) - var(--category-height) - 32px);
-  overflow-y: auto;
-}
-
-/* ── Brief variant ── */
-.sp-popup--brief {
-  max-width: 420px;
-  padding: 36px 32px 32px;
-  border-top: 4px solid #111;
-}
-
-.sp-popup-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #9ca3af;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  transition: color 0.15s;
-}
-
-.sp-popup-close:hover { color: #111; }
-
-/* Brief badge */
-.sp-brief-badge {
-  display: inline-block;
-  background: #111;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 4px 10px;
+/* ── Base toast ── */
+.wb-toast {
+  position:      fixed;
+  bottom:        28px;
+  right:         28px;
+  z-index:       1000;
+  width:         308px;
   border-radius: 999px;
-  margin-bottom: 16px;
+  background:    #ffffff;
+  border:        1.5px solid #22c55e;
+  box-shadow:    0 4px 24px rgba(0,0,0,0.10), 0 0 0 4px rgba(34,197,94,0.10);
+  overflow:      hidden;
+  display:       flex;
+  align-items:   center;
+  gap:           8px;
+  padding:       7px 8px 7px 12px;
+
+  /* Start hidden below */
+  opacity:   0;
+  transform: translateY(20px) scale(0.97);
 }
 
-/* Titles */
-.sp-popup-title {
-  font-size: 22px;
-  font-weight: 800;
-  margin-bottom: 10px;
-  color: #111;
+/* Entering — slide up over 2s */
+.wb-toast--entering {
+  animation: wbSlideIn 2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.sp-brief-title {
-  line-height: 1.25;
-  letter-spacing: -0.02em;
+/* Visible — fully shown */
+.wb-toast--visible {
+  opacity:   1;
+  transform: translateY(0) scale(1);
 }
 
-.sp-popup-sub {
-  font-size: 14px;
-  color: #6b7280;
-  margin-bottom: 24px;
-  line-height: 1.6;
+/* Exiting — slide down over 2s */
+.wb-toast--exiting {
+  animation: wbSlideOut 2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-/* CTA buttons */
-.sp-brief-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+@keyframes wbSlideIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
 
-.sp-brief-cta {
-  width: 100%;
-  padding: 13px;
-  background: #111;
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  font-size: 15px;
+@keyframes wbSlideOut {
+  from { opacity: 1; transform: translateY(0)    scale(1);    }
+  to   { opacity: 0; transform: translateY(16px) scale(0.96); }
+}
+
+/* ── Green glow pulse on entry ── */
+.wb-glow {
+  position:      absolute;
+  inset:         -1px;
+  border-radius: 999px;
+  pointer-events:none;
+  animation:     wbGlow 1.4s ease 0.3s forwards;
+  opacity:       0;
+}
+
+@keyframes wbGlow {
+  0%   { opacity: 0; box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
+  35%  { opacity: 1; box-shadow: 0 0 0 6px rgba(34,197,94,0.25), 0 0 20px 4px rgba(34,197,94,0.3); }
+  100% { opacity: 0; box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
+}
+
+/* ── Pulse dot ── */
+.wb-dot {
+  width:        6px;
+  height:       6px;
+  border-radius:50%;
+  background:   #22c55e;
+  flex-shrink:  0;
+  display:      block;
+  animation:    wbDot 2s ease-in-out infinite;
+}
+
+@keyframes wbDot {
+  0%,100% { box-shadow: 0 0 0 0   rgba(34,197,94,0.5); }
+  50%     { box-shadow: 0 0 0 4px rgba(34,197,94,0);   }
+}
+
+/* ── Text ── */
+.wb-text {
+  font-size:   10.5px;
+  color:       #374151;
+  line-height: 1.4;
+  margin:      0;
+  flex:        1;
+}
+
+.wb-highlight {
+  color:       #15803d;
   font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
 }
 
-.sp-brief-cta:hover {
-  background: #333;
-  transform: translateY(-1px);
+/* ── CTA button ── */
+.wb-cta {
+  font-size:     10px;
+  font-weight:   700;
+  color:         #fff;
+  background:    linear-gradient(135deg, #22c55e, #16a34a);
+  border:        none;
+  border-radius: 999px;
+  padding:       4px 11px;
+  cursor:        pointer;
+  white-space:   nowrap;
+  flex-shrink:   0;
+  box-shadow:    0 2px 6px rgba(22,163,74,0.3);
+  transition:    opacity 0.2s;
 }
 
-.sp-brief-dismiss {
-  width: 100%;
-  padding: 11px;
-  background: none;
-  color: #9ca3af;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+.wb-cta:hover { opacity: 0.88; }
+
+/* ── Close X ── */
+.wb-close {
+  width:          18px;
+  height:         18px;
+  border-radius:  50%;
+  background:     #f3f4f6;
+  border:         none;
+  cursor:         pointer;
+  display:        flex;
+  align-items:    center;
+  justify-content:center;
+  color:          #9ca3af;
+  font-size:      9px;
+  padding:        0;
+  flex-shrink:    0;
+  line-height:    1;
+  transition:     background 0.2s, color 0.2s;
 }
 
-.sp-brief-dismiss:hover {
-  color: #374151;
-  border-color: #9ca3af;
+.wb-close:hover {
+  background: #e5e7eb;
+  color:      #374151;
 }
 
-/* ── Legacy form styles (kept for safety, unused by brief variant) ── */
-.sp-popup-benefits {
-  list-style: none;
-  padding: 0;
-  margin-bottom: 24px;
+/* ── Progress bar ── */
+.wb-progress {
+  position:      absolute;
+  bottom:        0;
+  left:          0;
+  height:        2.5px;
+  width:         100%;
+  background:    linear-gradient(90deg, #22c55e, #16a34a);
+  border-radius: 0 0 0 999px;
 }
-.sp-popup-benefits li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  margin-bottom: 8px;
-  color: #333;
+
+.wb-progress--active {
+  animation: wbDrain 10s linear forwards;
 }
-.sp-popup-benefits li svg { color: #4CAF50; flex-shrink: 0; }
-.sp-popup-form { display: flex; flex-direction: column; gap: 12px; }
-.sp-popup-input-group { position: relative; }
-.sp-popup-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #999; }
-.sp-popup-input {
-  width: 100%; padding: 12px 12px 12px 36px;
-  border: 1px solid #ddd; border-radius: 8px; font-size: 16px; transition: border 0.2s;
+
+@keyframes wbDrain {
+  from { width: 100%; }
+  to   { width: 0%;   }
 }
-.sp-popup-input:focus { border-color: #4CAF50; outline: none; }
-.sp-popup-submit {
-  background: #4CAF50; color: white; border: none; padding: 12px;
-  border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s;
-}
-.sp-popup-submit:hover { background: #45a049; }
-.sp-popup-submit:disabled { background: #ccc; cursor: not-allowed; }
-.sp-popup-error   { color: #e74c3c; font-size: 14px; text-align: center; }
-.sp-popup-success { color: #4CAF50; font-size: 14px; text-align: center; }
-.sp-popup-testimonial {
-  margin-top: 16px; text-align: center; color: #666;
-  font-size: 14px; font-style: italic;
-}
-.sp-popup-star { color: #f1c40f; margin-right: 4px; }
-.sp-popup-legal { font-size: 12px; color: #999; text-align: center; margin-top: 12px; }
 
 /* ── Responsive ── */
 @media (max-width: 480px) {
-  .sp-popup {
-    padding: 24px;
-    max-height: calc(100vh - var(--header-height) - var(--category-height) - 24px);
+  .wb-toast {
+    width:  calc(100vw - 24px);
+    right:  12px;
+    bottom: 16px;
   }
-  .sp-popup--brief { padding: 28px 20px 24px; }
-  .sp-popup-title  { font-size: 19px; }
-  .sp-popup-sub    { font-size: 13px; }
 }

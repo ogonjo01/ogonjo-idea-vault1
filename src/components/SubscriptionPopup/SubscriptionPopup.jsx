@@ -1,98 +1,92 @@
 // src/components/SubscriptionPopup/SubscriptionPopup.jsx
-import React, { useEffect } from 'react';
-import { X } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
 import './SubscriptionPopup.css';
 
 /**
- * BriefPopup — promotes the Ogonjo Briefs tab.
- * Dismisses for the current session only (sessionStorage).
- * Returns on every new session — no email, no form.
+ * Wanda Briefs toast notification.
+ *
+ * Timing:
+ *   10s  — delay after new session starts (nothing visible)
+ *   2s   — slides up into view
+ *   10s  — visible, green progress bar counts down
+ *   2s   — slides back down and fades out
  *
  * Props:
- *   onClose        — called when user dismisses
- *   onReadBriefs   — called when user clicks "Read The Brief"
- *                    (parent should switch to '📰 Ogonjo Briefs' tab)
+ *   onClose      — called when fully dismissed
+ *   onReadBriefs — called when user clicks "Read Briefs"
  */
 const SubscriptionPopup = ({ onClose, onReadBriefs }) => {
+  const [state, setState] = useState('idle'); // idle | entering | visible | exiting
+  const timer = useRef(null);
 
-  // Close on Escape
+  const go = (next, ms) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState(next), ms);
+  };
+
   useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') handleClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    go('entering', 10000); // 10s delay
+    return () => clearTimeout(timer.current);
   }, []);
 
-  const handleClose = () => {
-    // Dismiss for this session only
-    sessionStorage.setItem('briefPopupDismissed', '1');
-    onClose();
+  useEffect(() => {
+    if (state === 'entering') go('visible', 2000); // 2s slide in
+    if (state === 'visible')  go('exiting', 10000); // 10s countdown
+    if (state === 'exiting')  go('done',    2000);  // 2s slide out
+  }, [state]);
+
+  useEffect(() => {
+    if (state === 'done') {
+      sessionStorage.setItem('briefPopupDismissed', '1');
+      onClose();
+    }
+  }, [state]);
+
+  const dismiss = () => {
+    if (!['entering', 'visible'].includes(state)) return;
+    clearTimeout(timer.current);
+    setState('exiting');
+    setTimeout(() => {
+      sessionStorage.setItem('briefPopupDismissed', '1');
+      onClose();
+    }, 2000);
   };
 
   const handleReadBriefs = () => {
     sessionStorage.setItem('briefPopupDismissed', '1');
-    onClose();
     if (typeof onReadBriefs === 'function') onReadBriefs();
+    onClose();
   };
 
+  if (state === 'idle' || state === 'done') return null;
+
   return (
-    <motion.div
-      className="sp-popup-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={handleClose}
-    >
-      <motion.div
-        className="sp-popup sp-popup--brief"
-        initial={{ scale: 0.96, y: 16 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.96, y: 16 }}
-        transition={{ duration: 0.25 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="sp-popup-close"
-          onClick={handleClose}
-          aria-label="Dismiss"
-        >
-          <X size={18} />
-        </button>
+    <div className={`wb-toast wb-toast--${state}`}>
+      {/* Green glow ring — fires once on entry */}
+      <div className="wb-glow" />
 
-        <div className="sp-popup-content">
-          <div className="sp-brief-badge">📰 Ogonjo Briefs</div>
+      {/* Pulse dot */}
+      <span className="wb-dot" />
 
-          <h2 className="sp-popup-title sp-brief-title">
-            Business intelligence.<br />For people who act on it.
-          </h2>
+      {/* Text */}
+      <p className="wb-text">
+        Stay updated with what's happening globally —{' '}
+        <span className="wb-highlight">turn today's news into your next move.</span>
+      </p>
 
-          <p className="sp-popup-sub">
-            Market moves, startup strategies, and actionable insights —
-            curated for founders, investors, and builders.
-          </p>
+      {/* CTA */}
+      <button className="wb-cta" onClick={handleReadBriefs}>
+        Read Briefs
+      </button>
 
-          <div className="sp-brief-actions">
-            <button
-              type="button"
-              className="sp-brief-cta"
-              onClick={handleReadBriefs}
-            >
-              Read The Brief
-            </button>
+      {/* Dismiss X */}
+      <button className="wb-close" onClick={dismiss} aria-label="Dismiss">
+        ✕
+      </button>
 
-            <button
-              type="button"
-              className="sp-brief-dismiss"
-              onClick={handleClose}
-            >
-              Not interested
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </motion.div>
+      {/* Progress bar — only animates during visible phase */}
+      <div className={`wb-progress ${state === 'visible' ? 'wb-progress--active' : ''}`} />
+    </div>
   );
 };
 
