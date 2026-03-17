@@ -33,7 +33,7 @@ try { const icons = Quill.import("ui/icons"); icons.internalLink = '<svg viewBox
 
 /* ── Constants ───────────────────────────────────────────── */
 const REAL_CATEGORIES = [
-  "Ogonjo Briefs","Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
+  "Ogonjo Briefs","Frameworks & Models","Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
   "Business Ideas","Business Legends","Business Strategy & Systems","Career Development",
   "Companies & Organizations","Concepts","Concepts Abbreviations","Courses & Learning Paths",
   "Digital Skills & Technology","Entrepreneurship","Leadership & Management","Marketing & Sales",
