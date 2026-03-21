@@ -30,6 +30,27 @@ Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 
 Provide exactly 5 headlines. Use real current news from the web. Keep each summary to 1 sentence max.`;
 
+const patternPrompt = ({ viewedContent, allTitles, periodLabel, totalViews, topCategories }) => `You are an expert content pattern analyst for "Ogonjo" — a business knowledge platform.
+
+PERIOD: ${periodLabel}
+TOTAL VIEWS: ${totalViews}
+
+TOP CATEGORIES ON PLATFORM:
+${(topCategories||[]).map(c => `- ${c.name}: ${c.count} pieces`).join('\n')}
+
+CONTENT VIEWED IN THIS PERIOD (title | category | views | hours of day):
+${(viewedContent||[]).slice(0,80).map(v => `- "${v.title}" | ${v.category} | ${v.views}v | hours:${(v.hours||[]).join(',')}`).join('\n')}
+
+ALL LIBRARY TITLES (for gap detection):
+${(allTitles||[]).slice(0,120).join(' | ')}
+
+TASK: Analyse what the COMBINATION of content reveals about audience intent and emerging themes — not just what performed best individually. Find patterns in wording, concepts, industries, and reader behaviour.
+
+Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
+{"periodLabel":"${periodLabel}","totalViews":${totalViews},"clusters":[{"theme":"theme name e.g. Scaling a Business","emoji":"📈","signal":"1 sentence on what this cluster reveals about reader intent","titles":["title1","title2","title3"],"strength":"strong|moderate|emerging","color":"cyan|purple|orange|green|pink|amber"}],"archetypes":[{"name":"reader type e.g. Growth-Stage Founder","emoji":"🚀","description":"2 sentences on who this person is and why they read Ogonjo","whatTheyWant":"what content they want next","percentOfAudience":40}],"gaps":[{"topic":"missing topic title","emoji":"🕳","whyItsMissing":"1 sentence from viewer behaviour","opportunity":"1 sentence on the opportunity","urgency":"high|medium|low"}],"timePatterns":[{"insight":"specific finding about when themes spike","emoji":"🕐","timeContext":"e.g. Morning 6-10am","implication":"what to do with this timing"}],"momentum":{"rising":[{"topic":"topic","signal":"why rising","emoji":"📈"}],"declining":[{"topic":"topic","signal":"what decline suggests","emoji":"📉"}],"stable":[{"topic":"topic","signal":"steady anchor"}]},"narrative":"3-4 sentences: the big picture — what does the PATTERN of this period tell you about your audience intent, emerging themes, and strategic opportunity. Name specific titles and concepts from the data.","outlines":[{"title":"exact article title","angle":"1 sentence specific angle","whyNow":"1 sentence why this pattern makes it the right time","structure":["Section 1","Section 2","Section 3","Section 4","Section 5"],"targetArchetype":"which archetype this serves","estimatedImpact":"high|medium"}],"schedule":[{"slot":"e.g. Monday morning","title":"content title from outlines","reason":"why this slot matches the time pattern"}]}
+
+Rules: clusters 3-5, archetypes 2-4 (percentOfAudience sums ~100), gaps 3-5, timePatterns 2-4, momentum.rising 3-5, momentum.declining 2-4, momentum.stable 2-3, outlines EXACTLY 5, schedule 5-7. Reference ACTUAL titles and concepts from the data.`;
+
 const chatSystemPrompt = (platformData, categories) => `You are Marcus — an elite business consultant, growth strategist, and content monetization expert advising the founder of Ogonjo, a fast-growing business knowledge platform. You have 20+ years of experience advising startups, Fortune 500s, and digital media companies.
 
 PLATFORM CONTEXT:
@@ -115,17 +136,16 @@ export default async (request) => {
     );
   }
 
-  // ── Simple in-memory cache (resets on function cold start, ~6hr TTL) ────────
-  const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+  // ── Simple in-memory cache ───────────────────────────────────────────────
+  const CACHE_TTL = 6 * 60 * 60 * 1000;
   if (!globalThis._aiCache) globalThis._aiCache = {};
 
   try {
     const body = await request.json();
     const { mode, category, platformData, message, history, categories } = body;
 
-    // Cache non-chat, non-suggestions modes to save quota
     const cacheKey = `${mode}:${category}`;
-    if (mode !== 'chat' && mode !== 'suggestions') {
+    if (mode !== 'chat' && mode !== 'suggestions' && mode !== 'pattern') {
       const cached = globalThis._aiCache[cacheKey];
       if (cached && (Date.now() - cached.ts) < CACHE_TTL) {
         console.log('Cache hit:', cacheKey);
@@ -138,6 +158,48 @@ export default async (request) => {
 
     if (!mode) {
       return new Response(JSON.stringify({ error: 'Missing mode.' }), { status: 400 });
+    }
+
+    // ── PATTERN ANALYSIS — pure reasoning, no grounding needed ──────────────
+    if (mode === 'pattern') {
+      const { viewedContent, allTitles, periodLabel, totalViews, topCategories } = body;
+      if (!viewedContent?.length) {
+        return new Response(JSON.stringify({ error: 'No view data provided.' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      }
+
+      const prompt = patternPrompt({ viewedContent, allTitles, periodLabel, totalViews, topCategories });
+
+      const geminiRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
+        }),
+      });
+
+      if (!geminiRes.ok) {
+        const errText = await geminiRes.text();
+        return new Response(JSON.stringify({ error: `Gemini error: ${errText}` }), { status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      }
+
+      const data = await geminiRes.json();
+      const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
+      const textBlocks = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
+
+      if (!textBlocks) {
+        return new Response(JSON.stringify({ error: 'No response from AI.' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      }
+
+      let clean = textBlocks.replace(/```json|```/g, '').trim();
+      const start = clean.indexOf('{'), end = clean.lastIndexOf('}');
+      if (start === -1 || end === -1) return new Response(JSON.stringify({ error: 'AI returned unexpected format.' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      const parsed = JSON.parse(clean.slice(start, end + 1));
+
+      return new Response(JSON.stringify(parsed), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     const groundingTool = { google_search: {} };
@@ -168,7 +230,6 @@ export default async (request) => {
         system_instruction: { parts: [{ text: chatSystemPrompt(platformData, categories) }] },
         contents,
         tools: [groundingTool],
-        // FIX: Increased from 2000 to 8192 so Marcus never cuts off mid-response
         generationConfig: { maxOutputTokens: 8192, temperature: 0.75 },
       };
     } else {
@@ -183,10 +244,8 @@ export default async (request) => {
       else if (mode === 'suggestions')     prompt = suggestionsPrompt();
       else return new Response(JSON.stringify({ error: 'Invalid mode.' }), { status: 400 });
 
-      // No grounding tool for structured modes — it injects extra text that breaks JSON
       geminiBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        // FIX: Increased from 4000 to 8192 for structured modes too
         generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
       };
     }
@@ -208,23 +267,16 @@ export default async (request) => {
 
     const data = await geminiRes.json();
 
-    // Extract text from Gemini response
-    // gemini-2.5-flash is a thinking model — it may return thought parts + text parts
-    // We want only non-thought text parts
     const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
     console.log('Parts count:', allParts.length, 'types:', allParts.map(p => p.thought ? 'thought' : p.text ? 'text' : 'other').join(','));
 
-    // FIX: Also check finishReason — log it so we can debug truncation
     const finishReason = data.candidates?.[0]?.finishReason;
     console.log('Finish reason:', finishReason);
     if (finishReason === 'MAX_TOKENS') {
-      console.warn('WARNING: Response was cut off due to token limit. Consider increasing maxOutputTokens further.');
+      console.warn('WARNING: Response cut off. Consider increasing maxOutputTokens.');
     }
 
-    const textBlocks = allParts
-      .filter(p => p.text && !p.thought)
-      .map(p => p.text)
-      .join('');
+    const textBlocks = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
     console.log('Raw textBlocks length:', textBlocks.length, 'preview:', textBlocks.slice(0, 200));
 
     if (!textBlocks) {
@@ -241,7 +293,6 @@ export default async (request) => {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     } else {
-      // Robustly extract JSON — find outermost { ... }
       let clean = textBlocks.replace(/```json|```/g, '').trim();
       const start = clean.indexOf('{');
       const end = clean.lastIndexOf('}');
@@ -255,7 +306,6 @@ export default async (request) => {
       clean = clean.slice(start, end + 1);
       console.log('Parsing JSON, length:', clean.length, 'preview:', clean.slice(0, 120));
       const parsed = JSON.parse(clean);
-      // Store in cache for next 6 hours
       if (mode !== 'suggestions') {
         globalThis._aiCache[cacheKey] = { data: parsed, ts: Date.now() };
       }
