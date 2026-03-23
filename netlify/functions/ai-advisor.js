@@ -190,7 +190,7 @@ export default async (request) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 2500, temperature: 0.3 },
+          generationConfig: { maxOutputTokens: 4000, temperature: 0.3 },
         }),
       });
 
@@ -200,17 +200,48 @@ export default async (request) => {
       }
 
       const data = await geminiRes.json();
+      console.log('Pattern response candidates:', data.candidates?.length);
+
+      // gemini-2.5-flash is a thinking model — collect ALL text parts (thought + non-thought)
+      // Sometimes the JSON ends up in thought parts, so try everything
       const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
-      const textBlocks = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
+      const nonThoughtText = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
+      const allText = allParts.filter(p => p.text).map(p => p.text).join('');
 
-      if (!textBlocks) {
-        return new Response(JSON.stringify({ error: 'No response from AI.' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      console.log('Non-thought text length:', nonThoughtText.length);
+      console.log('All text length:', allText.length);
+      console.log('Preview:', (nonThoughtText||allText).slice(0, 200));
+
+      // Try to extract JSON from either source
+      const extractJSON = (text) => {
+        if (!text) return null;
+        // Strip markdown fences
+        let t = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+        // Try direct parse
+        try { return JSON.parse(t); } catch {}
+        // Find outermost { }
+        const s = t.indexOf('{'), e = t.lastIndexOf('}');
+        if (s !== -1 && e > s) {
+          try { return JSON.parse(t.slice(s, e + 1)); } catch {}
+        }
+        // Try finding largest JSON-like block
+        const matches = t.match(/\{[\s\S]+\}/g);
+        if (matches) {
+          for (const m of matches.sort((a,b) => b.length - a.length)) {
+            try { return JSON.parse(m); } catch {}
+          }
+        }
+        return null;
+      };
+
+      let parsed = extractJSON(nonThoughtText) || extractJSON(allText);
+
+      if (!parsed) {
+        console.error('JSON extraction failed. Raw text:', (nonThoughtText||allText).slice(0, 500));
+        return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
+          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
       }
-
-      let clean = textBlocks.replace(/```json|```/g, '').trim();
-      const start = clean.indexOf('{'), end = clean.lastIndexOf('}');
-      if (start === -1 || end === -1) return new Response(JSON.stringify({ error: 'AI returned unexpected format.' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
-      const parsed = JSON.parse(clean.slice(start, end + 1));
 
       return new Response(JSON.stringify(parsed), {
         status: 200,
