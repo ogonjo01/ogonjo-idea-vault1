@@ -608,7 +608,7 @@ const ACCENT_MAP_PB = {
   green:'#10b981', pink:'#ec4899', amber:'#f59e0b',
 };
 
-const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, period }) => {
+const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, period, onAskMarcus }) => {
   const [open,        setOpen]        = useState(false);
   const [aiLoading,   setAiLoading]   = useState(false);
   const [aiResult,    setAiResult]    = useState(null);
@@ -861,7 +861,11 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
                   <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>🕳 Content Gaps</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
                     {(aiResult.gaps||[]).map((g,i)=>(
-                      <div key={i} style={{ display:'flex', gap:10, background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, padding:'9px 12px' }}>
+                      <div key={i}
+                        onClick={()=>onAskMarcus&&onAskMarcus(`There's a content gap on my platform: "${g.topic}". Help me write a full outline for this article — include the best structure, key points, and how to optimize it for Google SEO and Discover. Context: ${g.whyItsMissing}`)}
+                        style={{ display:'flex', gap:10, background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, padding:'9px 12px', cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s' }}
+                        onMouseEnter={e=>{ if(onAskMarcus) e.currentTarget.style.borderColor='#ef4444'; }}
+                        onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; }}>
                         <span style={{ fontSize:16, flexShrink:0 }}>{g.emoji}</span>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
@@ -882,7 +886,11 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
                   <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                     <div style={{ fontSize:9, fontWeight:700, color:'#34d399', textTransform:'uppercase', letterSpacing:0.8, marginBottom:2 }}>▲ Rising</div>
                     {(aiResult.momentum?.rising||[]).map((r,i)=>(
-                      <div key={i} style={{ display:'flex', gap:7, padding:'6px 9px', background:'rgba(52,211,153,0.06)', borderRadius:8 }}>
+                      <div key={i}
+                        onClick={()=>onAskMarcus&&onAskMarcus(`"${r.topic}" is a rising trend on my platform. Help me write a full content outline to capitalize on this momentum. ${r.signal}`)}
+                        style={{ display:'flex', gap:7, padding:'6px 9px', background:'rgba(52,211,153,0.06)', borderRadius:8, cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s', border:'1px solid transparent' }}
+                        onMouseEnter={e=>{ if(onAskMarcus) e.currentTarget.style.borderColor='rgba(52,211,153,0.3)'; }}
+                        onMouseLeave={e=>{ e.currentTarget.style.borderColor='transparent'; }}>
                         <span style={{ fontSize:13 }}>{r.emoji}</span>
                         <div><div style={{ fontSize:10, fontWeight:700, color:'#34d399' }}>{r.topic}</div><div style={{ fontSize:9, color:'#6ee7b7', lineHeight:1.3 }}>{r.signal}</div></div>
                       </div>
@@ -903,7 +911,11 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
                 <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>✍️ 5 Content Outlines</div>
                 <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                   {(aiResult.outlines||[]).map((o,i)=>(
-                    <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:11, padding:'14px 16px' }}>
+                    <div key={i}
+                      onClick={()=>onAskMarcus&&onAskMarcus(`Help me write a full outline for: "${o.title}". Include the best structure, key points to cover, the specific angle (${o.angle}), and how to optimize it for Google traffic and Google Discover.`)}
+                      style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:11, padding:'14px 16px', cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s, transform 0.15s' }}
+                      onMouseEnter={e=>{ if(onAskMarcus){ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.transform='translateY(-1px)'; }}}
+                      onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.transform='translateY(0)'; }}>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:8 }}>
                         <div style={{ flex:1 }}>
                           <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:3 }}>
@@ -914,8 +926,9 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
                         </div>
                         <ResultBadge label={`${o.estimatedImpact} impact`} color={IMPACT_C[o.estimatedImpact]||'#94a3b8'}/>
                       </div>
-                      <div style={{ fontSize:10, color:T.accent, fontWeight:600, background:T.accent+'12', border:`1px solid ${T.accent}33`, borderRadius:7, padding:'5px 10px', marginBottom:8 }}>
-                        💡 {o.whyNow}
+                      <div style={{ fontSize:10, color:T.accent, fontWeight:600, background:T.accent+'12', border:`1px solid ${T.accent}33`, borderRadius:7, padding:'5px 10px', marginBottom:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span>💡 {o.whyNow}</span>
+                        {onAskMarcus&&<span style={{ fontSize:9, color:T.accent, opacity:0.7 }}>Click → Get outline with Marcus</span>}
                       </div>
                       <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
                         {(o.structure||[]).map((s,j)=>(
@@ -939,7 +952,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
 };
 
 
-const AnalyticsDashboard = ({ theme:T }) => {
+const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const [period, setPeriod]       = useState('Week');
   const [activeMetric, setMetric] = useState('views');
   const [stats, setStats]         = useState({ views:0, likes:0, ratings:0, newUsers:0 });
@@ -1061,7 +1074,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
       </div>
 
       {/* PLATFORM BRIEF */}
-      <PlatformBrief theme={T} topContent={topContent} catData={catData} stats={stats} prev={prev} rawViews={rawViews} period={period}/>
+      <PlatformBrief theme={T} topContent={topContent} catData={catData} stats={stats} prev={prev} rawViews={rawViews} period={period} onAskMarcus={onAskMarcus}/>
 
       {/* LIVE FEED */}
       <LiveFeed theme={T}/>
@@ -1198,7 +1211,7 @@ const AnalyticsDashboard = ({ theme:T }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // AI ADVISOR (unchanged from your version)
 // ─────────────────────────────────────────────────────────────────────────────
-const AIAdvisor = ({ theme:T }) => {
+const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   const [subTab, setSubTab]         = useState('chat');
   const [category, setCategory]     = useState('');
   const [categories, setCategories] = useState([]);
@@ -1251,6 +1264,18 @@ const AIAdvisor = ({ theme:T }) => {
 
   useEffect(()=>{ setResult(null); setError(null); },[subTab,category]);
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({ behavior:'smooth' }); },[messages]);
+
+  // Auto-send question from Platform Brief when user navigates to AI tab
+  useEffect(()=>{
+    if(!initialQuestion) return;
+    setSubTab('chat');
+    const timer = setTimeout(()=>{
+      sendChat(initialQuestion);
+      if(typeof onQuestionConsumed === 'function') onQuestionConsumed();
+    }, 300);
+    return ()=>clearTimeout(timer);
+  // eslint-disable-next-line
+  },[initialQuestion]);
 
   const effectiveTopic=(tab)=>{ if(tab==='trending') return trendingInput.trim()||category; if(tab==='recommendations') return recommendInput.trim()||category; if(tab==='news') return newsInput.trim()||category; return category; };
 
@@ -1407,6 +1432,7 @@ const UserProfile = ({ onClose, onUpdated }) => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setTab]   = useState('profile');
   const [theme, setTheme]     = useState(()=>{ try{ const s=localStorage.getItem('ogonjo_theme'); return s&&THEMES[s]?THEMES[s]:THEMES.green; }catch{ return THEMES.green; } });
+  const [marcusQuestion, setMarcusQuestion] = useState(null);
 
   useEffect(()=>{
     let mounted=true;
@@ -1437,8 +1463,8 @@ const UserProfile = ({ onClose, onUpdated }) => {
           </div>
           <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', minHeight:0 }}>
             {activeTab==='profile'&&(<div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:18 }}><ProfileEdit profile={profile} onSaved={handleSaved} theme={T}/></div>)}
-            {activeTab==='dashboard'&&<AnalyticsDashboard theme={T}/>}
-            {activeTab==='ai'&&<AIAdvisor theme={T}/>}
+            {activeTab==='dashboard'&&<AnalyticsDashboard theme={T} onAskMarcus={(q)=>{ setTab('ai'); setMarcusQuestion(q); }}/>}
+            {activeTab==='ai'&&<AIAdvisor theme={T} initialQuestion={marcusQuestion} onQuestionConsumed={()=>setMarcusQuestion(null)}/>}
             {activeTab==='team'&&showTeam&&<TeamManager theme={T}/>}
           </div>
         </div>
