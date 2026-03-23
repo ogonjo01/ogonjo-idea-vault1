@@ -30,26 +30,42 @@ Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 
 Provide exactly 5 headlines. Use real current news from the web. Keep each summary to 1 sentence max.`;
 
-const patternPrompt = ({ viewedContent, allTitles, periodLabel, totalViews, topCategories }) => `You are an expert content pattern analyst for "Ogonjo" — a business knowledge platform.
+const patternPrompt = ({ viewedContent, allTitles, periodLabel, totalViews, topCategories }) => {
+  // Sanitize titles to avoid breaking JSON output
+  const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
+  const viewedList = (viewedContent||[]).slice(0,25)
+    .map(v=>`- ${safeTitle(v.title)} [${v.category}] ${v.views}views`)
+    .join('\n');
+  const libraryList = (allTitles||[]).slice(0,40).map(safeTitle).join(', ');
+  const catList = (topCategories||[]).slice(0,6).map(c=>`${c.name}(${c.count})`).join(', ');
 
-PERIOD: ${periodLabel}
-TOTAL VIEWS: ${totalViews}
+  return `You are a content pattern analyst for Ogonjo, a business knowledge platform.
 
-TOP CATEGORIES ON PLATFORM:
-${(topCategories||[]).map(c => `- ${c.name}: ${c.count} pieces`).join('\n')}
+PERIOD: ${periodLabel} | TOTAL VIEWS: ${totalViews}
+TOP CATEGORIES: ${catList}
 
-CONTENT VIEWED IN THIS PERIOD (title | category | views | hours of day):
-${(viewedContent||[]).slice(0,80).map(v => `- "${v.title}" | ${v.category} | ${v.views}v | hours:${(v.hours||[]).join(',')}`).join('\n')}
+CONTENT VIEWED THIS PERIOD:
+${viewedList}
 
-ALL LIBRARY TITLES (for gap detection):
-${(allTitles||[]).slice(0,120).join(' | ')}
+LIBRARY TITLES (for gap detection):
+${libraryList}
 
-TASK: Analyse what the COMBINATION of content reveals about audience intent and emerging themes — not just what performed best individually. Find patterns in wording, concepts, industries, and reader behaviour.
+Analyse what the COMBINATION of viewed content reveals about audience intent, emerging themes, and content gaps. Look for patterns across titles, categories, and concepts.
 
-Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
-{"periodLabel":"${periodLabel}","totalViews":${totalViews},"clusters":[{"theme":"theme name e.g. Scaling a Business","emoji":"📈","signal":"1 sentence on what this cluster reveals about reader intent","titles":["title1","title2","title3"],"strength":"strong|moderate|emerging","color":"cyan|purple|orange|green|pink|amber"}],"archetypes":[{"name":"reader type e.g. Growth-Stage Founder","emoji":"🚀","description":"2 sentences on who this person is and why they read Ogonjo","whatTheyWant":"what content they want next","percentOfAudience":40}],"gaps":[{"topic":"missing topic title","emoji":"🕳","whyItsMissing":"1 sentence from viewer behaviour","opportunity":"1 sentence on the opportunity","urgency":"high|medium|low"}],"timePatterns":[{"insight":"specific finding about when themes spike","emoji":"🕐","timeContext":"e.g. Morning 6-10am","implication":"what to do with this timing"}],"momentum":{"rising":[{"topic":"topic","signal":"why rising","emoji":"📈"}],"declining":[{"topic":"topic","signal":"what decline suggests","emoji":"📉"}],"stable":[{"topic":"topic","signal":"steady anchor"}]},"narrative":"3-4 sentences: the big picture — what does the PATTERN of this period tell you about your audience intent, emerging themes, and strategic opportunity. Name specific titles and concepts from the data.","outlines":[{"title":"exact article title","angle":"1 sentence specific angle","whyNow":"1 sentence why this pattern makes it the right time","structure":["Section 1","Section 2","Section 3","Section 4","Section 5"],"targetArchetype":"which archetype this serves","estimatedImpact":"high|medium"}],"schedule":[{"slot":"e.g. Monday morning","title":"content title from outlines","reason":"why this slot matches the time pattern"}]}
+Respond with ONLY a valid JSON object. No markdown. No text before or after. Start with { end with }.
 
-Rules: clusters 3-5, archetypes 2-4 (percentOfAudience sums ~100), gaps 3-5, timePatterns 2-4, momentum.rising 3-5, momentum.declining 2-4, momentum.stable 2-3, outlines EXACTLY 5, schedule 5-7. Reference ACTUAL titles and concepts from the data.`;
+The JSON must have these exact keys:
+- periodLabel: string
+- totalViews: number  
+- narrative: string (3 sentences on the big picture pattern and audience intent)
+- clusters: array of {theme, emoji, signal, titles, strength, color} where strength is strong/moderate/emerging and color is cyan/purple/orange/green/pink/amber
+- archetypes: array of {name, emoji, description, whatTheyWant, percentOfAudience}
+- gaps: array of {topic, emoji, whyItsMissing, opportunity, urgency} where urgency is high/medium/low
+- momentum: object with rising/declining/stable arrays of {topic, signal, emoji}
+- outlines: array of EXACTLY 5 items with {title, angle, whyNow, structure, targetArchetype, estimatedImpact} where structure is array of 5 section headings and estimatedImpact is high/medium
+
+Use 3-4 clusters, 2-3 archetypes, 3-4 gaps, 2-4 rising, 2-3 declining, 1-2 stable. Reference actual titles from the data in your analysis.`;
+};
 
 const chatSystemPrompt = (platformData, categories) => `You are Marcus — an elite business consultant, growth strategist, and content monetization expert advising the founder of Ogonjo, a fast-growing business knowledge platform. You have 20+ years of experience advising startups, Fortune 500s, and digital media companies.
 
@@ -174,7 +190,7 @@ export default async (request) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
+          generationConfig: { maxOutputTokens: 2500, temperature: 0.3 },
         }),
       });
 
