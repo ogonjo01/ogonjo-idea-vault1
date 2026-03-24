@@ -30,42 +30,26 @@ Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 
 Provide exactly 5 headlines. Use real current news from the web. Keep each summary to 1 sentence max.`;
 
-const patternPrompt = ({ viewedContent, allTitles, periodLabel, totalViews, topCategories }) => {
-  // Sanitize titles to avoid breaking JSON output
-  const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
-  const viewedList = (viewedContent||[]).slice(0,25)
-    .map(v=>`- ${safeTitle(v.title)} [${v.category}] ${v.views}views`)
-    .join('\n');
-  const libraryList = (allTitles||[]).slice(0,40).map(safeTitle).join(', ');
-  const catList = (topCategories||[]).slice(0,6).map(c=>`${c.name}(${c.count})`).join(', ');
+const patternPrompt = ({ viewedContent, allTitles, periodLabel, totalViews, topCategories }) => `You are an expert content pattern analyst for "Ogonjo" — a business knowledge platform.
 
-  return `You are a content pattern analyst for Ogonjo, a business knowledge platform.
+PERIOD: ${periodLabel}
+TOTAL VIEWS: ${totalViews}
 
-PERIOD: ${periodLabel} | TOTAL VIEWS: ${totalViews}
-TOP CATEGORIES: ${catList}
+TOP CATEGORIES ON PLATFORM:
+${(topCategories||[]).map(c => `- ${c.name}: ${c.count} pieces`).join('\n')}
 
-CONTENT VIEWED THIS PERIOD:
-${viewedList}
+CONTENT VIEWED IN THIS PERIOD (title | category | views | hours of day):
+${(viewedContent||[]).slice(0,80).map(v => `- "${v.title}" | ${v.category} | ${v.views}v | hours:${(v.hours||[]).join(',')}`).join('\n')}
 
-LIBRARY TITLES (for gap detection):
-${libraryList}
+ALL LIBRARY TITLES (for gap detection):
+${(allTitles||[]).slice(0,120).join(' | ')}
 
-Analyse what the COMBINATION of viewed content reveals about audience intent, emerging themes, and content gaps. Look for patterns across titles, categories, and concepts.
+TASK: Analyse what the COMBINATION of content reveals about audience intent and emerging themes — not just what performed best individually. Find patterns in wording, concepts, industries, and reader behaviour.
 
-Respond with ONLY a valid JSON object. No markdown. No text before or after. Start with { end with }.
+Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
+{"periodLabel":"${periodLabel}","totalViews":${totalViews},"clusters":[{"theme":"theme name e.g. Scaling a Business","emoji":"📈","signal":"1 sentence on what this cluster reveals about reader intent","titles":["title1","title2","title3"],"strength":"strong|moderate|emerging","color":"cyan|purple|orange|green|pink|amber"}],"archetypes":[{"name":"reader type e.g. Growth-Stage Founder","emoji":"🚀","description":"2 sentences on who this person is and why they read Ogonjo","whatTheyWant":"what content they want next","percentOfAudience":40}],"gaps":[{"topic":"missing topic title","emoji":"🕳","whyItsMissing":"1 sentence from viewer behaviour","opportunity":"1 sentence on the opportunity","urgency":"high|medium|low"}],"timePatterns":[{"insight":"specific finding about when themes spike","emoji":"🕐","timeContext":"e.g. Morning 6-10am","implication":"what to do with this timing"}],"momentum":{"rising":[{"topic":"topic","signal":"why rising","emoji":"📈"}],"declining":[{"topic":"topic","signal":"what decline suggests","emoji":"📉"}],"stable":[{"topic":"topic","signal":"steady anchor"}]},"narrative":"3-4 sentences: the big picture — what does the PATTERN of this period tell you about your audience intent, emerging themes, and strategic opportunity. Name specific titles and concepts from the data.","outlines":[{"title":"exact article title","angle":"1 sentence specific angle","whyNow":"1 sentence why this pattern makes it the right time","structure":["Section 1","Section 2","Section 3","Section 4","Section 5"],"targetArchetype":"which archetype this serves","estimatedImpact":"high|medium"}],"schedule":[{"slot":"e.g. Monday morning","title":"content title from outlines","reason":"why this slot matches the time pattern"}]}
 
-The JSON must have these exact keys:
-- periodLabel: string
-- totalViews: number  
-- narrative: string (3 sentences on the big picture pattern and audience intent)
-- clusters: array of {theme, emoji, signal, titles, strength, color} where strength is strong/moderate/emerging and color is cyan/purple/orange/green/pink/amber
-- archetypes: array of {name, emoji, description, whatTheyWant, percentOfAudience}
-- gaps: array of {topic, emoji, whyItsMissing, opportunity, urgency} where urgency is high/medium/low
-- momentum: object with rising/declining/stable arrays of {topic, signal, emoji}
-- outlines: array of EXACTLY 5 items with {title, angle, whyNow, structure, targetArchetype, estimatedImpact} where structure is array of 5 section headings and estimatedImpact is high/medium
-
-Use 3-4 clusters, 2-3 archetypes, 3-4 gaps, 2-4 rising, 2-3 declining, 1-2 stable. Reference actual titles from the data in your analysis.`;
-};
+Rules: clusters 3-5, archetypes 2-4 (percentOfAudience sums ~100), gaps 3-5, timePatterns 2-4, momentum.rising 3-5, momentum.declining 2-4, momentum.stable 2-3, outlines EXACTLY 5, schedule 5-7. Reference ACTUAL titles and concepts from the data.`;
 
 const chatSystemPrompt = (platformData, categories) => `You are Marcus — an elite business consultant, growth strategist, and content monetization expert advising the founder of Ogonjo, a fast-growing business knowledge platform. You have 20+ years of experience advising startups, Fortune 500s, and digital media companies.
 
@@ -190,7 +174,7 @@ export default async (request) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 4000, temperature: 0.3 },
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
         }),
       });
 
@@ -200,48 +184,17 @@ export default async (request) => {
       }
 
       const data = await geminiRes.json();
-      console.log('Pattern response candidates:', data.candidates?.length);
-
-      // gemini-2.5-flash is a thinking model — collect ALL text parts (thought + non-thought)
-      // Sometimes the JSON ends up in thought parts, so try everything
       const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
-      const nonThoughtText = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
-      const allText = allParts.filter(p => p.text).map(p => p.text).join('');
+      const textBlocks = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
 
-      console.log('Non-thought text length:', nonThoughtText.length);
-      console.log('All text length:', allText.length);
-      console.log('Preview:', (nonThoughtText||allText).slice(0, 200));
-
-      // Try to extract JSON from either source
-      const extractJSON = (text) => {
-        if (!text) return null;
-        // Strip markdown fences
-        let t = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-        // Try direct parse
-        try { return JSON.parse(t); } catch {}
-        // Find outermost { }
-        const s = t.indexOf('{'), e = t.lastIndexOf('}');
-        if (s !== -1 && e > s) {
-          try { return JSON.parse(t.slice(s, e + 1)); } catch {}
-        }
-        // Try finding largest JSON-like block
-        const matches = t.match(/\{[\s\S]+\}/g);
-        if (matches) {
-          for (const m of matches.sort((a,b) => b.length - a.length)) {
-            try { return JSON.parse(m); } catch {}
-          }
-        }
-        return null;
-      };
-
-      let parsed = extractJSON(nonThoughtText) || extractJSON(allText);
-
-      if (!parsed) {
-        console.error('JSON extraction failed. Raw text:', (nonThoughtText||allText).slice(0, 500));
-        return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
-          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-        });
+      if (!textBlocks) {
+        return new Response(JSON.stringify({ error: 'No response from AI.' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
+
+      let clean = textBlocks.replace(/```json|```/g, '').trim();
+      const start = clean.indexOf('{'), end = clean.lastIndexOf('}');
+      if (start === -1 || end === -1) return new Response(JSON.stringify({ error: 'AI returned unexpected format.' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      const parsed = JSON.parse(clean.slice(start, end + 1));
 
       return new Response(JSON.stringify(parsed), {
         status: 200,
