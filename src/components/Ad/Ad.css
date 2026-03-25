@@ -1,52 +1,73 @@
 /* src/components/Ad/Ad.css */
-.ad-container {
-  margin: 24px 0;
-  padding: 16px;
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
+
+/* ─── Fixed ad frame ──────────────────────────────────────────────────── */
+.ad-frame {
+  /* Fixed dimensions so layout never jumps when the ad loads */
+  width: 100%;
+  min-height: 130px;       /* tall enough for a leaderboard / banner */
+  box-sizing: border-box;
+
+  /* Subtle framed container */
+  margin: 28px 0;
+  padding: 10px 14px 12px;
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  text-align: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+
+  /* Keep it visually clean and clearly separate from article body */
   position: relative;
-  /* Ensure ad container doesn’t inherit unwanted flex/grid behavior */
-  display: block !important;
-  width: 100%;
-  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
-.ad-container .ad-placeholder {
-  font-size: 14px;
-  color: #6c757d;
-  font-style: italic;
-  padding: 8px;
+/* Small "Advertisement" label so it's transparent to readers */
+.ad-frame__label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  font-family: system-ui, sans-serif;
+  font-weight: 500;
+  align-self: flex-start;
+  user-select: none;
+  pointer-events: none;
 }
 
-.ad-container.ad-inline {
-  margin: 20px 0;
+/* Inner wrapper fills remaining space */
+.ad-frame__inner {
   width: 100%;
-  text-align: center;
-  background: #fff;
-  border: 1px dashed #dee2e6;
-  padding: 12px;
-  border-radius: 4px;
-}
-
-/* Base styling for AdSense, overridden by useEffect/MutationObserver */
-.ad-container ins.adsbygoogle {
-  display: block;
-  width: 100%;
-  height: 80px;
-  max-height: 80px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 90px;
   overflow: hidden;
 }
 
+/* The actual AdSense ins tag */
+.ad-frame__inner ins.adsbygoogle {
+  display: block !important;
+  width: 100%;
+  min-height: 90px;
+}
+
+/* ─── Responsive tweaks ───────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .ad-container {
-    margin: 16px 0;
-    padding: 12px;
+  .ad-frame {
+    min-height: 110px;
+    padding: 8px 10px 10px;
+    margin: 20px 0;
+    border-radius: 6px;
   }
-  .ad-container ins.adsbygoogle {
-    height: 50px;
-    max-height: 50px;
+
+  .ad-frame__inner {
+    min-height: 60px;
+  }
+
+  .ad-frame__inner ins.adsbygoogle {
+    min-height: 60px;
   }
 }
