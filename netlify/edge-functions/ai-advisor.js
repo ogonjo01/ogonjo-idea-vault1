@@ -338,103 +338,145 @@ export default async (request) => {
     }
 
     // ── WORLDNET ─────────────────────────────────────────────────────────────
-    // Crawls last 12 hours of world news → full content network output
+    // TWO-CALL APPROACH:
+    // Call 1 (with grounding): fetch real news headlines as plain text
+    // Call 2 (no grounding):   transform text into clean JSON network
+    // Grounding + JSON output is unreliable in Gemini — splitting fixes it
     // ─────────────────────────────────────────────────────────────────────────
     if (mode === 'worldnet') {
       const { existingLibrary } = body;
+      const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
+      const libraryList = (existingLibrary||[]).slice(0,120).map(safeTitle).join(' | ');
 
-      const prompt = worldnetPrompt(existingLibrary || []);
+      // ── CALL 1: Grounded news fetch — plain text output, no JSON ────────────
+      const newsGatherPrompt = `Search the web RIGHT NOW and find the 12 most important world news stories from the LAST 12 HOURS (March 2026). Focus on: major economic events, business disruptions, political decisions affecting markets, technology breakthroughs, disasters or crises, viral business stories.
 
-      // Use grounding (Google Search) so it crawls real current news
-      const geminiRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+For each story write:
+STORY [N]: [headline]
+SOURCE: [publication]
+SUMMARY: [2 sentences on what happened and why it matters]
+BUSINESS ANGLE: [how entrepreneurs, investors, or professionals should think about this]
+
+List all 12 stories. Be specific and factual. Use real current news only.`;
+
+      const newsRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // System instruction forces Gemini to output ONLY JSON — no preamble, no narrative
-          system_instruction: {
-            parts: [{
-              text: 'You are a JSON-only API. You MUST respond with a single valid JSON object and absolutely nothing else. No preamble. No explanation. No markdown. No backticks. No text before or after the JSON. Your entire response must start with { and end with }. If you include any text outside the JSON object, the system will crash.'
-            }]
-          },
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          contents: [{ role: 'user', parts: [{ text: newsGatherPrompt }] }],
           tools: [{ google_search: {} }],
-          generationConfig: {
-            maxOutputTokens: 8192,
-            temperature: 0.3,
-          },
+          generationConfig: { maxOutputTokens: 3000, temperature: 0.3 },
         }),
       });
 
-      if (!geminiRes.ok) {
-        const errText = await geminiRes.text();
-        console.error('Worldnet Gemini error:', errText);
-        return new Response(JSON.stringify({ error: `Gemini API error: ${errText}` }), {
-          status: geminiRes.status,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      if (!newsRes.ok) {
+        const errText = await newsRes.text();
+        return new Response(JSON.stringify({ error: `News fetch failed: ${errText}` }), {
+          status: newsRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      const data = await geminiRes.json();
+      const newsData = await newsRes.json();
+      const newsParts = (newsData.candidates || []).flatMap(c => c.content?.parts || []);
+      const newsText = newsParts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
 
-      const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
-      const textBlocks = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
-
-      if (!textBlocks) {
-        console.error('Empty worldnet response:', JSON.stringify(data).slice(0, 500));
-        return new Response(JSON.stringify({ error: 'No response from AI. Please try again.' }), {
+      if (!newsText) {
+        return new Response(JSON.stringify({ error: 'Could not fetch news. Please try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      console.log('Worldnet raw length:', textBlocks.length, 'first 120:', textBlocks.slice(0, 120));
+      console.log('Worldnet step 1 done, news length:', newsText.length);
 
-      // ── Aggressive JSON extraction ──────────────────────────────────────────
-      // Handles: preamble text, markdown fences, trailing garbage, partial wraps
+      // ── CALL 2: JSON generation — NO grounding tool, pure reasoning ──────────
+      const jsonGenPrompt = `You are a content network architect for Ogonjo, a business knowledge platform with 4 pillars:
+- Business & Entrepreneurship
+- Personal Finance & Investing
+- Career & Leadership
+- Marketing & Sales
+
+Here are 12 real news stories from the last 12 hours:
+
+${newsText}
+
+EXISTING ARTICLE LIBRARY (cross-reference for related articles):
+${libraryList}
+
+Transform these news stories into 10 evergreen SEO content pieces. Each piece must reframe a news story as timeless strategy/education — NOT written as news.
+
+STRICT OUTPUT RULES:
+- Your response must be ONLY a JSON object
+- Start with { and end with }
+- No text, explanation, or markdown before or after
+- No backticks
+
+JSON structure:
+{"generatedAt":"now","newsWindow":"last 12 hours","worldContext":"2-sentence summary of dominant global story","pieces":[{"id":1,"pillar":"Business & Entrepreneurship","isMagnet":true,"magnetReason":"why high traffic","newsSource":"real event that inspired this","title":"SEO evergreen title","seoKeywords":["kw1","kw2","kw3","kw4","kw5"],"keyPoints":["point1","point2","point3"],"outline":["Introduction: hook","Section 1: title","Section 2: title","Section 3: title","Section 4: title","Conclusion: CTA"],"cta":"professional advice CTA","writingPrompt":"Full ready-to-paste writing prompt with all details filled in — no placeholders, all content inline","relatedFromLibrary":["lib1","lib2","lib3","lib4","lib5"],"searchVolumePotential":"high"}],"networkTerms":{"newTerms":[{"term":"Term","definition":"one sentence","appearsIn":[1,2]}],"existingTerms":[{"term":"library term","linkedArticle":"matching title","appearsIn":[1,3]}]},"networkGuide":{"sharedSuggestions":[{"title":"suggestion","relevantFor":[1,2,5]}],"boldingRules":"Bold every networkTerm whenever it appears in any article.","linkingStrategy":"2-sentence strategy for interconnecting pieces with existing library."}}
+
+RULES:
+- pieces: exactly 10 items
+- isMagnet true on exactly 4 pieces
+- networkTerms.newTerms: exactly 20 items
+- networkGuide.sharedSuggestions: exactly 10 items
+- relatedFromLibrary: exactly 5 titles from the existing library
+- writingPrompt: fully written out, no [PLACEHOLDER] tokens`;
+
+      const jsonRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: jsonGenPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: 8192,
+            temperature: 0.2,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      });
+
+      if (!jsonRes.ok) {
+        const errText = await jsonRes.text();
+        return new Response(JSON.stringify({ error: `JSON generation failed: ${errText}` }), {
+          status: jsonRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      const jsonData = await jsonRes.json();
+      const jsonParts = (jsonData.candidates || []).flatMap(c => c.content?.parts || []);
+      const rawJson = jsonParts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
+
+      console.log('Worldnet step 2 done, json length:', rawJson.length, 'starts:', rawJson.slice(0, 80));
+
+      if (!rawJson) {
+        return new Response(JSON.stringify({ error: 'AI returned empty JSON. Please try again.' }), {
+          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      // ── Brace-counting JSON extractor ────────────────────────────────────────
       const extractJSON = (raw) => {
-        // 1. Strip markdown fences
-        let s = raw.replace(/```json[\s\S]*?```/gi, m => m.slice(m.indexOf('{'), m.lastIndexOf('}') + 1))
-                   .replace(/```[\s\S]*?```/g, '')
-                   .trim();
-
-        // 2. Try direct parse first (ideal case)
+        const s = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
         try { return JSON.parse(s); } catch {}
-
-        // 3. Find the OUTERMOST { ... } using brace-counting (handles nested objects correctly)
         let depth = 0, start = -1, end = -1;
         for (let i = 0; i < s.length; i++) {
-          if (s[i] === '{') {
-            if (depth === 0) start = i;
-            depth++;
-          } else if (s[i] === '}') {
-            depth--;
-            if (depth === 0 && start !== -1) { end = i; break; }
-          }
+          if (s[i] === '{') { if (depth === 0) start = i; depth++; }
+          else if (s[i] === '}') { depth--; if (depth === 0 && start !== -1) { end = i; break; } }
         }
         if (start !== -1 && end !== -1) {
-          const candidate = s.slice(start, end + 1);
-          try { return JSON.parse(candidate); } catch(e) {
-            // 4. Last resort: try to fix common Gemini issues
-            // - unescaped newlines inside strings
-            const fixed = candidate
-              .replace(/:\s*"([\s\S]*?)(?<!\\)"/g, (match, p1) =>
-                ': "' + p1.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"'
-              );
-            try { return JSON.parse(fixed); } catch {}
-          }
+          try { return JSON.parse(s.slice(start, end + 1)); } catch {}
         }
         return null;
       };
 
-      const parsed = extractJSON(textBlocks);
+      const parsed = extractJSON(rawJson);
 
       if (!parsed) {
-        console.error('Worldnet JSON parse failed. Raw preview:', textBlocks.slice(0, 800));
+        console.error('Worldnet parse failed. Preview:', rawJson.slice(0, 500));
         return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      // Add server timestamp
       parsed._generatedAt = new Date().toISOString();
 
       return new Response(JSON.stringify(parsed), {
