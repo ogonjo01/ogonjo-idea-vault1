@@ -350,11 +350,17 @@ export default async (request) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // System instruction forces Gemini to output ONLY JSON — no preamble, no narrative
+          system_instruction: {
+            parts: [{
+              text: 'You are a JSON-only API. You MUST respond with a single valid JSON object and absolutely nothing else. No preamble. No explanation. No markdown. No backticks. No text before or after the JSON. Your entire response must start with { and end with }. If you include any text outside the JSON object, the system will crash.'
+            }]
+          },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           tools: [{ google_search: {} }],
           generationConfig: {
             maxOutputTokens: 8192,
-            temperature: 0.35,
+            temperature: 0.3,
           },
         }),
       });
@@ -380,23 +386,49 @@ export default async (request) => {
         });
       }
 
-      // Robust JSON extraction
-      let parsed = null;
-      const cleanAttempts = [
-        textBlocks,
-        textBlocks.replace(/```json/gi,'').replace(/```/g,'').trim(),
-      ];
-      for (const attempt of cleanAttempts) {
-        if (parsed) break;
-        try { parsed = JSON.parse(attempt); break; } catch {}
-        try {
-          const s = attempt.indexOf('{'), e = attempt.lastIndexOf('}');
-          if (s !== -1 && e > s) { parsed = JSON.parse(attempt.slice(s, e + 1)); }
-        } catch {}
-      }
+      console.log('Worldnet raw length:', textBlocks.length, 'first 120:', textBlocks.slice(0, 120));
+
+      // ── Aggressive JSON extraction ──────────────────────────────────────────
+      // Handles: preamble text, markdown fences, trailing garbage, partial wraps
+      const extractJSON = (raw) => {
+        // 1. Strip markdown fences
+        let s = raw.replace(/```json[\s\S]*?```/gi, m => m.slice(m.indexOf('{'), m.lastIndexOf('}') + 1))
+                   .replace(/```[\s\S]*?```/g, '')
+                   .trim();
+
+        // 2. Try direct parse first (ideal case)
+        try { return JSON.parse(s); } catch {}
+
+        // 3. Find the OUTERMOST { ... } using brace-counting (handles nested objects correctly)
+        let depth = 0, start = -1, end = -1;
+        for (let i = 0; i < s.length; i++) {
+          if (s[i] === '{') {
+            if (depth === 0) start = i;
+            depth++;
+          } else if (s[i] === '}') {
+            depth--;
+            if (depth === 0 && start !== -1) { end = i; break; }
+          }
+        }
+        if (start !== -1 && end !== -1) {
+          const candidate = s.slice(start, end + 1);
+          try { return JSON.parse(candidate); } catch(e) {
+            // 4. Last resort: try to fix common Gemini issues
+            // - unescaped newlines inside strings
+            const fixed = candidate
+              .replace(/:\s*"([\s\S]*?)(?<!\\)"/g, (match, p1) =>
+                ': "' + p1.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"'
+              );
+            try { return JSON.parse(fixed); } catch {}
+          }
+        }
+        return null;
+      };
+
+      const parsed = extractJSON(textBlocks);
 
       if (!parsed) {
-        console.error('Worldnet JSON parse failed. Raw preview:', textBlocks.slice(0, 600));
+        console.error('Worldnet JSON parse failed. Raw preview:', textBlocks.slice(0, 800));
         return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
