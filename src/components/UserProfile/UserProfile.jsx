@@ -1656,5 +1656,5 @@ const UserProfile = ({ onClose, onUpdated }) => {
     </div>
   );
 };
-  
+
 export default UserProfile;
