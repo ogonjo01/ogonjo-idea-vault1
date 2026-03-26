@@ -338,122 +338,105 @@ export default async (request) => {
     }
 
     // ── WORLDNET ─────────────────────────────────────────────────────────────
-    // TWO-CALL APPROACH:
-    // Call 1 (with grounding): fetch real news headlines as plain text
-    // Call 2 (no grounding):   transform text into clean JSON network
-    // Grounding + JSON output is unreliable in Gemini — splitting fixes it
+    // Single grounded call — Gemini fetches news AND outputs JSON together.
+    // The trick: we tell Gemini to search first silently, then output ONLY JSON.
+    // We do NOT use system_instruction (ignored with grounding).
+    // We use response_mime_type to force JSON output mode.
     // ─────────────────────────────────────────────────────────────────────────
     if (mode === 'worldnet') {
       const { existingLibrary } = body;
       const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
-      const libraryList = (existingLibrary||[]).slice(0,120).map(safeTitle).join(' | ');
+      const libraryList = (existingLibrary||[]).slice(0,80).map(safeTitle).join(' | ');
 
-      // ── CALL 1: Grounded news fetch — plain text output, no JSON ────────────
-      const newsGatherPrompt = `Search the web RIGHT NOW and find the 12 most important world news stories from the LAST 12 HOURS (March 2026). Focus on: major economic events, business disruptions, political decisions affecting markets, technology breakthroughs, disasters or crises, viral business stories.
+      const worldnetPromptText = `Search the web for the most important world news from the last 12 hours (March 2026). Then use those stories to fill out this exact JSON structure for Ogonjo, a business knowledge platform.
 
-For each story write:
-STORY [N]: [headline]
-SOURCE: [publication]
-SUMMARY: [2 sentences on what happened and why it matters]
-BUSINESS ANGLE: [how entrepreneurs, investors, or professionals should think about this]
+Output ONLY the completed JSON. No explanation. No markdown. No text outside the JSON.
 
-List all 12 stories. Be specific and factual. Use real current news only.`;
+{
+  "generatedAt": "now",
+  "newsWindow": "last 12 hours",
+  "worldContext": "2-sentence summary of the dominant global story you found",
+  "pieces": [
+    {
+      "id": 1,
+      "pillar": "Business & Entrepreneurship",
+      "isMagnet": true,
+      "magnetReason": "one sentence why this gets high traffic",
+      "newsSource": "the real news event that inspired this piece",
+      "title": "Evergreen SEO title — not written as news, e.g. How to / Why / What X Reveals About Y",
+      "seoKeywords": ["keyword1","keyword2","keyword3","keyword4","keyword5"],
+      "keyPoints": ["Actionable insight 1","Actionable insight 2","Actionable insight 3"],
+      "outline": ["Introduction: hook angle","Section 1: title","Section 2: title","Section 3: title","Section 4: title","Conclusion: CTA angle"],
+      "cta": "Specific professional advice for readers at end of article",
+      "writingPrompt": "Write a 1500-word article titled [INSERT TITLE]. Cover: [INSERT KEY POINTS]. Structure: [INSERT OUTLINE]. End with: [INSERT CTA]. Audience: entrepreneurs, investors, professionals. SEO keywords: [INSERT KEYWORDS]. Use subheadings, short paragraphs, bold one insight per section. Write as timeless strategy, not news.",
+      "relatedFromLibrary": ["title from library 1","title from library 2","title from library 3","title from library 4","title from library 5"],
+      "searchVolumePotential": "high"
+    }
+  ],
+  "networkTerms": {
+    "newTerms": [
+      {"term": "Term Name","definition": "one sentence definition","appearsIn": [1,2,3]}
+    ],
+    "existingTerms": [
+      {"term": "term found in library","linkedArticle": "matching library article title","appearsIn": [1,4]}
+    ]
+  },
+  "networkGuide": {
+    "sharedSuggestions": [
+      {"title": "Related article suggestion title","relevantFor": [1,2,5,8]}
+    ],
+    "boldingRules": "Bold every term from networkTerms whenever it appears in any article to enable auto-linking.",
+    "linkingStrategy": "Two sentences on how to interconnect these 10 new pieces with the existing library."
+  }
+}
 
-      const newsRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+Fill this JSON with real content from your web search. Rules:
+- pieces: exactly 10 items based on the top 10 news stories you found
+- isMagnet: true on exactly 4 pieces (biggest/most viral stories)
+- networkTerms.newTerms: exactly 20 terms
+- networkGuide.sharedSuggestions: exactly 10 suggestions
+- relatedFromLibrary: pick 5 closest matches from this library: ${libraryList}
+- writingPrompt: replace all [INSERT X] placeholders with the actual content for that piece
+- All piece titles must be evergreen strategy format, never news headlines
+
+Return only the JSON object. Start your response with { and end with }.`;
+
+      const geminiRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: newsGatherPrompt }] }],
+          contents: [{ role: 'user', parts: [{ text: worldnetPromptText }] }],
           tools: [{ google_search: {} }],
-          generationConfig: { maxOutputTokens: 3000, temperature: 0.3 },
-        }),
-      });
-
-      if (!newsRes.ok) {
-        const errText = await newsRes.text();
-        return new Response(JSON.stringify({ error: `News fetch failed: ${errText}` }), {
-          status: newsRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      const newsData = await newsRes.json();
-      const newsParts = (newsData.candidates || []).flatMap(c => c.content?.parts || []);
-      const newsText = newsParts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
-
-      if (!newsText) {
-        return new Response(JSON.stringify({ error: 'Could not fetch news. Please try again.' }), {
-          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
-
-      console.log('Worldnet step 1 done, news length:', newsText.length);
-
-      // ── CALL 2: JSON generation — NO grounding tool, pure reasoning ──────────
-      const jsonGenPrompt = `You are a content network architect for Ogonjo, a business knowledge platform with 4 pillars:
-- Business & Entrepreneurship
-- Personal Finance & Investing
-- Career & Leadership
-- Marketing & Sales
-
-Here are 12 real news stories from the last 12 hours:
-
-${newsText}
-
-EXISTING ARTICLE LIBRARY (cross-reference for related articles):
-${libraryList}
-
-Transform these news stories into 10 evergreen SEO content pieces. Each piece must reframe a news story as timeless strategy/education — NOT written as news.
-
-STRICT OUTPUT RULES:
-- Your response must be ONLY a JSON object
-- Start with { and end with }
-- No text, explanation, or markdown before or after
-- No backticks
-
-JSON structure:
-{"generatedAt":"now","newsWindow":"last 12 hours","worldContext":"2-sentence summary of dominant global story","pieces":[{"id":1,"pillar":"Business & Entrepreneurship","isMagnet":true,"magnetReason":"why high traffic","newsSource":"real event that inspired this","title":"SEO evergreen title","seoKeywords":["kw1","kw2","kw3","kw4","kw5"],"keyPoints":["point1","point2","point3"],"outline":["Introduction: hook","Section 1: title","Section 2: title","Section 3: title","Section 4: title","Conclusion: CTA"],"cta":"professional advice CTA","writingPrompt":"Full ready-to-paste writing prompt with all details filled in — no placeholders, all content inline","relatedFromLibrary":["lib1","lib2","lib3","lib4","lib5"],"searchVolumePotential":"high"}],"networkTerms":{"newTerms":[{"term":"Term","definition":"one sentence","appearsIn":[1,2]}],"existingTerms":[{"term":"library term","linkedArticle":"matching title","appearsIn":[1,3]}]},"networkGuide":{"sharedSuggestions":[{"title":"suggestion","relevantFor":[1,2,5]}],"boldingRules":"Bold every networkTerm whenever it appears in any article.","linkingStrategy":"2-sentence strategy for interconnecting pieces with existing library."}}
-
-RULES:
-- pieces: exactly 10 items
-- isMagnet true on exactly 4 pieces
-- networkTerms.newTerms: exactly 20 items
-- networkGuide.sharedSuggestions: exactly 10 items
-- relatedFromLibrary: exactly 5 titles from the existing library
-- writingPrompt: fully written out, no [PLACEHOLDER] tokens`;
-
-      const jsonRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: jsonGenPrompt }] }],
           generationConfig: {
             maxOutputTokens: 8192,
             temperature: 0.2,
-            thinkingConfig: { thinkingBudget: 0 },
+            response_mime_type: 'application/json',
           },
         }),
       });
 
-      if (!jsonRes.ok) {
-        const errText = await jsonRes.text();
-        return new Response(JSON.stringify({ error: `JSON generation failed: ${errText}` }), {
-          status: jsonRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      if (!geminiRes.ok) {
+        const errText = await geminiRes.text();
+        console.error('Worldnet Gemini error:', errText);
+        return new Response(JSON.stringify({ error: `Gemini API error: ${errText}` }), {
+          status: geminiRes.status,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      const jsonData = await jsonRes.json();
-      const jsonParts = (jsonData.candidates || []).flatMap(c => c.content?.parts || []);
-      const rawJson = jsonParts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
+      const data = await geminiRes.json();
+      const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
+      const rawText = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('').trim();
 
-      console.log('Worldnet step 2 done, json length:', rawJson.length, 'starts:', rawJson.slice(0, 80));
+      console.log('Worldnet raw length:', rawText.length, 'starts:', rawText.slice(0, 80));
 
-      if (!rawJson) {
-        return new Response(JSON.stringify({ error: 'AI returned empty JSON. Please try again.' }), {
+      if (!rawText) {
+        return new Response(JSON.stringify({ error: 'No response from AI. Please try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      // ── Brace-counting JSON extractor ────────────────────────────────────────
+      // Brace-counting extractor — handles any preamble text Gemini adds
       const extractJSON = (raw) => {
         const s = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
         try { return JSON.parse(s); } catch {}
@@ -468,10 +451,10 @@ RULES:
         return null;
       };
 
-      const parsed = extractJSON(rawJson);
+      const parsed = extractJSON(rawText);
 
       if (!parsed) {
-        console.error('Worldnet parse failed. Preview:', rawJson.slice(0, 500));
+        console.error('Worldnet parse failed. Raw preview:', rawText.slice(0, 500));
         return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
@@ -484,6 +467,7 @@ RULES:
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
+
 
     // ── ALL OTHER MODES ──────────────────────────────────────────────────────
     const groundingTool = { google_search: {} };
