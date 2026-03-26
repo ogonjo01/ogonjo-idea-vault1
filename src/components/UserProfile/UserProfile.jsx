@@ -83,23 +83,7 @@ const ago = (iso) => {
 };
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PILLAR COLORS for WorldNet
-// ─────────────────────────────────────────────────────────────────────────────
-const PILLAR_COLORS = {
-  'Business & Entrepreneurship': '#f97316',
-  'Personal Finance & Investing': '#06b6d4',
-  'Career & Leadership': '#8b5cf6',
-  'Marketing & Sales': '#10b981',
-};
-const PILLAR_ICONS = {
-  'Business & Entrepreneurship': '🏢',
-  'Personal Finance & Investing': '💰',
-  'Career & Leadership': '🎯',
-  'Marketing & Sales': '📣',
-};
-
-const CopyButton = ({ text, theme:T, label }) => {
+const CopyButton = ({ text, theme:T }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(text); }
@@ -110,7 +94,7 @@ const CopyButton = ({ text, theme:T, label }) => {
     <button onClick={handleCopy} title={copied?'Copied!':'Copy'} style={{ background:copied?T.aiAccent+'22':'none', border:`1px solid ${copied?T.aiAccent:T.border}`, borderRadius:6, color:copied?T.aiAccent:T.textMuted, padding:'3px 8px', cursor:'pointer', fontSize:10, fontWeight:600, transition:'all 0.15s', display:'flex', alignItems:'center', gap:4, flexShrink:0 }}
       onMouseEnter={e=>{ if(!copied){e.currentTarget.style.borderColor=T.aiAccent;e.currentTarget.style.color=T.aiAccent;}}}
       onMouseLeave={e=>{ if(!copied){e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textMuted;}}}>
-      {copied?'✓ Copied':`⎘ ${label||'Copy'}`}
+      {copied?'✓ Copied':'⎘ Copy'}
     </button>
   );
 };
@@ -161,6 +145,11 @@ const catColor = (cat) => {
   return CAT_COLOURS[Math.abs(h)%CAT_COLOURS.length];
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE FEED — masonry fullscreen, random independent timers, varied transitions
+// ─────────────────────────────────────────────────────────────────────────────
+
 const CARD_ACCENTS = [
   '#06b6d4','#8b5cf6','#f97316','#10b981','#ec4899',
   '#f59e0b','#3b82f6','#ef4444','#14b8a6','#a855f7',
@@ -174,18 +163,21 @@ const LIVE_TABS = [
   { id:'yearly',  label:'Yearly',  ms:31536000000, desc:'this year' },
 ];
 
+// Different CSS transitions per slot index
 const SLOT_TRANSITIONS = [
-  'transform 0.8s cubic-bezier(0.34,1.56,0.64,1)',
-  'transform 0.6s ease-in-out',
-  'transform 0.9s cubic-bezier(0.68,-0.55,0.27,1.55)',
-  'transform 0.5s ease-out',
-  'transform 1.0s cubic-bezier(0.25,0.46,0.45,0.94)',
-  'transform 0.7s cubic-bezier(0.34,1.56,0.64,1)',
-  'transform 0.55s cubic-bezier(0.47,1.64,0.41,0.8)',
+  'transform 0.8s cubic-bezier(0.34,1.56,0.64,1)',   // springy
+  'transform 0.6s ease-in-out',                        // smooth
+  'transform 0.9s cubic-bezier(0.68,-0.55,0.27,1.55)',// overshoot
+  'transform 0.5s ease-out',                           // snappy
+  'transform 1.0s cubic-bezier(0.25,0.46,0.45,0.94)', // gentle
+  'transform 0.7s cubic-bezier(0.34,1.56,0.64,1)',    // spring2
+  'transform 0.55s cubic-bezier(0.47,1.64,0.41,0.8)', // bounce
 ];
 
+// Masonry grid layout definitions: each slot has col/row span
+// Layout: 1 hero (col 1-2, row 1-2) + 6 smaller cards filling a 4-col 3-row grid
 const GRID_LAYOUT = [
-  { col:'1 / span 2', row:'1 / span 2', big:true  },
+  { col:'1 / span 2', row:'1 / span 2', big:true  }, // hero — half screen
   { col:'3 / span 1', row:'1 / span 1', big:false },
   { col:'4 / span 1', row:'1 / span 1', big:false },
   { col:'3 / span 2', row:'2 / span 1', big:false },
@@ -194,6 +186,7 @@ const GRID_LAYOUT = [
   { col:'4 / span 1', row:'2 / span 2', big:false },
 ];
 
+// Single fullscreen card slot — manages its own independent lifecycle
 const LiveCard = ({ items, accent, slotIdx, theme:T }) => {
   const [visible, setVisible] = useState(false);
   const [current, setCurrent] = useState(null);
@@ -205,26 +198,39 @@ const LiveCard = ({ items, accent, slotIdx, theme:T }) => {
   useEffect(()=>{ qRef.current = items; },[items]);
 
   const showNext = useCallback(()=>{
+    // 1. Flip out
     setEntering(false);
     setVisible(false);
+
     setTimeout(()=>{
+      // 2. Pick next item
       const q = qRef.current;
       if(!q.length) return;
       idxRef.current = (idxRef.current + 1) % q.length;
       setCurrent(q[idxRef.current]);
-      requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ setVisible(true); setEntering(true); }); });
+
+      // 3. Flip in
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          setVisible(true);
+          setEntering(true);
+        });
+      });
     }, 350);
   },[]);
 
+  // Initial mount — stagger startup by slot index
   useEffect(()=>{
     if(!items.length) return;
-    const startDelay = slotIdx * 600;
+    const startDelay = slotIdx * 600; // 0ms, 600ms, 1200ms… stagger
     const t = setTimeout(()=>{
       const q = qRef.current;
       const startIdx = slotIdx % Math.max(q.length,1);
       idxRef.current = startIdx;
       setCurrent(q[startIdx] || null);
       requestAnimationFrame(()=>requestAnimationFrame(()=>{ setVisible(true); setEntering(true); }));
+
+      // Random display time 3000–6000ms
       const displayTime = 3000 + Math.random() * 3000;
       timerRef.current = setInterval(showNext, displayTime);
     }, startDelay);
@@ -232,10 +238,14 @@ const LiveCard = ({ items, accent, slotIdx, theme:T }) => {
   // eslint-disable-next-line
   },[]);
 
-  useEffect(()=>{ qRef.current = items; },[items]);
+  // Update queue when items change
+  useEffect(()=>{
+    qRef.current = items;
+  },[items]);
 
   const isBig = GRID_LAYOUT[slotIdx]?.big;
   const transition = SLOT_TRANSITIONS[slotIdx % SLOT_TRANSITIONS.length];
+
   const enterTransforms = [
     ['translateX(-110%)', 'translateX(0)'],
     ['translateX(110%)',  'translateX(0)'],
@@ -248,18 +258,46 @@ const LiveCard = ({ items, accent, slotIdx, theme:T }) => {
   const [fromTransform, toTransform] = enterTransforms[slotIdx % enterTransforms.length];
 
   return(
-    <div style={{ gridColumn: GRID_LAYOUT[slotIdx]?.col, gridRow: GRID_LAYOUT[slotIdx]?.row, overflow: 'hidden', borderRadius: 16 }}>
-      <div style={{ width:'100%', height:'100%', transform: entering ? toTransform : fromTransform, opacity: visible ? 1 : 0, transition: entering ? `${transition}, opacity 0.4s ease` : 'opacity 0.3s ease', background: current ? `linear-gradient(135deg, ${accent}22, ${accent}0a)` : 'transparent', border: current ? `1px solid ${accent}55` : `1px solid transparent`, borderRadius: 16, padding: isBig ? '28px 32px' : '18px 20px', boxSizing: 'border-box', display:'flex', flexDirection:'column', justifyContent:'space-between', position:'relative', overflow:'hidden', minHeight: isBig ? 200 : 100 }}>
+    <div style={{
+      gridColumn: GRID_LAYOUT[slotIdx]?.col,
+      gridRow:    GRID_LAYOUT[slotIdx]?.row,
+      overflow: 'hidden',
+      borderRadius: 16,
+    }}>
+      <div style={{
+        width:'100%', height:'100%',
+        transform: entering ? toTransform : fromTransform,
+        opacity: visible ? 1 : 0,
+        transition: entering
+          ? `${transition}, opacity 0.4s ease`
+          : 'opacity 0.3s ease',
+        background: current ? `linear-gradient(135deg, ${accent}22, ${accent}0a)` : 'transparent',
+        border: current ? `1px solid ${accent}55` : `1px solid transparent`,
+        borderRadius: 16,
+        padding: isBig ? '28px 32px' : '18px 20px',
+        boxSizing: 'border-box',
+        display:'flex', flexDirection:'column', justifyContent:'space-between',
+        position:'relative', overflow:'hidden',
+        minHeight: isBig ? 200 : 100,
+      }}>
+        {/* Glow decoration */}
         <div style={{ position:'absolute', top:-30, right:-30, width:120, height:120, borderRadius:'50%', background:`radial-gradient(circle, ${accent}28, transparent 70%)`, pointerEvents:'none' }}/>
         <div style={{ position:'absolute', bottom:-20, left:-20, width:80, height:80, borderRadius:'50%', background:`radial-gradient(circle, ${accent}18, transparent 70%)`, pointerEvents:'none' }}/>
+
         {current ? (
           <>
             <div>
-              <div style={{ fontSize: isBig?10:8, fontWeight:800, textTransform:'uppercase', letterSpacing:1.2, color:accent, marginBottom: isBig?10:6, opacity:0.9 }}>{current.category || 'General'}</div>
-              <div style={{ fontSize: isBig?20:13, fontWeight:800, color:'#fff', lineHeight:1.35, display:'-webkit-box', WebkitLineClamp: isBig?4:3, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{current.title}</div>
+              <div style={{ fontSize: isBig?10:8, fontWeight:800, textTransform:'uppercase', letterSpacing:1.2, color:accent, marginBottom: isBig?10:6, opacity:0.9 }}>
+                {current.category || 'General'}
+              </div>
+              <div style={{ fontSize: isBig?20:13, fontWeight:800, color:'#fff', lineHeight:1.35, display:'-webkit-box', WebkitLineClamp: isBig?4:3, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+                {current.title}
+              </div>
             </div>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop: isBig?16:8 }}>
-              {current.isNew && (<span style={{ fontSize: isBig?10:8, fontWeight:800, color:'#34d399', background:'rgba(52,211,153,0.15)', padding:'2px 10px', borderRadius:20, border:'1px solid rgba(52,211,153,0.3)', textTransform:'uppercase', letterSpacing:0.5 }}>Just now</span>)}
+              {current.isNew && (
+                <span style={{ fontSize: isBig?10:8, fontWeight:800, color:'#34d399', background:'rgba(52,211,153,0.15)', padding:'2px 10px', borderRadius:20, border:'1px solid rgba(52,211,153,0.3)', textTransform:'uppercase', letterSpacing:0.5 }}>Just now</span>
+              )}
               <span style={{ fontSize: isBig?11:9, color:'rgba(255,255,255,0.4)', marginLeft:'auto' }}>{ago(current.created_at)}</span>
             </div>
           </>
@@ -271,6 +309,7 @@ const LiveCard = ({ items, accent, slotIdx, theme:T }) => {
   );
 };
 
+// ── Main LiveFeed component ─────────────────────────────────────────────────
 const LiveFeed = ({ theme:T }) => {
   const [liveTab,     setLiveTab]     = useState('daily');
   const [allViews,    setAllViews]    = useState([]);
@@ -282,14 +321,18 @@ const LiveFeed = ({ theme:T }) => {
   const [loading,     setLoading]     = useState(true);
   const [refreshKey,  setRefreshKey]  = useState(0);
 
+  // Compact flip state
   const [flipItem, setFlipItem] = useState(null);
   const [flipDir,  setFlipDir]  = useState(FLIP_DIRS[0]);
   const [flipIn,   setFlipIn]   = useState(false);
   const cycleRef  = useRef(null);
   const compactQ  = useRef([]);
   const compactI  = useRef(0);
+
+  // Wake lock ref
   const wakeLockRef = useRef(null);
 
+  // ── Wake lock: acquire when fullscreen, release when not ──────────────────
   useEffect(()=>{
     if(fullscreen && 'wakeLock' in navigator){
       navigator.wakeLock.request('screen').then(lock=>{ wakeLockRef.current=lock; }).catch(()=>{});
@@ -300,10 +343,16 @@ const LiveFeed = ({ theme:T }) => {
     return()=>{ if(wakeLockRef.current){ wakeLockRef.current.release().catch(()=>{}); wakeLockRef.current=null; } };
   },[fullscreen]);
 
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async()=>{
     setLoading(true);
     const since=new Date(Date.now()-31536000000).toISOString();
-    const { data } = await supabase.from('views').select('id,post_id,created_at,book_summaries(title,category)').gte('created_at',since).order('created_at',{ascending:false}).limit(500);
+    const { data } = await supabase
+      .from('views')
+      .select('id,post_id,created_at,book_summaries(title,category)')
+      .gte('created_at',since)
+      .order('created_at',{ascending:false})
+      .limit(500);
     const rows=(data||[]).map(r=>({ id:r.id, post_id:r.post_id, title:r.book_summaries?.title||'Untitled', category:r.book_summaries?.category||'', created_at:r.created_at }));
     setAllViews(rows);
     setLoading(false);
@@ -311,6 +360,7 @@ const LiveFeed = ({ theme:T }) => {
 
   useEffect(()=>{ fetchAll(); },[fetchAll]);
 
+  // ── Filter to liveTab ──────────────────────────────────────────────────────
   useEffect(()=>{
     const cfg=LIVE_TABS.find(t=>t.id===liveTab);
     if(!cfg) return;
@@ -328,6 +378,7 @@ const LiveFeed = ({ theme:T }) => {
   // eslint-disable-next-line
   },[allViews, liveTab]);
 
+  // ── Realtime ───────────────────────────────────────────────────────────────
   useEffect(()=>{
     const ch=supabase.channel('live-views-ogonjo')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'views'},async(payload)=>{
@@ -344,6 +395,7 @@ const LiveFeed = ({ theme:T }) => {
   // eslint-disable-next-line
   },[]);
 
+  // ── Compact auto-cycle (4s, doesn't race with fullscreen) ─────────────────
   const triggerCompactFlip = useCallback((item,dirIdx=0)=>{
     const dir=FLIP_DIRS[dirIdx%FLIP_DIRS.length];
     setFlipDir(dir); setFlipIn(false); setFlipItem(item);
@@ -359,6 +411,7 @@ const LiveFeed = ({ theme:T }) => {
     return()=>clearInterval(cycleRef.current);
   },[triggerCompactFlip]);
 
+  // ── Distribute items across grid slots (each slot gets a different offset) ─
   const gridItems = GRID_LAYOUT.map((_,i)=>{
     if(!dedupedQ.length) return [];
     return [...dedupedQ.slice(i%dedupedQ.length), ...dedupedQ.slice(0, i%dedupedQ.length)];
@@ -367,17 +420,30 @@ const LiveFeed = ({ theme:T }) => {
   const tabCfg   = LIVE_TABS.find(t=>t.id===liveTab);
   const viewCount= periodViews.length;
 
+  // ── Shared tab bar ─────────────────────────────────────────────────────────
   const TabBar = () => (
     <div style={{ display:'flex', gap:3, background:'rgba(255,255,255,0.06)', borderRadius:8, padding:3 }}>
       {LIVE_TABS.map(t=>(
-        <button key={t.id} onClick={()=>setLiveTab(t.id)} style={{ background: liveTab===t.id ? T.accent+'44' : 'transparent', border: `1px solid ${liveTab===t.id ? T.accent+'77' : 'transparent'}`, color: liveTab===t.id ? T.accent : T.tabInactive, padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:700, transition:'all 0.15s', whiteSpace:'nowrap' }}>{t.label}</button>
+        <button key={t.id} onClick={()=>setLiveTab(t.id)} style={{
+          background: liveTab===t.id ? T.accent+'44' : 'transparent',
+          border: `1px solid ${liveTab===t.id ? T.accent+'77' : 'transparent'}`,
+          color: liveTab===t.id ? T.accent : T.tabInactive,
+          padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:700,
+          transition:'all 0.15s', whiteSpace:'nowrap',
+        }}>{t.label}</button>
       ))}
     </div>
   );
 
+  // ── FULLSCREEN ─────────────────────────────────────────────────────────────
   if(fullscreen) return(
     <div style={{ position:'fixed', inset:0, zIndex:2000, background:'#060c1a', display:'flex', flexDirection:'column', fontFamily:"'DM Sans',sans-serif" }}>
-      <style>{`@keyframes livePulse{0%{transform:scale(1);opacity:0.7}100%{transform:scale(2.8);opacity:0}} @keyframes countSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`
+        @keyframes livePulse{0%{transform:scale(1);opacity:0.7}100%{transform:scale(2.8);opacity:0}}
+        @keyframes countSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
+
+      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 24px 12px', borderBottom:'1px solid rgba(255,255,255,0.07)', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:14 }}>
           <div style={{ position:'relative', width:10, height:10 }}>
@@ -386,10 +452,14 @@ const LiveFeed = ({ theme:T }) => {
           </div>
           <span style={{ fontSize:13, fontWeight:900, color:'#fff', letterSpacing:1.5, textTransform:'uppercase' }}>Live</span>
           <div style={{ display:'flex', alignItems:'baseline', gap:7 }}>
-            <span style={{ fontSize:38, fontWeight:900, color:T.accent, letterSpacing:-1.5, lineHeight:1, animation:'countSlide 0.5s ease' }}>{viewCount.toLocaleString()}</span>
+            <span style={{ fontSize:38, fontWeight:900, color:T.accent, letterSpacing:-1.5, lineHeight:1, animation:'countSlide 0.5s ease' }}>
+              {viewCount.toLocaleString()}
+            </span>
             <span style={{ fontSize:13, color:'rgba(255,255,255,0.4)', fontWeight:600 }}>views {tabCfg?.desc}</span>
           </div>
-          {liveNew>0&&(<span style={{ fontSize:11, color:'#34d399', fontWeight:800, background:'rgba(52,211,153,0.12)', padding:'3px 12px', borderRadius:20, border:'1px solid rgba(52,211,153,0.25)' }}>+{liveNew} new</span>)}
+          {liveNew>0&&(
+            <span style={{ fontSize:11, color:'#34d399', fontWeight:800, background:'rgba(52,211,153,0.12)', padding:'3px 12px', borderRadius:20, border:'1px solid rgba(52,211,153,0.25)' }}>+{liveNew} new</span>
+          )}
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <TabBar/>
@@ -397,19 +467,45 @@ const LiveFeed = ({ theme:T }) => {
             <div style={{ width:6, height:6, borderRadius:'50%', background:connected?'#34d399':'#64748b', transition:'background 0.3s' }}/>
             <span style={{ fontSize:10, color:connected?'#34d399':'#64748b' }}>{connected?'Live':'Connecting…'}</span>
           </div>
-          <button onClick={()=>{ fetchAll(); setRefreshKey(k=>k+1); }} title="Refresh" style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'rgba(255,255,255,0.5)', padding:'5px 11px', cursor:'pointer', fontSize:14, transition:'all 0.15s' }} onMouseEnter={e=>{ e.currentTarget.style.color=T.accent; e.currentTarget.style.borderColor=T.accent; }} onMouseLeave={e=>{ e.currentTarget.style.color='rgba(255,255,255,0.5)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; }}>↻</button>
-          <button onClick={()=>setFullscreen(false)} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'rgba(255,255,255,0.5)', padding:'5px 14px', cursor:'pointer', fontSize:12, fontWeight:700, transition:'all 0.15s' }} onMouseEnter={e=>{ e.currentTarget.style.color='#ef4444'; e.currentTarget.style.borderColor='#ef4444'; }} onMouseLeave={e=>{ e.currentTarget.style.color='rgba(255,255,255,0.5)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; }}>✕ Exit</button>
+          {/* Refresh */}
+          <button onClick={()=>{ fetchAll(); setRefreshKey(k=>k+1); }} title="Refresh" style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'rgba(255,255,255,0.5)', padding:'5px 11px', cursor:'pointer', fontSize:14, transition:'all 0.15s' }}
+            onMouseEnter={e=>{ e.currentTarget.style.color=T.accent; e.currentTarget.style.borderColor=T.accent; }}
+            onMouseLeave={e=>{ e.currentTarget.style.color='rgba(255,255,255,0.5)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; }}>
+            ↻
+          </button>
+          {/* Exit */}
+          <button onClick={()=>setFullscreen(false)} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, color:'rgba(255,255,255,0.5)', padding:'5px 14px', cursor:'pointer', fontSize:12, fontWeight:700, transition:'all 0.15s' }}
+            onMouseEnter={e=>{ e.currentTarget.style.color='#ef4444'; e.currentTarget.style.borderColor='#ef4444'; }}
+            onMouseLeave={e=>{ e.currentTarget.style.color='rgba(255,255,255,0.5)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; }}>
+            ✕ Exit
+          </button>
         </div>
       </div>
+
+      {/* Masonry grid — fills full remaining height */}
       <div style={{ flex:1, padding:'16px 20px', display:'grid', gridTemplateColumns:'repeat(4,1fr)', gridTemplateRows:'repeat(3,1fr)', gap:12, overflow:'hidden' }}>
-        {GRID_LAYOUT.map((_,i)=>(<LiveCard key={`${refreshKey}-${i}`} items={gridItems[i]||[]} accent={CARD_ACCENTS[i%CARD_ACCENTS.length]} slotIdx={i} theme={T}/>))}
+        {GRID_LAYOUT.map((_,i)=>(
+          <LiveCard
+            key={`${refreshKey}-${i}`}
+            items={gridItems[i]||[]}
+            accent={CARD_ACCENTS[i%CARD_ACCENTS.length]}
+            slotIdx={i}
+            theme={T}
+          />
+        ))}
       </div>
     </div>
   );
 
+  // ── COMPACT ────────────────────────────────────────────────────────────────
   return(
     <div style={{ background:T.liveBg, border:`1px solid ${T.liveBorder}`, borderRadius:14, padding:'16px 20px', marginBottom:14 }}>
-      <style>{`@keyframes livePulse{0%{transform:scale(1);opacity:0.7}100%{transform:scale(2.8);opacity:0}} @keyframes fadeSlideIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`
+        @keyframes livePulse{0%{transform:scale(1);opacity:0.7}100%{transform:scale(2.8);opacity:0}}
+        @keyframes fadeSlideIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
+
+      {/* Header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
         <div style={{ display:'flex', alignItems:'center', gap:9 }}>
           <div style={{ position:'relative', width:10, height:10 }}>
@@ -426,21 +522,47 @@ const LiveFeed = ({ theme:T }) => {
             <div style={{ width:6, height:6, borderRadius:'50%', background:connected?'#34d399':'#64748b', transition:'background 0.3s' }}/>
             <span style={{ fontSize:10, color:connected?'#34d399':T.textMuted }}>{connected?'Live':'…'}</span>
           </div>
-          <button onClick={()=>setFullscreen(true)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, color:T.textMuted, padding:'4px 10px', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all 0.15s', display:'flex', alignItems:'center', gap:4 }} onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.color=T.accent; }} onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}>⛶ Fullscreen</button>
+          <button onClick={()=>setFullscreen(true)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:7, color:T.textMuted, padding:'4px 10px', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all 0.15s', display:'flex', alignItems:'center', gap:4 }}
+            onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.color=T.accent; }}
+            onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}>
+            ⛶ Fullscreen
+          </button>
         </div>
       </div>
+
+      {/* Tab bar */}
       <div style={{ marginBottom:12 }}>
         <div style={{ display:'flex', gap:3, background:T.surface, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>
-          {LIVE_TABS.map(t=>(<button key={t.id} onClick={()=>setLiveTab(t.id)} style={{ background: liveTab===t.id ? T.accent+'33' : 'transparent', border: `1px solid ${liveTab===t.id ? T.accent+'66' : 'transparent'}`, color: liveTab===t.id ? T.accent : T.tabInactive, padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:700, transition:'all 0.15s', whiteSpace:'nowrap' }}>{t.label}</button>))}
+          {LIVE_TABS.map(t=>(
+            <button key={t.id} onClick={()=>setLiveTab(t.id)} style={{
+              background: liveTab===t.id ? T.accent+'33' : 'transparent',
+              border: `1px solid ${liveTab===t.id ? T.accent+'66' : 'transparent'}`,
+              color: liveTab===t.id ? T.accent : T.tabInactive,
+              padding:'4px 10px', borderRadius:6, cursor:'pointer', fontSize:11, fontWeight:700,
+              transition:'all 0.15s', whiteSpace:'nowrap',
+            }}>{t.label}</button>
+          ))}
         </div>
       </div>
+
+      {/* Compact flip card */}
       {loading
         ?<div style={{ height:110, display:'flex', alignItems:'center', justifyContent:'center', color:T.textMuted, fontSize:12 }}>Loading…</div>
         : dedupedQ.length===0
           ?<div style={{ height:90, display:'flex', alignItems:'center', justifyContent:'center', background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, color:T.textMuted, fontSize:12 }}>No views {tabCfg?.desc}</div>
           :(
             <div style={{ perspective:800, height:110 }}>
-              <div style={{ width:'100%', height:'100%', transform: flipIn ? flipDir.to : flipDir.from, transition: flipIn ? 'transform 0.65s cubic-bezier(0.34,1.56,0.64,1), opacity 0.35s' : 'none', opacity: flipIn ? 1 : 0, background: flipItem ? `linear-gradient(135deg,${catColor(flipItem.category)}1a,${catColor(flipItem.category)}08)` : T.surface, border: `1px solid ${flipItem ? catColor(flipItem.category)+'44' : T.border}`, borderRadius:12, padding:'14px 16px', boxSizing:'border-box', display:'flex', flexDirection:'column', justifyContent:'space-between', position:'relative', overflow:'hidden' }}>
+              <div style={{
+                width:'100%', height:'100%',
+                transform: flipIn ? flipDir.to : flipDir.from,
+                transition: flipIn ? 'transform 0.65s cubic-bezier(0.34,1.56,0.64,1), opacity 0.35s' : 'none',
+                opacity: flipIn ? 1 : 0,
+                background: flipItem ? `linear-gradient(135deg,${catColor(flipItem.category)}1a,${catColor(flipItem.category)}08)` : T.surface,
+                border: `1px solid ${flipItem ? catColor(flipItem.category)+'44' : T.border}`,
+                borderRadius:12, padding:'14px 16px', boxSizing:'border-box',
+                display:'flex', flexDirection:'column', justifyContent:'space-between',
+                position:'relative', overflow:'hidden',
+              }}>
                 {flipItem&&(
                   <>
                     <div style={{ position:'absolute', top:-15, right:-15, width:70, height:70, borderRadius:'50%', background:`radial-gradient(circle,${catColor(flipItem.category)}22,transparent 70%)`, pointerEvents:'none' }}/>
@@ -458,6 +580,8 @@ const LiveFeed = ({ theme:T }) => {
             </div>
           )
       }
+
+      {/* Recent list */}
       {!loading && dedupedQ.length>0 && (
         <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:10, maxHeight:120, overflowY:'auto' }}>
           {dedupedQ.slice(0,5).map((v,i)=>(
@@ -473,8 +597,11 @@ const LiveFeed = ({ theme:T }) => {
   );
 };
 
+
 // ─────────────────────────────────────────────────────────────────────────────
-// PLATFORM BRIEF
+// PLATFORM BRIEF — collapsible smart card, always at top of dashboard
+// Collapsed: instant summary from existing data (no AI)
+// Expanded: full Gemini pattern analysis on demand
 // ─────────────────────────────────────────────────────────────────────────────
 const ACCENT_MAP_PB = {
   cyan:'#06b6d4', purple:'#8b5cf6', orange:'#f97316',
@@ -489,6 +616,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
   const [cachedAt,    setCachedAt]    = useState(null);
   const resultRef = useRef(null);
 
+  // ── Compute collapsed summary from props (instant, no AI) ────────────────
   const topCat      = catData[0]?.name || '—';
   const topCatPct   = catData[0]?.value || 0;
   const viewDelta   = prev.views > 0 ? +((stats.views - prev.views) / prev.views * 100).toFixed(1) : 0;
@@ -496,6 +624,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
   const momentumColor = { surging:'#34d399', growing:'#06b6d4', steady:'#f59e0b', declining:'#f87171' }[momentum];
   const momentumIcon  = { surging:'🚀', growing:'📈', steady:'〰️', declining:'📉' }[momentum];
 
+  // Audience type heuristic from top categories
   const audienceMap = {
     'Business Concepts':'Strategists', 'Business Ideas':'Entrepreneurs',
     'Book Summary':'Knowledge Seekers', 'Market Analysis':'Investors',
@@ -504,6 +633,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
   };
   const audienceType = audienceMap[topCat] || 'Business Readers';
 
+  // Health score: weighted formula from views, likes, ratings vs prev
   const viewScore    = Math.min(40, stats.views > 0 ? 20 + Math.min(20, stats.views / 10) : 0);
   const deltaScore   = Math.min(20, Math.max(0, 10 + viewDelta / 5));
   const engageScore  = Math.min(20, (stats.likes + stats.ratings) > 0 ? 15 : 5);
@@ -512,6 +642,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
   const healthColor  = healthScore >= 70 ? '#34d399' : healthScore >= 45 ? '#f59e0b' : '#f87171';
   const healthLabel  = healthScore >= 70 ? 'Healthy' : healthScore >= 45 ? 'Needs Attention' : 'Low Activity';
 
+  // Key insight
   const keyInsight = (() => {
     if (stats.views === 0) return 'No views recorded yet this period. Try sharing your content.';
     if (viewDelta > 20)   return `Views up ${viewDelta}% vs last ${period.toLowerCase()} — strong momentum, double down on ${topCat}.`;
@@ -520,10 +651,12 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
     return `${topCat} content is driving ${topCatPct}% of all platform views.`;
   })();
 
+  // ── Run full AI analysis ─────────────────────────────────────────────────
   const runAnalysis = useCallback(async () => {
     if (aiLoading) return;
     setAiLoading(true); setAiError(null);
     try {
+      // Build viewed content payload from rawViews + topContent
       const viewCounts = {};
       (rawViews||[]).forEach(r => { viewCounts[r.post_id] = (viewCounts[r.post_id]||0)+1; });
       const viewedContent = (topContent||[]).slice(0,60).map(c => ({
@@ -531,12 +664,16 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
         views: viewCounts[c.id] || c.period_views || 1,
         hours: [],
       }));
+
       const allTitles = (topContent||[]).map(c => c.title);
       const topCategories = (catData||[]).slice(0,10).map(c => ({ name:c.name, count:c.value }));
+      const periodLabel = period;
+      const totalViews  = stats.views;
+
       const res = await fetch('/api/ai-advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode:'pattern', viewedContent, allTitles, periodLabel:period, totalViews:stats.views, topCategories }),
+        body: JSON.stringify({ mode:'pattern', viewedContent, allTitles, periodLabel, totalViews, topCategories }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Analysis failed');
@@ -548,6 +685,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
     } finally { setAiLoading(false); }
   }, [aiLoading, rawViews, topContent, catData, period, stats]);
 
+  // ── Collapsed badge atom ─────────────────────────────────────────────────
   const Pill = ({ label, value, color, icon }) => (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'8px 14px', background:color+'12', border:`1px solid ${color}33`, borderRadius:10, minWidth:80 }}>
       <span style={{ fontSize:16 }}>{icon}</span>
@@ -556,6 +694,7 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
     </div>
   );
 
+  // ── Expanded result atoms ────────────────────────────────────────────────
   const ResultBadge = ({ label, color }) => (
     <span style={{ fontSize:9, fontWeight:800, color, background:color+'18', border:`1px solid ${color}44`, padding:'1px 8px', borderRadius:20, textTransform:'uppercase', letterSpacing:0.5, whiteSpace:'nowrap' }}>{label}</span>
   );
@@ -567,555 +706,252 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
 
   return (
     <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:14, marginBottom:14, overflow:'hidden', transition:'all 0.3s' }}>
-      <div onClick={()=>setOpen(v=>!v)} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 18px', cursor:'pointer', userSelect:'none', background: open ? T.headerRow : 'transparent', borderBottom: open ? `1px solid ${T.border}` : 'none', transition:'background 0.2s' }} onMouseEnter={e=>{ if(!open) e.currentTarget.style.background=T.rowHover; }} onMouseLeave={e=>{ if(!open) e.currentTarget.style.background='transparent'; }}>
+
+      {/* ── ALWAYS VISIBLE HEADER ── */}
+      <div
+        onClick={()=>setOpen(v=>!v)}
+        style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 18px', cursor:'pointer', userSelect:'none',
+          background: open ? T.headerRow : 'transparent',
+          borderBottom: open ? `1px solid ${T.border}` : 'none',
+          transition:'background 0.2s',
+        }}
+        onMouseEnter={e=>{ if(!open) e.currentTarget.style.background=T.rowHover; }}
+        onMouseLeave={e=>{ if(!open) e.currentTarget.style.background='transparent'; }}
+      >
+        {/* Health score ring */}
         <div style={{ position:'relative', width:48, height:48, flexShrink:0 }}>
           <svg width="48" height="48" style={{ transform:'rotate(-90deg)' }}>
             <circle cx="24" cy="24" r="20" fill="none" stroke={T.border} strokeWidth="4"/>
-            <circle cx="24" cy="24" r="20" fill="none" stroke={healthColor} strokeWidth="4" strokeDasharray={`${(healthScore/100)*125.6} 125.6`} strokeLinecap="round" style={{ transition:'stroke-dasharray 0.6s ease' }}/>
+            <circle cx="24" cy="24" r="20" fill="none" stroke={healthColor} strokeWidth="4"
+              strokeDasharray={`${(healthScore/100)*125.6} 125.6`}
+              strokeLinecap="round" style={{ transition:'stroke-dasharray 0.6s ease' }}/>
           </svg>
           <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column' }}>
             <span style={{ fontSize:11, fontWeight:900, color:healthColor, lineHeight:1 }}>{healthScore}</span>
           </div>
         </div>
+
+        {/* Summary text */}
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
             <span style={{ fontSize:12, fontWeight:800, color:T.text }}>Platform Brief</span>
             <span style={{ fontSize:10, fontWeight:700, color:healthColor, background:healthColor+'18', padding:'1px 8px', borderRadius:20, border:`1px solid ${healthColor}33` }}>{healthLabel}</span>
             {cachedAt && <span style={{ fontSize:9, color:T.textMuted }}>· analysed {cachedAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</span>}
           </div>
-          <div style={{ fontSize:11, color:T.textSub, lineHeight:1.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{keyInsight}</div>
+          <div style={{ fontSize:11, color:T.textSub, lineHeight:1.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+            {keyInsight}
+          </div>
         </div>
+
+        {/* Metric pills */}
         <div style={{ display:'flex', gap:8, flexShrink:0 }}>
           <Pill label={`vs last ${period.toLowerCase()}`} value={`${viewDelta >= 0?'+':''}${viewDelta}%`} color={momentumColor} icon={momentumIcon}/>
           <Pill label="top category" value={topCat.split(' ')[0]} color={T.accent} icon="📂"/>
           <Pill label="audience" value={audienceType.split(' ')[0]} color="#8b5cf6" icon="👥"/>
         </div>
+
+        {/* Chevron */}
         <div style={{ fontSize:14, color:T.textMuted, transform:open?'rotate(180deg)':'rotate(0deg)', transition:'transform 0.25s', flexShrink:0 }}>▼</div>
       </div>
 
+      {/* ── EXPANDED PANEL ── */}
       {open && (
         <div style={{ padding:'18px 20px' }}>
+
+          {/* Generate button */}
           {!aiResult && (
             <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, color:T.textMuted, marginBottom:10, lineHeight:1.6 }}>Full analysis detects topic clusters, reader archetypes, content gaps, momentum signals and generates 5 content outlines based on your <strong style={{ color:T.text }}>{period.toLowerCase()}</strong> data ({stats.views.toLocaleString()} views).</div>
-              {aiError && (<div style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:9, padding:'8px 14px', color:'#f87171', fontSize:11, marginBottom:10 }}>⚠️ {aiError}</div>)}
-              <button onClick={runAnalysis} disabled={aiLoading} style={{ width:'100%', padding:'11px', borderRadius:10, border:'none', cursor:aiLoading?'default':'pointer', background: aiLoading ? T.surface : `linear-gradient(135deg,${T.accent},${T.aiAccent})`, color: aiLoading ? T.textMuted : '#fff', fontSize:13, fontWeight:800, transition:'all 0.2s', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                {aiLoading ? <><span style={{ animation:'pbSpin 1s linear infinite', display:'inline-block' }}>◌</span> Analysing patterns… (~20s)</> : '🧠 Generate Full Analysis'}
+              <div style={{ fontSize:11, color:T.textMuted, marginBottom:10, lineHeight:1.6 }}>
+                Full analysis detects topic clusters, reader archetypes, content gaps, momentum signals and generates 5 content outlines based on your <strong style={{ color:T.text }}>{period.toLowerCase()}</strong> data ({stats.views.toLocaleString()} views).
+              </div>
+              {aiError && (
+                <div style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:9, padding:'8px 14px', color:'#f87171', fontSize:11, marginBottom:10 }}>
+                  ⚠️ {aiError}
+                </div>
+              )}
+              <button onClick={runAnalysis} disabled={aiLoading} style={{
+                width:'100%', padding:'11px', borderRadius:10, border:'none', cursor:aiLoading?'default':'pointer',
+                background: aiLoading ? T.surface : `linear-gradient(135deg,${T.accent},${T.aiAccent})`,
+                color: aiLoading ? T.textMuted : '#fff',
+                fontSize:13, fontWeight:800, transition:'all 0.2s',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              }}>
+                {aiLoading
+                  ? <><span style={{ animation:'pbSpin 1s linear infinite', display:'inline-block' }}>◌</span> Analysing patterns… (~20s)</>
+                  : '🧠 Generate Full Analysis'}
               </button>
               <style>{`@keyframes pbSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
             </div>
           )}
+
+          {/* Results */}
           {aiResult && (
             <div ref={resultRef}>
+              {/* Re-run button */}
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
                 <div style={{ fontSize:12, fontWeight:700, color:T.text }}>🧠 Pattern Analysis — {aiResult.periodLabel}</div>
                 <button onClick={()=>{ setAiResult(null); setCachedAt(null); }} style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:7, color:T.textMuted, padding:'4px 10px', cursor:'pointer', fontSize:10, fontWeight:700 }}>↺ Re-run</button>
               </div>
+
+              {/* Narrative */}
               <div style={{ background:`linear-gradient(135deg,${T.accent}14,${T.aiAccent}06)`, border:`1px solid ${T.accent}33`, borderRadius:12, padding:'14px 18px', marginBottom:14 }}>
                 <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.accent, marginBottom:6 }}>The Big Picture</div>
                 <p style={{ fontSize:13, color:T.text, lineHeight:1.7, margin:0, fontWeight:500 }}>{aiResult.narrative}</p>
               </div>
+
+              {/* Clusters + Archetypes side by side */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
+
+                {/* Clusters */}
                 <div>
                   <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>📦 Topic Clusters</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                    {(aiResult.clusters||[]).map((c,i)=>{ const ac = ACCENT_MAP_PB[c.color] || T.accent; return(<div key={i} style={{ background:`linear-gradient(135deg,${ac}12,${ac}04)`, border:`1px solid ${ac}33`, borderRadius:10, padding:'10px 14px' }}><div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:5 }}><span style={{ fontSize:16 }}>{c.emoji}</span><span style={{ fontSize:11, fontWeight:700, color:T.text, flex:1 }}>{c.theme}</span><ResultBadge label={c.strength} color={STRENGTH_C[c.strength]||'#94a3b8'}/></div><p style={{ fontSize:10, color:T.textSub, lineHeight:1.5, margin:'0 0 7px' }}>{c.signal}</p><div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>{(c.titles||[]).slice(0,3).map((t,j)=>(<span key={j} style={{ fontSize:8, color:ac, background:ac+'14', border:`1px solid ${ac}33`, padding:'1px 7px', borderRadius:20, maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t}</span>))}</div></div>); })}
+                    {(aiResult.clusters||[]).map((c,i)=>{
+                      const ac = ACCENT_MAP_PB[c.color] || T.accent;
+                      return(
+                        <div key={i} style={{ background:`linear-gradient(135deg,${ac}12,${ac}04)`, border:`1px solid ${ac}33`, borderRadius:10, padding:'10px 14px' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:5 }}>
+                            <span style={{ fontSize:16 }}>{c.emoji}</span>
+                            <span style={{ fontSize:11, fontWeight:700, color:T.text, flex:1 }}>{c.theme}</span>
+                            <ResultBadge label={c.strength} color={STRENGTH_C[c.strength]||'#94a3b8'}/>
+                          </div>
+                          <p style={{ fontSize:10, color:T.textSub, lineHeight:1.5, margin:'0 0 7px' }}>{c.signal}</p>
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                            {(c.titles||[]).slice(0,3).map((t,j)=>(
+                              <span key={j} style={{ fontSize:8, color:ac, background:ac+'14', border:`1px solid ${ac}33`, padding:'1px 7px', borderRadius:20, maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
+
+                {/* Archetypes */}
                 <div>
                   <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>👥 Reader Archetypes</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                    {(aiResult.archetypes||[]).map((a,i)=>{ const ac = ARCHETYPE_COLORS[i%ARCHETYPE_COLORS.length]; return(<div key={i} style={{ background:`linear-gradient(135deg,${ac}12,${ac}04)`, border:`1px solid ${ac}33`, borderRadius:10, padding:'10px 14px' }}><div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}><span style={{ fontSize:18 }}>{a.emoji}</span><div style={{ flex:1 }}><div style={{ fontSize:11, fontWeight:700, color:T.text }}>{a.name}</div><div style={{ fontSize:9, color:ac, fontWeight:700 }}>{a.percentOfAudience}% of audience</div></div></div><p style={{ fontSize:10, color:T.textSub, lineHeight:1.5, margin:'0 0 6px' }}>{a.description}</p><div style={{ fontSize:10, color:T.text, background:ac+'12', border:`1px solid ${ac}33`, borderRadius:7, padding:'5px 9px' }}><span style={{ fontSize:8, fontWeight:800, color:ac, textTransform:'uppercase', letterSpacing:0.5 }}>Wants: </span>{a.whatTheyWant}</div></div>); })}
+                    {(aiResult.archetypes||[]).map((a,i)=>{
+                      const ac = ARCHETYPE_COLORS[i%ARCHETYPE_COLORS.length];
+                      return(
+                        <div key={i} style={{ background:`linear-gradient(135deg,${ac}12,${ac}04)`, border:`1px solid ${ac}33`, borderRadius:10, padding:'10px 14px' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
+                            <span style={{ fontSize:18 }}>{a.emoji}</span>
+                            <div style={{ flex:1 }}>
+                              <div style={{ fontSize:11, fontWeight:700, color:T.text }}>{a.name}</div>
+                              <div style={{ fontSize:9, color:ac, fontWeight:700 }}>{a.percentOfAudience}% of audience</div>
+                            </div>
+                          </div>
+                          <p style={{ fontSize:10, color:T.textSub, lineHeight:1.5, margin:'0 0 6px' }}>{a.description}</p>
+                          <div style={{ fontSize:10, color:T.text, background:ac+'12', border:`1px solid ${ac}33`, borderRadius:7, padding:'5px 9px' }}>
+                            <span style={{ fontSize:8, fontWeight:800, color:ac, textTransform:'uppercase', letterSpacing:0.5 }}>Wants: </span>{a.whatTheyWant}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
+
+              {/* Gaps + Momentum side by side */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
+
+                {/* Gaps */}
                 <div>
                   <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>🕳 Content Gaps</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-                    {(aiResult.gaps||[]).map((g,i)=>(<div key={i} onClick={()=>onAskMarcus&&onAskMarcus(`There's a content gap on my platform: "${g.topic}". Help me write a full outline for this article — include the best structure, key points, and how to optimize it for Google SEO and Discover. Context: ${g.whyItsMissing}`)} style={{ display:'flex', gap:10, background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, padding:'9px 12px', cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s' }} onMouseEnter={e=>{ if(onAskMarcus) e.currentTarget.style.borderColor='#ef4444'; }} onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; }}><span style={{ fontSize:16, flexShrink:0 }}>{g.emoji}</span><div style={{ flex:1, minWidth:0 }}><div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}><span style={{ fontSize:11, fontWeight:700, color:T.text }}>{g.topic}</span><ResultBadge label={g.urgency} color={URGENCY_C[g.urgency]}/></div><p style={{ fontSize:10, color:T.textSub, lineHeight:1.4, margin:'0 0 3px' }}>{g.whyItsMissing}</p><p style={{ fontSize:10, color:T.accent, margin:0, fontWeight:600 }}>→ {g.opportunity}</p></div></div>))}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>📈 Momentum</div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                    <div style={{ fontSize:9, fontWeight:700, color:'#34d399', textTransform:'uppercase', letterSpacing:0.8, marginBottom:2 }}>▲ Rising</div>
-                    {(aiResult.momentum?.rising||[]).map((r,i)=>(<div key={i} onClick={()=>onAskMarcus&&onAskMarcus(`"${r.topic}" is a rising trend on my platform. Help me write a full content outline to capitalize on this momentum. ${r.signal}`)} style={{ display:'flex', gap:7, padding:'6px 9px', background:'rgba(52,211,153,0.06)', borderRadius:8, cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s', border:'1px solid transparent' }} onMouseEnter={e=>{ if(onAskMarcus) e.currentTarget.style.borderColor='rgba(52,211,153,0.3)'; }} onMouseLeave={e=>{ e.currentTarget.style.borderColor='transparent'; }}><span style={{ fontSize:13 }}>{r.emoji}</span><div><div style={{ fontSize:10, fontWeight:700, color:'#34d399' }}>{r.topic}</div><div style={{ fontSize:9, color:'#6ee7b7', lineHeight:1.3 }}>{r.signal}</div></div></div>))}
-                    <div style={{ fontSize:9, fontWeight:700, color:'#f87171', textTransform:'uppercase', letterSpacing:0.8, marginTop:6, marginBottom:2 }}>▼ Cooling</div>
-                    {(aiResult.momentum?.declining||[]).map((r,i)=>(<div key={i} style={{ display:'flex', gap:7, padding:'6px 9px', background:'rgba(248,113,113,0.06)', borderRadius:8 }}><span style={{ fontSize:13 }}>{r.emoji}</span><div><div style={{ fontSize:10, fontWeight:700, color:'#f87171' }}>{r.topic}</div><div style={{ fontSize:9, color:'#fca5a5', lineHeight:1.3 }}>{r.signal}</div></div></div>))}
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>✍️ 5 Content Outlines</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                  {(aiResult.outlines||[]).map((o,i)=>(<div key={i} onClick={()=>onAskMarcus&&onAskMarcus(`Help me write a full outline for: "${o.title}". Include the best structure, key points to cover, the specific angle (${o.angle}), and how to optimize it for Google traffic and Google Discover.`)} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:11, padding:'14px 16px', cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s, transform 0.15s' }} onMouseEnter={e=>{ if(onAskMarcus){ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.transform='translateY(-1px)'; }}} onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.transform='translateY(0)'; }}><div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:8 }}><div style={{ flex:1 }}><div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:3 }}><span style={{ fontSize:10, fontWeight:800, color:T.textMuted }}>#{i+1}</span><span style={{ fontSize:12, fontWeight:700, color:T.text }}>{o.title}</span></div><p style={{ fontSize:10, color:T.textSub, lineHeight:1.5, margin:0 }}>{o.angle}</p></div><ResultBadge label={`${o.estimatedImpact} impact`} color={(IMPACT_C[o.estimatedImpact]||'#94a3b8')}/></div><div style={{ fontSize:10, color:T.accent, fontWeight:600, background:T.accent+'12', border:`1px solid ${T.accent}33`, borderRadius:7, padding:'5px 10px', marginBottom:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}><span>💡 {o.whyNow}</span>{onAskMarcus&&<span style={{ fontSize:9, color:T.accent, opacity:0.7 }}>Click → Get outline with Marcus</span>}</div><div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>{(o.structure||[]).map((s,j)=>(<div key={j} style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ fontSize:8, fontWeight:800, color:T.textMuted }}>{'0'+(j+1)}</span><span style={{ fontSize:10, color:T.text }}>{s}</span>{j<(o.structure||[]).length-1 && <span style={{ color:T.border, fontSize:9 }}>›</span>}</div>))}</div></div>))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WORLD NET — Content Network Generator
-// ─────────────────────────────────────────────────────────────────────────────
-const WorldNet = ({ theme:T }) => {
-  const [loading,      setLoading]      = useState(false);
-  const [result,       setResult]       = useState(null);
-  const [error,        setError]        = useState(null);
-  const [expandedCard, setExpandedCard] = useState(null);
-  const [activeSection,setActiveSection]= useState('pieces'); // 'pieces' | 'terms' | 'network'
-  const [library,      setLibrary]      = useState([]);
-  const [generatedAt,  setGeneratedAt]  = useState(null);
-
-  // Load existing article library from Supabase on mount
-  useEffect(()=>{
-    (async()=>{
-      try {
-        const { data } = await supabase
-          .from('book_summaries')
-          .select('title,category')
-          .order('created_at', { ascending:false })
-          .limit(150);
-        setLibrary((data||[]).map(d=>d.title).filter(Boolean));
-      } catch(e) { console.error('WorldNet library load error', e); }
-    })();
-  },[]);
-
-  const generate = async () => {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setExpandedCard(null);
-    try {
-      const res = await fetch('/api/ai-advisor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode:'worldnet', existingLibrary: library }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Generation failed');
-      setResult(data);
-      setGeneratedAt(new Date());
-      setActiveSection('pieces');
-    } catch(e) {
-      setError(e.message || 'Something went wrong. Try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Build the full writing prompt for a piece (replacing placeholders with real content)
-  const buildWritingPrompt = (piece) => {
-    if (!piece) return '';
-    return `Write a comprehensive 1500-word article titled "${piece.title}".
-
-STRUCTURE TO FOLLOW:
-${(piece.outline||[]).map((s,i)=>`${i+1}. ${s}`).join('\n')}
-
-KEY POINTS TO COVER:
-${(piece.keyPoints||[]).map((k,i)=>`• ${k}`).join('\n')}
-
-CALL TO ACTION / CLOSING ADVICE:
-${piece.cta||'Encourage the reader to apply these insights immediately.'}
-
-TARGET AUDIENCE: Entrepreneurs, business professionals, investors, and marketers.
-
-SEO KEYWORDS TO USE NATURALLY:
-${(piece.seoKeywords||[]).join(', ')}
-
-WRITING GUIDELINES:
-- Write as educational strategy content — NOT as news reporting
-- Frame insights as timeless wisdom applicable today, next year, any day
-- Use clear subheadings matching the structure above
-- Keep paragraphs short (2-4 sentences max)
-- Bold one key insight per section
-- End with the CTA above, framed as professional advice
-- Tone: authoritative, practical, forward-thinking
-
-NETWORK TERMS TO BOLD (for auto-linking):
-${result?.networkTerms?.newTerms?.map(t=>t.term).join(', ')||''}
-
-RELATED ARTICLES TO SUGGEST AT END:
-${(piece.relatedFromLibrary||[]).map((r,i)=>`${i+1}. ${r}`).join('\n')}`;
-  };
-
-  const pillarColor = (pillar) => PILLAR_COLORS[pillar] || T.accent;
-  const pillarIcon  = (pillar) => PILLAR_ICONS[pillar]  || '📄';
-
-  const SectionBtn = ({ id, label }) => (
-    <button onClick={()=>setActiveSection(id)} style={{ padding:'6px 16px', borderRadius:7, cursor:'pointer', fontSize:12, fontWeight:700, transition:'all 0.15s', background: activeSection===id ? T.accent+'33' : 'transparent', border:`1px solid ${activeSection===id ? T.accent+'66' : T.border}`, color: activeSection===id ? T.accent : T.tabInactive }}>
-      {label}
-    </button>
-  );
-
-  // ── Empty state ────────────────────────────────────────────────────────────
-  if (!result && !loading) return (
-    <div style={{ overflowY:'auto', flex:1, paddingRight:4, paddingBottom:8 }}>
-      <style>{`
-        @keyframes wnPulse { 0%,100%{opacity:0.4;transform:scale(1)} 50%{opacity:1;transform:scale(1.05)} }
-        @keyframes wnSpin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-        @keyframes wnFade  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
-
-      {/* Hero section */}
-      <div style={{ background:`linear-gradient(135deg,${T.accent}10,${T.aiAccent}06)`, border:`1px solid ${T.accent}22`, borderRadius:16, padding:'32px 28px', marginBottom:16, textAlign:'center', position:'relative', overflow:'hidden' }}>
-        <div style={{ position:'absolute', top:-40, right:-40, width:180, height:180, borderRadius:'50%', background:`radial-gradient(circle,${T.accent}12,transparent 70%)`, pointerEvents:'none' }}/>
-        <div style={{ position:'absolute', bottom:-30, left:-30, width:120, height:120, borderRadius:'50%', background:`radial-gradient(circle,${T.aiAccent}10,transparent 70%)`, pointerEvents:'none' }}/>
-        <div style={{ fontSize:36, marginBottom:12, animation:'wnPulse 3s ease-in-out infinite' }}>🌐</div>
-        <div style={{ fontSize:20, fontWeight:900, color:T.text, letterSpacing:-0.5, marginBottom:8 }}>World Net Generator</div>
-        <div style={{ fontSize:12, color:T.textSub, lineHeight:1.7, maxWidth:480, margin:'0 auto 24px' }}>
-          Crawls the last <strong style={{ color:T.accent }}>12 hours</strong> of world news and transforms it into a complete content network — <strong style={{ color:T.text }}>10 SEO-optimized articles</strong> across your 4 pillars, each with a ready-to-paste writing prompt, 20 network terms for auto-linking, and 5 related articles from your existing library.
-        </div>
-
-        {/* 4 pillars display */}
-        <div style={{ display:'flex', gap:8, justifyContent:'center', marginBottom:24, flexWrap:'wrap' }}>
-          {Object.entries(PILLAR_COLORS).map(([pillar,color])=>(
-            <div key={pillar} style={{ display:'flex', alignItems:'center', gap:5, background:color+'14', border:`1px solid ${color}33`, borderRadius:20, padding:'5px 12px' }}>
-              <span style={{ fontSize:12 }}>{PILLAR_ICONS[pillar]}</span>
-              <span style={{ fontSize:10, fontWeight:700, color }}>{pillar.split(' ')[0]}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* What you get */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:24 }}>
-          {[
-            { icon:'📰', label:'10 Titles', desc:'4 high-impact magnets + 6 pillar pieces' },
-            { icon:'🔗', label:'20 Terms', desc:'New terms for auto-linking across all articles' },
-            { icon:'📋', label:'Per-Title Prompt', desc:'Copy → paste → get full article instantly' },
-          ].map((item,i)=>(
-            <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'12px 10px', textAlign:'center' }}>
-              <div style={{ fontSize:20, marginBottom:6 }}>{item.icon}</div>
-              <div style={{ fontSize:11, fontWeight:800, color:T.text, marginBottom:3 }}>{item.label}</div>
-              <div style={{ fontSize:10, color:T.textMuted, lineHeight:1.4 }}>{item.desc}</div>
-            </div>
-          ))}
-        </div>
-
-        {error && (
-          <div style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:9, padding:'10px 14px', color:'#f87171', fontSize:11, marginBottom:16, textAlign:'left' }}>⚠️ {error}</div>
-        )}
-
-        <button onClick={generate} style={{ padding:'14px 40px', borderRadius:12, border:'none', cursor:'pointer', background:`linear-gradient(135deg,${T.accent},${T.aiAccent})`, color:'#fff', fontSize:14, fontWeight:900, letterSpacing:0.3, boxShadow:`0 8px 32px ${T.accent}40`, transition:'all 0.2s' }}
-          onMouseEnter={e=>{ e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow=`0 12px 40px ${T.accent}55`; }}
-          onMouseLeave={e=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow=`0 8px 32px ${T.accent}40`; }}>
-          🌐 Generate World Net
-        </button>
-        <div style={{ fontSize:10, color:T.textMuted, marginTop:10 }}>~30 seconds · crawls real news · uses your {library.length} article library</div>
-      </div>
-    </div>
-  );
-
-  // ── Loading state ──────────────────────────────────────────────────────────
-  if (loading) return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16 }}>
-      <style>{`@keyframes wnSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes wnDot{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}`}</style>
-      <div style={{ position:'relative', width:72, height:72 }}>
-        <div style={{ position:'absolute', inset:0, borderRadius:'50%', border:`3px solid ${T.border}` }}/>
-        <div style={{ position:'absolute', inset:0, borderRadius:'50%', border:`3px solid transparent`, borderTopColor:T.accent, animation:'wnSpin 1s linear infinite' }}/>
-        <div style={{ position:'absolute', inset:8, borderRadius:'50%', border:`2px solid transparent`, borderTopColor:T.aiAccent, animation:'wnSpin 0.7s linear infinite reverse' }}/>
-        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>🌐</div>
-      </div>
-      <div style={{ textAlign:'center' }}>
-        <div style={{ fontSize:14, fontWeight:800, color:T.text, marginBottom:6 }}>Crawling the world…</div>
-        <div style={{ fontSize:11, color:T.textMuted, lineHeight:1.7 }}>
-          Scanning last 12 hours of global news<br/>
-          Transforming into content strategy<br/>
-          Building your network guide
-        </div>
-      </div>
-      <div style={{ display:'flex', gap:5 }}>
-        {[0,1,2].map(i=>(
-          <div key={i} style={{ width:8, height:8, borderRadius:'50%', background:T.accent, animation:`wnDot 1.4s ease-in-out ${i*0.16}s infinite` }}/>
-        ))}
-      </div>
-    </div>
-  );
-
-  // ── Results ────────────────────────────────────────────────────────────────
-  return (
-    <div style={{ overflowY:'auto', flex:1, paddingRight:4, paddingBottom:8 }}>
-      <style>{`@keyframes wnFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
-
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-        <div>
-          <div style={{ fontSize:13, fontWeight:900, color:T.text, display:'flex', alignItems:'center', gap:8 }}>
-            🌐 World Net
-            <span style={{ fontSize:10, fontWeight:700, color:'#34d399', background:'rgba(52,211,153,0.1)', padding:'2px 10px', borderRadius:20, border:'1px solid rgba(52,211,153,0.2)' }}>
-              {result?.pieces?.length||0} pieces generated
-            </span>
-          </div>
-          {generatedAt && (
-            <div style={{ fontSize:10, color:T.textMuted, marginTop:3 }}>
-              Generated {generatedAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · {result?.newsWindow||'last 12 hours'}
-            </div>
-          )}
-        </div>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={()=>{ setResult(null); setError(null); }} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.textMuted, padding:'6px 14px', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all 0.15s' }}
-            onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.color=T.accent; }}
-            onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.color=T.textMuted; }}>
-            ↺ Regenerate
-          </button>
-        </div>
-      </div>
-
-      {/* World context banner */}
-      {result?.worldContext && (
-        <div style={{ background:`linear-gradient(135deg,${T.accent}12,${T.aiAccent}06)`, border:`1px solid ${T.accent}33`, borderRadius:12, padding:'12px 16px', marginBottom:14, animation:'wnFade 0.4s ease' }}>
-          <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.accent, marginBottom:5 }}>🌍 World Context — Last 12 Hours</div>
-          <p style={{ fontSize:12, color:T.text, lineHeight:1.65, margin:0 }}>{result.worldContext}</p>
-        </div>
-      )}
-
-      {/* Section nav */}
-      <div style={{ display:'flex', gap:4, background:T.surface, borderRadius:9, padding:3, border:`1px solid ${T.border}`, marginBottom:14 }}>
-        <SectionBtn id="pieces"  label={`📄 10 Content Pieces`}/>
-        <SectionBtn id="terms"   label={`🔗 Network Terms (${(result?.networkTerms?.newTerms?.length||0) + (result?.networkTerms?.existingTerms?.length||0)})`}/>
-        <SectionBtn id="network" label="🗺 Network Guide"/>
-      </div>
-
-      {/* ── PIECES SECTION ── */}
-      {activeSection === 'pieces' && (
-        <div style={{ display:'flex', flexDirection:'column', gap:10, animation:'wnFade 0.3s ease' }}>
-          {(result?.pieces||[]).map((piece, i) => {
-            const pColor = pillarColor(piece.pillar);
-            const isExpanded = expandedCard === piece.id;
-            const writingPrompt = buildWritingPrompt(piece);
-            return (
-              <div key={piece.id||i} style={{ background:T.surface, border:`1px solid ${isExpanded ? pColor+'66' : T.border}`, borderRadius:12, overflow:'hidden', transition:'all 0.2s', animation:`wnFade ${0.1 + i*0.04}s ease` }}>
-
-                {/* Card header — always visible */}
-                <div style={{ padding:'14px 16px', cursor:'pointer' }} onClick={()=>setExpandedCard(isExpanded ? null : (piece.id||i))}>
-                  <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
-                    {/* Number + magnet badge */}
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, flexShrink:0 }}>
-                      <div style={{ width:32, height:32, borderRadius:8, background:`linear-gradient(135deg,${pColor}33,${pColor}11)`, border:`1px solid ${pColor}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:900, color:pColor }}>{i+1}</div>
-                      {piece.isMagnet && (<span style={{ fontSize:7, fontWeight:900, color:'#ef4444', background:'rgba(239,68,68,0.1)', padding:'1px 5px', borderRadius:4, textTransform:'uppercase', letterSpacing:0.5, border:'1px solid rgba(239,68,68,0.2)', whiteSpace:'nowrap' }}>🔥 Magnet</span>)}
-                    </div>
-
-                    {/* Title + meta */}
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
-                        <span style={{ fontSize:10 }}>{pillarIcon(piece.pillar)}</span>
-                        <span style={{ fontSize:9, fontWeight:700, color:pColor, textTransform:'uppercase', letterSpacing:0.8 }}>{piece.pillar}</span>
-                        {piece.searchVolumePotential && (
-                          <span style={{ fontSize:8, fontWeight:800, color: piece.searchVolumePotential==='high'?'#34d399':piece.searchVolumePotential==='rising'?'#f59e0b':'#64748b', background: piece.searchVolumePotential==='high'?'rgba(52,211,153,0.1)':'rgba(245,158,11,0.1)', padding:'1px 6px', borderRadius:10, textTransform:'uppercase' }}>{piece.searchVolumePotential} traffic</span>
-                        )}
+                    {(aiResult.gaps||[]).map((g,i)=>(
+                      <div key={i}
+                        onClick={()=>onAskMarcus&&onAskMarcus(`There's a content gap on my platform: "${g.topic}". Help me write a full outline for this article — include the best structure, key points, and how to optimize it for Google SEO and Discover. Context: ${g.whyItsMissing}`)}
+                        style={{ display:'flex', gap:10, background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, padding:'9px 12px', cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s' }}
+                        onMouseEnter={e=>{ if(onAskMarcus) e.currentTarget.style.borderColor='#ef4444'; }}
+                        onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; }}>
+                        <span style={{ fontSize:16, flexShrink:0 }}>{g.emoji}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:3 }}>
+                            <span style={{ fontSize:11, fontWeight:700, color:T.text }}>{g.topic}</span>
+                            <ResultBadge label={g.urgency} color={URGENCY_C[g.urgency]}/>
+                          </div>
+                          <p style={{ fontSize:10, color:T.textSub, lineHeight:1.4, margin:'0 0 3px' }}>{g.whyItsMissing}</p>
+                          <p style={{ fontSize:10, color:T.accent, margin:0, fontWeight:600 }}>→ {g.opportunity}</p>
+                        </div>
                       </div>
-                      <div style={{ fontSize:13, fontWeight:800, color:T.text, lineHeight:1.4, marginBottom:6 }}>{piece.title}</div>
-                      <div style={{ fontSize:10, color:T.textMuted, lineHeight:1.4, fontStyle:'italic' }}>{piece.newsSource}</div>
-                    </div>
-
-                    {/* Expand chevron */}
-                    <div style={{ fontSize:12, color:T.textMuted, transform:isExpanded?'rotate(180deg)':'rotate(0deg)', transition:'transform 0.2s', flexShrink:0, marginTop:4 }}>▼</div>
-                  </div>
-
-                  {/* SEO keywords row — always visible */}
-                  <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginTop:8, paddingLeft:44 }}>
-                    {(piece.seoKeywords||[]).slice(0,4).map((kw,j)=>(
-                      <span key={j} style={{ fontSize:9, color:pColor, background:pColor+'12', border:`1px solid ${pColor}22`, padding:'1px 7px', borderRadius:10 }}>{kw}</span>
                     ))}
                   </div>
                 </div>
 
-                {/* Expanded content */}
-                {isExpanded && (
-                  <div style={{ borderTop:`1px solid ${T.border}`, padding:'16px', animation:'wnFade 0.2s ease' }}>
-
-                    {/* Magnet reason */}
-                    {piece.isMagnet && piece.magnetReason && (
-                      <div style={{ display:'flex', gap:8, background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.18)', borderRadius:9, padding:'8px 12px', marginBottom:12 }}>
-                        <span style={{ fontSize:14, flexShrink:0 }}>🔥</span>
-                        <div>
-                          <div style={{ fontSize:9, fontWeight:800, color:'#ef4444', textTransform:'uppercase', letterSpacing:0.8, marginBottom:2 }}>Traffic Magnet</div>
-                          <div style={{ fontSize:11, color:'#fca5a5', lineHeight:1.4 }}>{piece.magnetReason}</div>
-                        </div>
+                {/* Momentum */}
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>📈 Momentum</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    <div style={{ fontSize:9, fontWeight:700, color:'#34d399', textTransform:'uppercase', letterSpacing:0.8, marginBottom:2 }}>▲ Rising</div>
+                    {(aiResult.momentum?.rising||[]).map((r,i)=>(
+                      <div key={i}
+                        onClick={()=>onAskMarcus&&onAskMarcus(`"${r.topic}" is a rising trend on my platform. Help me write a full content outline to capitalize on this momentum. ${r.signal}`)}
+                        style={{ display:'flex', gap:7, padding:'6px 9px', background:'rgba(52,211,153,0.06)', borderRadius:8, cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s', border:'1px solid transparent' }}
+                        onMouseEnter={e=>{ if(onAskMarcus) e.currentTarget.style.borderColor='rgba(52,211,153,0.3)'; }}
+                        onMouseLeave={e=>{ e.currentTarget.style.borderColor='transparent'; }}>
+                        <span style={{ fontSize:13 }}>{r.emoji}</span>
+                        <div><div style={{ fontSize:10, fontWeight:700, color:'#34d399' }}>{r.topic}</div><div style={{ fontSize:9, color:'#6ee7b7', lineHeight:1.3 }}>{r.signal}</div></div>
                       </div>
-                    )}
-
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
-                      {/* Key points */}
-                      <div>
-                        <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.2, color:T.textMuted, marginBottom:8 }}>💡 Key Points</div>
-                        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                          {(piece.keyPoints||[]).map((kp,j)=>(
-                            <div key={j} style={{ display:'flex', gap:7, alignItems:'flex-start' }}>
-                              <div style={{ width:16, height:16, borderRadius:4, background:pColor+'22', border:`1px solid ${pColor}33`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:900, color:pColor, flexShrink:0, marginTop:1 }}>{j+1}</div>
-                              <span style={{ fontSize:11, color:T.text, lineHeight:1.5 }}>{kp}</span>
-                            </div>
-                          ))}
-                        </div>
+                    ))}
+                    <div style={{ fontSize:9, fontWeight:700, color:'#f87171', textTransform:'uppercase', letterSpacing:0.8, marginTop:6, marginBottom:2 }}>▼ Cooling</div>
+                    {(aiResult.momentum?.declining||[]).map((r,i)=>(
+                      <div key={i} style={{ display:'flex', gap:7, padding:'6px 9px', background:'rgba(248,113,113,0.06)', borderRadius:8 }}>
+                        <span style={{ fontSize:13 }}>{r.emoji}</span>
+                        <div><div style={{ fontSize:10, fontWeight:700, color:'#f87171' }}>{r.topic}</div><div style={{ fontSize:9, color:'#fca5a5', lineHeight:1.3 }}>{r.signal}</div></div>
                       </div>
-
-                      {/* Outline */}
-                      <div>
-                        <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.2, color:T.textMuted, marginBottom:8 }}>📋 Article Outline</div>
-                        <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-                          {(piece.outline||[]).map((sec,j)=>(
-                            <div key={j} style={{ display:'flex', gap:7, alignItems:'flex-start' }}>
-                              <div style={{ width:14, height:14, borderRadius:3, background:T.surface, border:`1px solid ${T.border}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:7, fontWeight:900, color:T.textMuted, flexShrink:0, marginTop:1 }}>{j+1}</div>
-                              <span style={{ fontSize:10, color:T.textSub, lineHeight:1.5 }}>{sec}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* CTA */}
-                    <div style={{ background:`linear-gradient(135deg,${pColor}10,${pColor}04)`, border:`1px solid ${pColor}22`, borderRadius:9, padding:'10px 14px', marginBottom:12 }}>
-                      <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1, color:pColor, marginBottom:4 }}>📣 Call to Action</div>
-                      <div style={{ fontSize:11, color:T.text, lineHeight:1.5 }}>{piece.cta}</div>
-                    </div>
-
-                    {/* Related from library */}
-                    {(piece.relatedFromLibrary||[]).length > 0 && (
-                      <div style={{ marginBottom:12 }}>
-                        <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1, color:T.textMuted, marginBottom:7 }}>📚 Related from Your Library</div>
-                        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                          {(piece.relatedFromLibrary||[]).map((title,j)=>(
-                            <div key={j} style={{ display:'flex', alignItems:'center', gap:7, padding:'5px 9px', background:T.surface, border:`1px solid ${T.border}`, borderRadius:7 }}>
-                              <div style={{ width:5, height:5, borderRadius:'50%', background:pColor, flexShrink:0 }}/>
-                              <span style={{ fontSize:10, color:T.text }}>{title}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Writing Prompt — the golden button */}
-                    <div style={{ background:`linear-gradient(135deg,${T.aiAccent}10,${T.aiAccent}04)`, border:`1px solid ${T.aiAccent}33`, borderRadius:12, padding:'14px 16px' }}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                        <div>
-                          <div style={{ fontSize:10, fontWeight:800, color:T.aiAccent, textTransform:'uppercase', letterSpacing:1 }}>✨ Writing Prompt</div>
-                          <div style={{ fontSize:9, color:T.textMuted, marginTop:2 }}>Copy → paste into any AI → get your full article</div>
-                        </div>
-                        <CopyButton text={writingPrompt} theme={T} label="Copy Prompt"/>
-                      </div>
-                      <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:'10px 12px', maxHeight:160, overflowY:'auto' }}>
-                        <pre style={{ fontSize:9, color:T.textSub, lineHeight:1.6, margin:0, whiteSpace:'pre-wrap', fontFamily:'monospace' }}>{writingPrompt}</pre>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── TERMS SECTION ── */}
-      {activeSection === 'terms' && (
-        <div style={{ animation:'wnFade 0.3s ease' }}>
-          {/* New terms */}
-          <div style={{ marginBottom:18 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-              <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.text }}>🆕 20 New Network Terms</div>
-              <span style={{ fontSize:9, color:T.textMuted }}>Bold these in every article for auto-linking</span>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-              {(result?.networkTerms?.newTerms||[]).map((termObj,i)=>(
-                <div key={i} style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'10px 14px', transition:'border-color 0.15s' }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:5 }}>
-                    <span style={{ fontSize:12, fontWeight:800, color:T.accent }}>**{termObj.term}**</span>
-                    <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end' }}>
-                      {(termObj.appearsIn||[]).map(n=>(
-                        <span key={n} style={{ fontSize:8, fontWeight:700, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, padding:'1px 5px' }}>#{n}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ fontSize:10, color:T.textSub, lineHeight:1.4 }}>{termObj.definition}</div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Existing terms from library */}
-          {(result?.networkTerms?.existingTerms||[]).length > 0 && (
-            <div>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-                <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.text }}>🔗 Existing Library Terms</div>
-                <span style={{ fontSize:9, color:T.textMuted }}>Found in your library — bold these to link back to old articles</span>
               </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                {(result?.networkTerms?.existingTerms||[]).map((termObj,i)=>{
-                  const pColor = T.aiAccent;
-                  return(
-                    <div key={i} style={{ display:'flex', gap:12, alignItems:'flex-start', background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'10px 14px' }}>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:12, fontWeight:800, color:pColor, marginBottom:3 }}>**{termObj.term}**</div>
-                        <div style={{ fontSize:10, color:T.textSub }}>Links to: <em style={{ color:T.text }}>{termObj.linkedArticle}</em></div>
+
+              {/* 5 Content Outlines */}
+              <div>
+                <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:8 }}>✍️ 5 Content Outlines</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                  {(aiResult.outlines||[]).map((o,i)=>(
+                    <div key={i}
+                      onClick={()=>onAskMarcus&&onAskMarcus(`Help me write a full outline for: "${o.title}". Include the best structure, key points to cover, the specific angle (${o.angle}), and how to optimize it for Google traffic and Google Discover.`)}
+                      style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:11, padding:'14px 16px', cursor:onAskMarcus?'pointer':'default', transition:'border-color 0.15s, transform 0.15s' }}
+                      onMouseEnter={e=>{ if(onAskMarcus){ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.transform='translateY(-1px)'; }}}
+                      onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.transform='translateY(0)'; }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:8 }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:3 }}>
+                            <span style={{ fontSize:10, fontWeight:800, color:T.textMuted }}>#{i+1}</span>
+                            <span style={{ fontSize:12, fontWeight:700, color:T.text }}>{o.title}</span>
+                          </div>
+                          <p style={{ fontSize:10, color:T.textSub, lineHeight:1.5, margin:0 }}>{o.angle}</p>
+                        </div>
+                        <ResultBadge label={`${o.estimatedImpact} impact`} color={IMPACT_C[o.estimatedImpact]||'#94a3b8'}/>
                       </div>
-                      <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end', maxWidth:120 }}>
-                        {(termObj.appearsIn||[]).map(n=>(
-                          <span key={n} style={{ fontSize:8, fontWeight:700, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, padding:'1px 5px' }}>#{n}</span>
+                      <div style={{ fontSize:10, color:T.accent, fontWeight:600, background:T.accent+'12', border:`1px solid ${T.accent}33`, borderRadius:7, padding:'5px 10px', marginBottom:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <span>💡 {o.whyNow}</span>
+                        {onAskMarcus&&<span style={{ fontSize:9, color:T.accent, opacity:0.7 }}>Click → Get outline with Marcus</span>}
+                      </div>
+                      <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                        {(o.structure||[]).map((s,j)=>(
+                          <div key={j} style={{ display:'flex', alignItems:'center', gap:4 }}>
+                            <span style={{ fontSize:8, fontWeight:800, color:T.textMuted }}>{'0'+(j+1)}</span>
+                            <span style={{ fontSize:10, color:T.text }}>{s}</span>
+                            {j<(o.structure||[]).length-1 && <span style={{ color:T.border, fontSize:9 }}>›</span>}
+                          </div>
                         ))}
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── NETWORK GUIDE SECTION ── */}
-      {activeSection === 'network' && (
-        <div style={{ animation:'wnFade 0.3s ease' }}>
-
-          {/* Bolding rules */}
-          <div style={{ background:`linear-gradient(135deg,${T.accent}10,${T.accent}04)`, border:`1px solid ${T.accent}33`, borderRadius:12, padding:'14px 18px', marginBottom:14 }}>
-            <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.accent, marginBottom:6 }}>📌 Bolding Rules</div>
-            <p style={{ fontSize:12, color:T.text, lineHeight:1.65, margin:0 }}>{result?.networkGuide?.boldingRules}</p>
-          </div>
-
-          {/* Linking strategy */}
-          <div style={{ background:`linear-gradient(135deg,${T.aiAccent}10,${T.aiAccent}04)`, border:`1px solid ${T.aiAccent}33`, borderRadius:12, padding:'14px 18px', marginBottom:14 }}>
-            <div style={{ fontSize:9, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.aiAccent, marginBottom:6 }}>🔗 Linking Strategy</div>
-            <p style={{ fontSize:12, color:T.text, lineHeight:1.65, margin:0 }}>{result?.networkGuide?.linkingStrategy}</p>
-          </div>
-
-          {/* Shared suggestions */}
-          <div>
-            <div style={{ fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.text, marginBottom:10 }}>📎 10 Shared Suggestion Titles</div>
-            <div style={{ fontSize:10, color:T.textMuted, marginBottom:12, lineHeight:1.6 }}>Use 3-5 of these as "Related Articles" suggestions at the end of each piece. Match by pillar numbers.</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-              {(result?.networkGuide?.sharedSuggestions||[]).map((sug,i)=>(
-                <div key={i} style={{ display:'flex', gap:12, alignItems:'flex-start', background:T.surface, border:`1px solid ${T.border}`, borderRadius:10, padding:'10px 14px', transition:'border-color 0.15s' }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                  <div style={{ width:22, height:22, borderRadius:6, background:T.accent+'22', border:`1px solid ${T.accent}33`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:900, color:T.accent, flexShrink:0 }}>{i+1}</div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12, fontWeight:700, color:T.text, marginBottom:4 }}>{sug.title}</div>
-                    <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-                      {(sug.relevantFor||[]).map(n=>(
-                        <span key={n} style={{ fontSize:8, fontWeight:700, color:T.textMuted, background:T.surface, border:`1px solid ${T.border}`, borderRadius:4, padding:'1px 6px' }}>Piece #{n}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <CopyButton text={sug.title} theme={T} label="Copy"/>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       )}
     </div>
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ANALYTICS DASHBOARD
-// ─────────────────────────────────────────────────────────────────────────────
+
 const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const [period, setPeriod]       = useState('Week');
   const [activeMetric, setMetric] = useState('views');
@@ -1141,6 +977,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       const sinceB=new Date(now-curMs*2).toISOString();
       const trunc=periodTrunc[period];
 
+      // QUERY 1: current period rows (fetch once, count client-side — replaces 4 count queries)
       const [
         {data:viewRowsA},{data:likeRowsA},{data:ratingRowsA},{data:userRowsA}
       ] = await Promise.all([
@@ -1150,6 +987,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
         supabase.from('profiles').select('created_at').gte('created_at',sinceA),
       ]);
 
+      // QUERY 2: previous period counts (still need head:true for prev period delta)
       const [vB,lB,rB,uB] = await Promise.all([
         supabase.from('views').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
         supabase.from('likes').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
@@ -1160,6 +998,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       setStats({ views:viewRowsA?.length??0, likes:likeRowsA?.length??0, ratings:ratingRowsA?.length??0, newUsers:userRowsA?.length??0 });
       setPrev ({ views:vB.count??0, likes:lB.count??0, ratings:rB.count??0, newUsers:uB.count??0 });
 
+      // Chart from same rows — no extra queries
       const bucketKey=(iso)=>{ const d=new Date(iso); if(trunc==='hour') return `${String(d.getHours()).padStart(2,'0')}:00`; if(trunc==='month') return d.toLocaleDateString('en-US',{month:'short'}); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); };
       const bkt={views:{},likes:{},ratings:{}};
       (viewRowsA||[]).forEach(r=>{ const k=bucketKey(r.created_at); bkt.views[k]=(bkt.views[k]||0)+1; });
@@ -1167,8 +1006,10 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       (ratingRowsA||[]).forEach(r=>{ const k=bucketKey(r.created_at); bkt.ratings[k]=(bkt.ratings[k]||0)+1; });
       const allKeys=[...new Set([...Object.keys(bkt.views),...Object.keys(bkt.likes),...Object.keys(bkt.ratings)])].sort();
       setChart(allKeys.map(k=>({ date:k, views:bkt.views[k]||0, likes:bkt.likes[k]||0, ratings:bkt.ratings[k]||0 })));
+
       setRawViews(viewRowsA||[]);
 
+      // QUERY 3: top content details (only if there are views)
       if(viewRowsA&&viewRowsA.length>0){
         const viewCounts={};
         viewRowsA.forEach(r=>{ viewCounts[r.post_id]=(viewCounts[r.post_id]||0)+1; });
@@ -1177,6 +1018,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
         setTop((contentDetails||[]).map(c=>({...c,period_views:viewCounts[c.id]||0})).sort((a,b)=>b.period_views-a.period_views));
       } else { setTop([]); }
 
+      // QUERY 4: categories + comments in parallel
       const [{data:cats},{data:comms}] = await Promise.all([
         supabase.from('book_summaries').select('category,views_count').not('category','is',null),
         supabase.from('comments').select('id,content,created_at,profiles(username),book_summaries(title)').gte('created_at',sinceA).order('created_at',{ascending:false}).limit(5),
@@ -1186,6 +1028,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       const total=Object.values(catMap).reduce((s,v)=>s+v,0)||1;
       setCat(Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([name,value],i)=>({ name, value:Math.round(value/total*100), color:CAT_COLOURS[i%CAT_COLOURS.length] })));
       setComments(comms||[]);
+
     } catch(err){ console.error('Dashboard error',err); }
     finally{ setLoading(false); }
   },[period]);
@@ -1196,8 +1039,16 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const filteredCats=catSearch.trim()?catData.filter(c=>c.name.toLowerCase().includes(catSearch.trim().toLowerCase())):catData;
 
   const getDrillContent=()=>{
-    if(period==='Today'&&selectedHour!==null){ const hourCounts={}; rawViews.forEach(r=>{ if(new Date(r.created_at).getHours()===selectedHour) hourCounts[r.post_id]=(hourCounts[r.post_id]||0)+1; }); const ids=new Set(Object.keys(hourCounts)); return topContent.filter(c=>ids.has(c.id)).map(c=>({...c,period_views:hourCounts[c.id]||0})).sort((a,b)=>b.period_views-a.period_views); }
-    if(period==='Week'&&selectedDay!==null){ const dayCounts={}; rawViews.forEach(r=>{ if(new Date(r.created_at).getDay()===selectedDay) dayCounts[r.post_id]=(dayCounts[r.post_id]||0)+1; }); const ids=new Set(Object.keys(dayCounts)); return topContent.filter(c=>ids.has(c.id)).map(c=>({...c,period_views:dayCounts[c.id]||0})).sort((a,b)=>b.period_views-a.period_views); }
+    if(period==='Today'&&selectedHour!==null){
+      const hourCounts={}; rawViews.forEach(r=>{ if(new Date(r.created_at).getHours()===selectedHour) hourCounts[r.post_id]=(hourCounts[r.post_id]||0)+1; });
+      const ids=new Set(Object.keys(hourCounts));
+      return topContent.filter(c=>ids.has(c.id)).map(c=>({...c,period_views:hourCounts[c.id]||0})).sort((a,b)=>b.period_views-a.period_views);
+    }
+    if(period==='Week'&&selectedDay!==null){
+      const dayCounts={}; rawViews.forEach(r=>{ if(new Date(r.created_at).getDay()===selectedDay) dayCounts[r.post_id]=(dayCounts[r.post_id]||0)+1; });
+      const ids=new Set(Object.keys(dayCounts));
+      return topContent.filter(c=>ids.has(c.id)).map(c=>({...c,period_views:dayCounts[c.id]||0})).sort((a,b)=>b.period_views-a.period_views);
+    }
     return topContent;
   };
 
@@ -1211,6 +1062,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
 
   return(
     <div style={{ overflowY:'auto', flex:1, paddingRight:4, paddingBottom:8 }}>
+      {/* Period + refresh */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
         <span style={{ fontSize:11, color:T.textMuted }}>{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</span>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -1221,13 +1073,18 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
         </div>
       </div>
 
+      {/* PLATFORM BRIEF */}
       <PlatformBrief theme={T} topContent={topContent} catData={catData} stats={stats} prev={prev} rawViews={rawViews} period={period} onAskMarcus={onAskMarcus}/>
+
+      {/* LIVE FEED */}
       <LiveFeed theme={T}/>
 
+      {/* Stat cards */}
       <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap' }}>
         {METRICS.map(m=>(<StatCard key={m.id} label={m.label} icon={m.icon} value={stats[m.id]??0} delta={pct(stats[m.id]??0,prev[m.id]??0)} accent={m.color} theme={T}/>))}
       </div>
 
+      {/* Chart */}
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px', marginBottom:12 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
           <span style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub }}>{activeMetricObj.label} — {period}</span>
@@ -1250,6 +1107,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
         }
       </div>
 
+      {/* Top content + category */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 220px', gap:10, marginBottom:12 }}>
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
@@ -1283,7 +1141,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
             </div>
           )}
           {drillContent.length===0
-            ?<div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>{(period==='Today'&&selectedHour!==null)||(period==='Week'&&selectedDay!==null)?`No views recorded for this ${period==='Today'?'hour':'day'}`:`No views recorded yet`}</div>
+            ?<div style={{ color:T.textMuted, fontSize:12, padding:'16px 0', textAlign:'center' }}>{(period==='Today'&&selectedHour!==null)||(period==='Week'&&selectedDay!==null)?`No views recorded for this ${period==='Today'?'hour':'day'}`:`No views recorded ${period==='Today'?'today':period==='Week'?'this week':period==='Month'?'this month':'this year'} yet`}</div>
             :visibleContent.map((c,i)=>(
               <div key={c.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:i<visibleContent.length-1?`1px solid ${T.border}`:'none' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
@@ -1307,6 +1165,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
           )}
         </div>
 
+        {/* Category */}
         <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 12px', display:'flex', flexDirection:'column' }}>
           <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:8 }}>Categories ({catData.length})</div>
           {catData.length>6&&(<input value={catSearch} onChange={e=>setCatSearch(e.target.value)} placeholder="Filter categories…" style={{ width:'100%', padding:'5px 8px', marginBottom:8, background:T.inputBg, border:`1px solid ${T.inputBorder}`, borderRadius:6, color:T.text, fontSize:11, outline:'none', boxSizing:'border-box' }}/>)}
@@ -1328,9 +1187,10 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
         </div>
       </div>
 
+      {/* Comments */}
       <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px' }}>
         <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1.5, color:T.textSub, marginBottom:10 }}>Recent Comments — {period}</div>
-        {comments.length===0?<div style={{ color:T.textMuted, fontSize:12, textAlign:'center', padding:'16px 0' }}>No comments yet</div>:comments.map((c,i)=>{
+        {comments.length===0?<div style={{ color:T.textMuted, fontSize:12, textAlign:'center', padding:'16px 0' }}>No comments {period==='Today'?'today':period==='Week'?'this week':period==='Month'?'this month':'this year'}</div>:comments.map((c,i)=>{
           const user=c.profiles?.username||'Anonymous', post=c.book_summaries?.title||'Unknown', letter=user[0]?.toUpperCase()||'A';
           return(
             <div key={c.id} style={{ display:'flex', gap:10, padding:'8px 0', borderBottom:i<comments.length-1?`1px solid ${T.border}`:'none' }}>
@@ -1349,7 +1209,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI ADVISOR
+// AI ADVISOR (unchanged from your version)
 // ─────────────────────────────────────────────────────────────────────────────
 const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   const [subTab, setSubTab]         = useState('chat');
@@ -1368,15 +1228,10 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   const [chatInput, setChatInput]     = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef                 = useRef(null);
-
-  // World Net tab is rendered separately — this component just handles the 4 original sub-tabs
   const SUB_TABS = [
-    { id:'chat', label:'💬 Ask Marcus' },
-    { id:'trending', label:'🔍 Trending' },
-    { id:'recommendations', label:'💡 Content Ideas' },
-    { id:'news', label:'📰 Business News' },
+    { id:'chat', label:'💬 Ask Marcus' },{ id:'trending', label:'🔍 Trending' },
+    { id:'recommendations', label:'💡 Content Ideas' },{ id:'news', label:'📰 Business News' },
   ];
-
   const [suggestedPrompts, setSuggestedPrompts] = useState({
     chat:["What business topics are trending on Google right now?","How can I monetize Ogonjo's traffic better?","What content should I create this week to grow traffic?","Which African business trends should I be covering?","How do I get my content into Google Discover?"],
     trending:["What niche has the highest search demand right now?","What are entrepreneurs searching for most this week?","Which business concepts are going viral right now?"],
@@ -1410,6 +1265,7 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   useEffect(()=>{ setResult(null); setError(null); },[subTab,category]);
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({ behavior:'smooth' }); },[messages]);
 
+  // Auto-send question from Platform Brief when user navigates to AI tab
   useEffect(()=>{
     if(!initialQuestion) return;
     setSubTab('chat');
@@ -1592,58 +1448,30 @@ const UserProfile = ({ onClose, onUpdated }) => {
   if(loading) return(<div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1400 }}><div style={{ color:'#94a3b8', fontSize:13 }}>Loading…</div></div>);
 
   if(showDash){
-    // ── TABS — now includes World Net ────────────────────────────────────────
-    const tabs=[
-      { id:'profile',   label:'👤 Profile'    },
-      { id:'dashboard', label:'📊 Dashboard'  },
-      { id:'ai',        label:'✨ AI Advisor' },
-      { id:'worldnet',  label:'🌐 World Net'  }, // ← NEW TAB
-      ...(showTeam ? [{ id:'team', label:'👥 Team' }] : []),
-    ];
-
+    const tabs=[{id:'profile',label:'👤 Profile'},{id:'dashboard',label:'📊 Dashboard'},{id:'ai',label:'✨ AI Advisor'},...(showTeam?[{id:'team',label:'👥 Team'}]:[])];
     return(
       <div style={{ position:'fixed', inset:0, background:T.overlay, display:'flex', alignItems:'center', justifyContent:'center', zIndex:1400, padding:'3%', boxSizing:'border-box' }} role="dialog" aria-modal="true">
         <div style={{ background:T.bg, backgroundImage:T.bgGradient, width:'100%', height:'100%', borderRadius:16, border:`1px solid ${T.border}`, boxShadow:T.shadow, padding:'20px 24px', position:'relative', display:'flex', flexDirection:'column', fontFamily:"'DM Sans',sans-serif", overflow:'hidden' }}>
           <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
           <button onClick={onClose} style={{ position:'absolute', right:16, top:12, background:'none', border:'none', fontSize:'1.5rem', cursor:'pointer', color:T.closeColor, zIndex:10, lineHeight:1 }}>&times;</button>
-
-          {/* Header */}
           <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18, paddingRight:36, flexShrink:0 }}>
             <div style={{ width:42, height:42, borderRadius:10, flexShrink:0, background:`linear-gradient(135deg,${T.accent},${T.aiAccent})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17, fontWeight:800, color:'#fff' }}>{avatarLetter}</div>
-            <div>
-              <div style={{ fontSize:14, fontWeight:700, color:T.text }}>{profile?.username||'User'}</div>
-              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
-                <span style={{ background:ROLE_COLOURS[role]+'22', color:ROLE_COLOURS[role], padding:'1px 8px', borderRadius:20, fontSize:10, fontWeight:700, letterSpacing:0.5, textTransform:'uppercase' }}>{ROLE_LABELS[role]}</span>
-                <span style={{ fontSize:11, color:T.textMuted }}>Ogonjo Platform</span>
-              </div>
-            </div>
+            <div><div style={{ fontSize:14, fontWeight:700, color:T.text }}>{profile?.username||'User'}</div><div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}><span style={{ background:ROLE_COLOURS[role]+'22', color:ROLE_COLOURS[role], padding:'1px 8px', borderRadius:20, fontSize:10, fontWeight:700, letterSpacing:0.5, textTransform:'uppercase' }}>{ROLE_LABELS[role]}</span><span style={{ fontSize:11, color:T.textMuted }}>Ogonjo Platform</span></div></div>
             <div style={{ flex:1 }}/>
             <ThemeSwitcher theme={theme} setTheme={setTheme}/>
-            <div style={{ display:'flex', gap:3, background:T.surface, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>
-              {tabs.map(t=>(
-                <button key={t.id} onClick={()=>setTab(t.id)} style={{ background:activeTab===t.id?T.tabActive:'transparent', border:'none', color:activeTab===t.id?T.tabText:T.tabInactive, padding:'5px 14px', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, whiteSpace:'nowrap', transition:'all 0.15s',
-                  // Highlight World Net tab with accent glow when active
-                  ...(t.id==='worldnet' && activeTab===t.id ? { background:T.accent+'22', color:T.accent } : {}),
-                  ...(t.id==='worldnet' && activeTab!==t.id ? { color:T.accent+'99' } : {}),
-                }}>{t.label}</button>
-              ))}
-            </div>
+            <div style={{ display:'flex', gap:3, background:T.surface, borderRadius:8, padding:3, border:`1px solid ${T.border}` }}>{tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{ background:activeTab===t.id?T.tabActive:'transparent', border:'none', color:activeTab===t.id?T.tabText:T.tabInactive, padding:'5px 14px', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600, whiteSpace:'nowrap', transition:'all 0.15s' }}>{t.label}</button>))}</div>
           </div>
-
-          {/* Tab content */}
           <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', minHeight:0 }}>
-            {activeTab==='profile'  && (<div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:18 }}><ProfileEdit profile={profile} onSaved={handleSaved} theme={T}/></div>)}
-            {activeTab==='dashboard'&& <AnalyticsDashboard theme={T} onAskMarcus={(q)=>{ setTab('ai'); setMarcusQuestion(q); }}/>}
-            {activeTab==='ai'       && <AIAdvisor theme={T} initialQuestion={marcusQuestion} onQuestionConsumed={()=>setMarcusQuestion(null)}/>}
-            {activeTab==='worldnet' && <WorldNet theme={T}/>}
-            {activeTab==='team'     && showTeam && <TeamManager theme={T}/>}
+            {activeTab==='profile'&&(<div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, padding:18 }}><ProfileEdit profile={profile} onSaved={handleSaved} theme={T}/></div>)}
+            {activeTab==='dashboard'&&<AnalyticsDashboard theme={T} onAskMarcus={(q)=>{ setTab('ai'); setMarcusQuestion(q); }}/>}
+            {activeTab==='ai'&&<AIAdvisor theme={T} initialQuestion={marcusQuestion} onQuestionConsumed={()=>setMarcusQuestion(null)}/>}
+            {activeTab==='team'&&showTeam&&<TeamManager theme={T}/>}
           </div>
         </div>
       </div>
     );
   }
 
-  // Non-dashboard view (regular user)
   return(
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="User profile">
       <div className="modal-panel">

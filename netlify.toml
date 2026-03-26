@@ -7,6 +7,10 @@
   port = 8081
   targetPort = 8082
 
+# Extend worldnet function timeout to 60s (two Gemini calls need ~30-40s)
+[functions."worldnet"]
+  timeout = 60
+
 [[edge_functions]]
   path = "/api/ai-advisor"
   function = "ai-advisor"
