@@ -1,6 +1,10 @@
 // netlify/functions/ai-advisor.js
-// Handles 4 modes: trending | recommendations | news | chat
+// Handles: trending | recommendations | news | chat | pattern | suggestions | worldnet
 // Uses Google Gemini 2.5 Flash with grounding (real-time web search)
+//
+// WORLDNET approach — two calls, plain text output:
+// Call 1 (grounded): fetches real 12hr news as plain text — no JSON pressure
+// Call 2 (no grounding): builds network as plain text — no JSON = no parse errors ever
 
 const MODEL = 'gemini-2.5-flash';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -23,7 +27,7 @@ Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 
 Provide exactly 5 recommendations. Keep reason and estimatedImpact fields brief (10 words max each).`;
 
-const newsPrompt = (category) => `You are a business news analyst. Search the web for the most important business news related to "${category}" published in the last 48-72 hours (around March 7, 2026). Focus on news that matters to entrepreneurs, business owners, investors, and content creators in this space.
+const newsPrompt = (category) => `You are a business news analyst. Search the web for the most important business news related to "${category}" published in the last 48-72 hours (around March 2026). Focus on news that matters to entrepreneurs, business owners, investors, and content creators in this space.
 
 Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 {"category":"${category}","fetchedAt":"now","headlines":[{"title":"exact headline","summary":"2-sentence summary of what happened and why it matters","source":"publication name","publishedAt":"e.g. 2 hours ago / yesterday","relevance":"why this matters for business content creators","contentOpportunity":"specific article title you could write based on this news","impact":"high|medium|low"}],"marketSentiment":"bullish|bearish|neutral|mixed","keyTheme":"the single biggest business theme dominating the news today","editorNote":"2-sentence actionable advice on what content to create this week based on these headlines"}
@@ -31,14 +35,10 @@ Return ONLY a valid JSON object. No markdown. No backticks. No explanation:
 Provide exactly 5 headlines. Use real current news from the web. Keep each summary to 1 sentence max.`;
 
 const patternPrompt = ({ viewedContent, allTitles, periodLabel, totalViews, topCategories }) => {
-  // Sanitize titles to avoid breaking JSON output
   const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
-  const viewedList = (viewedContent||[]).slice(0,25)
-    .map(v=>`- ${safeTitle(v.title)} [${v.category}] ${v.views}views`)
-    .join('\n');
+  const viewedList = (viewedContent||[]).slice(0,25).map(v=>`- ${safeTitle(v.title)} [${v.category}] ${v.views}views`).join('\n');
   const libraryList = (allTitles||[]).slice(0,40).map(safeTitle).join(', ');
   const catList = (topCategories||[]).slice(0,6).map(c=>`${c.name}(${c.count})`).join(', ');
-
   return `You are a content pattern analyst for Ogonjo, a business knowledge platform.
 
 PERIOD: ${periodLabel} | TOTAL VIEWS: ${totalViews}
@@ -50,13 +50,13 @@ ${viewedList}
 LIBRARY TITLES (for gap detection):
 ${libraryList}
 
-Analyse what the COMBINATION of viewed content reveals about audience intent, emerging themes, and content gaps. Look for patterns across titles, categories, and concepts.
+Analyse what the COMBINATION of viewed content reveals about audience intent, emerging themes, and content gaps.
 
 Respond with ONLY a valid JSON object. No markdown. No text before or after. Start with { end with }.
 
 The JSON must have these exact keys:
 - periodLabel: string
-- totalViews: number  
+- totalViews: number
 - narrative: string (3 sentences on the big picture pattern and audience intent)
 - clusters: array of {theme, emoji, signal, titles, strength, color} where strength is strong/moderate/emerging and color is cyan/purple/orange/green/pink/amber
 - archetypes: array of {name, emoji, description, whatTheyWant, percentOfAudience}
@@ -64,7 +64,7 @@ The JSON must have these exact keys:
 - momentum: object with rising/declining/stable arrays of {topic, signal, emoji}
 - outlines: array of EXACTLY 5 items with {title, angle, whyNow, structure, targetArchetype, estimatedImpact} where structure is array of 5 section headings and estimatedImpact is high/medium
 
-Use 3-4 clusters, 2-3 archetypes, 3-4 gaps, 2-4 rising, 2-3 declining, 1-2 stable. Reference actual titles from the data in your analysis.`;
+Use 3-4 clusters, 2-3 archetypes, 3-4 gaps, 2-4 rising, 2-3 declining, 1-2 stable.`;
 };
 
 const chatSystemPrompt = (platformData, categories) => `You are Marcus — an elite business consultant, growth strategist, and content monetization expert advising the founder of Ogonjo, a fast-growing business knowledge platform. You have 20+ years of experience advising startups, Fortune 500s, and digital media companies.
@@ -104,11 +104,11 @@ COMMUNICATION STYLE:
 - Reference what top platforms like HBR, Forbes, Investopedia do — and how Ogonjo can compete
 - When relevant, mention African/emerging market angles since the platform likely serves this audience
 
-IMPORTANT: Always write complete, full responses. Never cut off mid-sentence or mid-thought. If outlining steps or a framework, always complete every single step. Do not truncate or summarize at the end — write the full answer.
+IMPORTANT: Always write complete, full responses. Never cut off mid-sentence or mid-thought. Do not truncate or summarize at the end — write the full answer.
 
 Always search the web for current information before answering questions about trends, news, or what is popular right now. Today is March 2026.`;
 
-const suggestionsPrompt = () => `You are a business intelligence analyst. Based on what is currently trending in the business world in March 2026, generate smart, specific questions that a business content platform owner would want to ask their AI advisor right now. Make them highly relevant to current events, trending topics, and real business opportunities.
+const suggestionsPrompt = () => `You are a business intelligence analyst. Based on what is currently trending in the business world in March 2026, generate smart, specific questions that a business content platform owner would want to ask their AI advisor right now.
 
 Return ONLY valid JSON, no markdown, no backticks:
 {
@@ -118,41 +118,29 @@ Return ONLY valid JSON, no markdown, no backticks:
   "news": ["question1","question2","question3"]
 }
 
-Chat questions should be about: current trending business topics, monetization strategies, content that will go viral right now, what entrepreneurs are searching for today, specific industries that are booming.
-Trending questions should be about: specific niches with high search demand right now.
-Recommendations questions should be about: content gaps and opportunities based on current market.
-News questions should be about: turning today specific business news into content.
-
 Make every question specific and timely — reference actual current trends, not generic advice.`;
 
 export default async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' },
     });
   }
 
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
+      status: 405, headers: { 'Content-Type': 'application/json' },
     });
   }
 
   const apiKey = Netlify.env.get('GEMINI_API_KEY');
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: 'GEMINI_API_KEY not set in Netlify environment variables.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not set in Netlify environment variables.' }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  // ── Simple in-memory cache ───────────────────────────────────────────────
   const CACHE_TTL = 6 * 60 * 60 * 1000;
   if (!globalThis._aiCache) globalThis._aiCache = {};
 
@@ -161,10 +149,9 @@ export default async (request) => {
     const { mode, category, platformData, message, history, categories } = body;
 
     const cacheKey = `${mode}:${category}`;
-    if (mode !== 'chat' && mode !== 'suggestions' && mode !== 'pattern') {
+    if (mode !== 'chat' && mode !== 'suggestions' && mode !== 'pattern' && mode !== 'worldnet') {
       const cached = globalThis._aiCache[cacheKey];
       if (cached && (Date.now() - cached.ts) < CACHE_TTL) {
-        console.log('Cache hit:', cacheKey);
         return new Response(JSON.stringify(cached.data), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'X-Cache': 'HIT' },
@@ -176,100 +163,240 @@ export default async (request) => {
       return new Response(JSON.stringify({ error: 'Missing mode.' }), { status: 400 });
     }
 
-    // ── PATTERN ANALYSIS — pure reasoning, no grounding needed ──────────────
+    // ── PATTERN ───────────────────────────────────────────────────────────────
     if (mode === 'pattern') {
       const { viewedContent, allTitles, periodLabel, totalViews, topCategories } = body;
       if (!viewedContent?.length) {
-        return new Response(JSON.stringify({ error: 'No view data provided.' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        return new Response(JSON.stringify({ error: 'No view data provided.' }), {
+          status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
       }
-
       const prompt = patternPrompt({ viewedContent, allTitles, periodLabel, totalViews, topCategories });
-
-      // Disable thinking for pattern mode — forces clean JSON output, no thought blocks
       const geminiRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 4000,
-            temperature: 0.3,
-            thinkingConfig: { thinkingBudget: 0 }, // disable thinking → clean text output
-          },
+          generationConfig: { maxOutputTokens: 4000, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
         }),
       });
-
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();
         return new Response(JSON.stringify({ error: `Gemini error: ${errText}` }), {
-          status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-
       const data = await geminiRes.json();
-
-      // Extract text — with thinking disabled all content comes through as plain text
-      const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
-      const rawText = allParts.filter(p => p.text).map(p => p.text).join('').trim();
-
+      const allParts = (data.candidates||[]).flatMap(c=>c.content?.parts||[]);
+      const rawText = allParts.filter(p=>p.text).map(p=>p.text).join('').trim();
       if (!rawText) {
         return new Response(JSON.stringify({ error: 'No response from AI. Please try again.' }), {
-          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-
-      // Robust JSON extraction
       let parsed = null;
-      const attempts = [
-        rawText,
-        rawText.replace(/```json/gi,'').replace(/```/g,'').trim(),
-      ];
-      for (const attempt of attempts) {
+      for (const attempt of [rawText, rawText.replace(/```json/gi,'').replace(/```/g,'').trim()]) {
         if (parsed) break;
         try { parsed = JSON.parse(attempt); break; } catch {}
-        try {
-          const s = attempt.indexOf('{'), e = attempt.lastIndexOf('}');
-          if (s !== -1 && e > s) { parsed = JSON.parse(attempt.slice(s, e+1)); }
-        } catch {}
+        try { const s=attempt.indexOf('{'),e=attempt.lastIndexOf('}'); if(s!==-1&&e>s) parsed=JSON.parse(attempt.slice(s,e+1)); } catch {}
       }
-
       if (!parsed) {
-        console.error('Pattern JSON parse failed. Raw:', rawText.slice(0, 400));
         return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
-          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-
       return new Response(JSON.stringify(parsed), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
 
+    // ── WORLDNET ──────────────────────────────────────────────────────────────
+    // Call 1: Grounded — get real 12hr news as plain text
+    // Call 2: No grounding — build network as plain text (plain text = zero parse errors)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (mode === 'worldnet') {
+      const { existingLibrary = [] } = body;
+      const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
+      const libraryList = existingLibrary.slice(0, 100).map(safeTitle).join('\n');
+
+      // Call 1 — grounded news fetch
+      const newsRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text:
+            `Search the web RIGHT NOW. Find the 10 most important world news stories from the LAST 12 HOURS (March 2026). Business, economic, political, tech, disasters, viral stories.
+
+For each write:
+STORY [N]: [headline]
+SOURCE: [publication]
+SUMMARY: [2 sentences — what happened and why it matters for business/finance/career/marketing]
+ANGLE: [1 sentence — how entrepreneurs or investors should think about this]
+
+All 10 stories. Real news only.`
+          }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
+        }),
+      });
+      if (!newsRes.ok) {
+        const err = await newsRes.text();
+        return new Response(JSON.stringify({ error: `News fetch failed: ${err.slice(0,200)}` }), {
+          status: newsRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const newsData = await newsRes.json();
+      const newsParts = (newsData.candidates||[]).flatMap(c=>c.content?.parts||[]);
+      const newsText = newsParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
+      if (!newsText) {
+        return new Response(JSON.stringify({ error: 'Could not fetch news. Try again.' }), {
+          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      // Call 2 — build network as plain text, no grounding
+      const buildRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text:
+            `You are a content network architect for Ogonjo, a business knowledge platform with 4 pillars: Business & Entrepreneurship, Personal Finance & Investing, Career & Leadership, Marketing & Sales.
+
+Here are 10 real world news stories from the last 12 hours:
+${newsText}
+
+Here is the existing article library to cross-reference:
+${libraryList}
+
+Build a Content Network using exactly this format. Fill every section completely.
+
+=== OGONJO CONTENT NETWORK ===
+Generated: ${new Date().toUTCString()}
+News window: Last 12 hours
+
+--- 10 TITLES ---
+Transform the news into 10 evergreen SEO titles (never news headlines). Format: "How to..." / "Why..." / "What X Reveals About Y" / "The N Ways...". Mark exactly 4 as [MAGNET] — highest traffic potential.
+
+1. [MAGNET or blank] Title here
+   Pillar: [one of the 4 pillars]
+   Inspired by: [the real news story in 1 sentence]
+   SEO keywords: keyword1, keyword2, keyword3, keyword4, keyword5
+
+[repeat for titles 2–10]
+
+--- 20 NEW TERMS ---
+Extract 20 key concepts from these 10 articles. Bold these in every article you write for auto-linking.
+
+1. Term — definition in one sentence — appears in titles: 1, 3, 5
+[repeat for all 20]
+
+--- LIBRARY MATCHES ---
+For each of the 10 titles, list 3 closest matching articles from the existing library below. If no match exists, write "none found".
+
+Title 1 related: Article A | Article B | Article C
+[repeat for titles 2–10]
+
+--- LIBRARY BOLD TERMS ---
+List any terms from the existing library that also appear in the 10 new articles. Bold these to link back to old content.
+
+- term → links to: existing article title
+[list all found, or write "none found"]
+
+--- WRITING PROMPTS ---
+
+[FULL ARTICLE PROMPT — for 2000–2500 word articles]
+Copy this prompt, paste your chosen title at the top, then paste it into any AI:
+
+---
+You are a professional business writer for Ogonjo. Write a complete, SEO-optimized article of 2000–2500 words.
+
+TITLE: [paste title here]
+
+STRUCTURE:
+- Introduction: hook the reader, explain why this matters right now
+- Section 1: core concept / what happened
+- Section 2: why it matters for entrepreneurs/investors/professionals
+- Section 3: practical strategies and how to apply this
+- Section 4: common mistakes or what to avoid
+- Conclusion: professional advice on next steps
+
+STYLE: Educational strategy content, not news. Timeless wisdom. Short paragraphs (2–4 sentences). Clear subheadings. Bold one key insight per section.
+
+SEO: Use the title keywords naturally throughout. Optimize for Google Search and Google Discover.
+
+BOLDING FOR AUTO-LINKING: Bold every term from the 20 New Terms list and Library Bold Terms list whenever they appear in the article. This enables automatic internal linking.
+
+RELATED ARTICLES: At the end of the article, add a "Related Articles" section using the 3 library matches for this specific title.
+
+END WITH: A professional call-to-action advising the reader on their next concrete step.
+---
+
+[TERM DEFINITION PROMPT — for 1500 word term articles]
+Copy this prompt, paste your chosen term at the top, then paste it into any AI:
+
+---
+You are a professional business educator for Ogonjo. Write a complete term definition article of 1500 words.
+
+TERM: [paste term here]
+
+STRUCTURE:
+- Definition: clear plain-language definition
+- Why it matters: importance in business today
+- Real-world examples: 2–3 specific examples
+- How to apply it: practical steps
+- Common mistakes: what people get wrong
+- Expert advice: professional recommendation
+
+STYLE: Educational, clear, practical. Short paragraphs. Clear subheadings.
+
+SEO: Use the term as the primary keyword throughout.
+
+BOLDING FOR AUTO-LINKING: Bold every term from the 20 New Terms list and Library Bold Terms list whenever they appear.
+
+END WITH: Professional advice on how to master this concept.
+---
+
+=== END OF NETWORK ===`
+          }] }],
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.2, thinkingConfig: { thinkingBudget: 0 } },
+        }),
+      });
+
+      if (!buildRes.ok) {
+        const err = await buildRes.text();
+        return new Response(JSON.stringify({ error: `Network build failed: ${err.slice(0,200)}` }), {
+          status: buildRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const buildData = await buildRes.json();
+      const buildParts = (buildData.candidates||[]).flatMap(c=>c.content?.parts||[]);
+      const networkText = buildParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
+      if (!networkText) {
+        return new Response(JSON.stringify({ error: 'Network generation failed. Try again.' }), {
+          status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+
+      // Return as { network: "plain text" } — no JSON parsing, no parse errors ever
+      return new Response(JSON.stringify({ network: networkText }), {
+        status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+
+    // ── ALL OTHER MODES ───────────────────────────────────────────────────────
     const groundingTool = { google_search: {} };
     let geminiBody;
 
     if (mode === 'chat') {
-      if (!message) {
-        return new Response(JSON.stringify({ error: 'Missing message.' }), { status: 400 });
-      }
-
+      if (!message) return new Response(JSON.stringify({ error: 'Missing message.' }), { status: 400 });
       const contents = [];
-      const recentHistory = (history || [])
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-12);
-
+      const recentHistory = (history||[]).filter(m=>m.role==='user'||m.role==='assistant').slice(-12);
       for (const m of recentHistory) {
-        contents.push({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        });
+        contents.push({ role: m.role==='assistant'?'model':'user', parts: [{ text: m.content }] });
       }
-
-      if (!contents.length || contents[contents.length - 1].parts[0].text !== message) {
+      if (!contents.length || contents[contents.length-1].parts[0].text !== message) {
         contents.push({ role: 'user', parts: [{ text: message }] });
       }
-
       geminiBody = {
         system_instruction: { parts: [{ text: chatSystemPrompt(platformData, categories) }] },
         contents,
@@ -277,17 +404,13 @@ export default async (request) => {
         generationConfig: { maxOutputTokens: 8192, temperature: 0.75 },
       };
     } else {
-      if (!category && mode !== 'suggestions') {
-        return new Response(JSON.stringify({ error: 'Missing category.' }), { status: 400 });
-      }
-
+      if (!category && mode !== 'suggestions') return new Response(JSON.stringify({ error: 'Missing category.' }), { status: 400 });
       let prompt;
       if (mode === 'trending')             prompt = trendingPrompt(category);
       else if (mode === 'recommendations') prompt = recommendationsPrompt(category, platformData);
       else if (mode === 'news')            prompt = newsPrompt(category);
       else if (mode === 'suggestions')     prompt = suggestionsPrompt();
       else return new Response(JSON.stringify({ error: 'Invalid mode.' }), { status: 400 });
-
       geminiBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
@@ -303,67 +426,48 @@ export default async (request) => {
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error('Gemini error:', errText);
-      return new Response(
-        JSON.stringify({ error: `Gemini API error: ${errText}` }),
-        { status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-      );
+      return new Response(JSON.stringify({ error: `Gemini API error: ${errText}` }), {
+        status: geminiRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     const data = await geminiRes.json();
+    const allParts = (data.candidates||[]).flatMap(c=>c.content?.parts||[]);
+    console.log('Parts count:', allParts.length, 'types:', allParts.map(p=>p.thought?'thought':p.text?'text':'other').join(','));
+    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') console.warn('WARNING: Response cut off.');
 
-    const allParts = (data.candidates || []).flatMap(c => c.content?.parts || []);
-    console.log('Parts count:', allParts.length, 'types:', allParts.map(p => p.thought ? 'thought' : p.text ? 'text' : 'other').join(','));
-
-    const finishReason = data.candidates?.[0]?.finishReason;
-    console.log('Finish reason:', finishReason);
-    if (finishReason === 'MAX_TOKENS') {
-      console.warn('WARNING: Response cut off. Consider increasing maxOutputTokens.');
-    }
-
-    const textBlocks = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
-    console.log('Raw textBlocks length:', textBlocks.length, 'preview:', textBlocks.slice(0, 200));
-
+    const textBlocks = allParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');
     if (!textBlocks) {
-      console.error('Empty Gemini response:', JSON.stringify(data).slice(0, 500));
-      return new Response(
-        JSON.stringify({ error: 'No response from AI. Try again.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-      );
+      return new Response(JSON.stringify({ error: 'No response from AI. Try again.' }), {
+        status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
     }
 
     if (mode === 'chat') {
       return new Response(JSON.stringify({ reply: textBlocks }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } else {
-      let clean = textBlocks.replace(/```json|```/g, '').trim();
-      const start = clean.indexOf('{');
-      const end = clean.lastIndexOf('}');
-      if (start === -1 || end === -1) {
-        console.error('No JSON found:', clean.slice(0, 500));
-        return new Response(
-          JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }),
-          { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-        );
-      }
-      clean = clean.slice(start, end + 1);
-      console.log('Parsing JSON, length:', clean.length, 'preview:', clean.slice(0, 120));
-      const parsed = JSON.parse(clean);
-      if (mode !== 'suggestions') {
-        globalThis._aiCache[cacheKey] = { data: parsed, ts: Date.now() };
-      }
-      return new Response(JSON.stringify(parsed), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'X-Cache': 'MISS' },
+        status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
+
+    let clean = textBlocks.replace(/```json|```/g,'').trim();
+    const start = clean.indexOf('{'), end = clean.lastIndexOf('}');
+    if (start === -1 || end === -1) {
+      return new Response(JSON.stringify({ error: 'AI returned unexpected format. Please try again.' }), {
+        status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    clean = clean.slice(start, end+1);
+    const parsed = JSON.parse(clean);
+    if (mode !== 'suggestions') globalThis._aiCache[cacheKey] = { data: parsed, ts: Date.now() };
+    return new Response(JSON.stringify(parsed), {
+      status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'X-Cache': 'MISS' },
+    });
+
   } catch (err) {
     console.error('Function error:', err);
-    return new Response(
-      JSON.stringify({ error: `Server error: ${err.message}` }),
-      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-    );
+    return new Response(JSON.stringify({ error: `Server error: ${err.message}` }), {
+      status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
   }
 };
 
