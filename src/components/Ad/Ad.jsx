@@ -1,18 +1,8 @@
 // src/components/Ad/Ad.jsx
-import React, { useEffect } from 'react';
+import React from 'react';
 import './Ad.css';
 
-const AdSlot = ({ index = 1, className = '' }) => {
-  useEffect(() => {
-    try {
-      window.ezstandalone = window.ezstandalone || {};
-      ezstandalone.cmd = ezstandalone.cmd || [];
-      ezstandalone.cmd.push(function () {
-        ezstandalone.displayMore(index);
-      });
-    } catch (e) {}
-  }, [index]);
-
+const AdSlot = ({ index = 101, className = '' }) => {
   return (
     <div
       className={`ad-frame ${className}`}
@@ -20,9 +10,8 @@ const AdSlot = ({ index = 1, className = '' }) => {
       role="complementary"
     >
       <span className="ad-frame__label">Advertisement</span>
-      <div className="ad-frame__inner">
-        <div id={`ezoic-pub-ad-placeholder-${index}`} />
-      </div>
+      {/* No styling on this div — Ezoic requirement */}
+      <div id={`ezoic-pub-ad-placeholder-${index}`} />
     </div>
   );
 };

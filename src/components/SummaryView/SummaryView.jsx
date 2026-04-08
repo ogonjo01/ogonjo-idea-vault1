@@ -196,6 +196,35 @@ const SummaryView = () => {
     () => injectAds(processedSummaryHtml),
     [processedSummaryHtml]
   );
+  // Fire Ezoic showAds() once after all placeholders are in the DOM
+useEffect(() => {
+  if (!articleSegments || articleSegments.length === 0) return;
+  const adSegments = articleSegments.filter(s => s.type === 'ad');
+  if (adSegments.length === 0) return;
+
+  const ids = adSegments.map(s => 100 + s.adIndex); // adIndex 1 → 101, etc.
+
+  try {
+    window.ezstandalone = window.ezstandalone || {};
+    window.ezstandalone.cmd = window.ezstandalone.cmd || [];
+
+    window.ezstandalone.cmd.push(function () {
+      // Destroy any leftover placeholders from the previous article
+      window.ezstandalone.destroyAll();
+      // Show ads for this article's placeholders
+      window.ezstandalone.showAds(...ids);
+    });
+  } catch (e) {}
+
+  // Cleanup: destroy placeholders when user navigates away
+  return () => {
+    try {
+      window.ezstandalone.cmd.push(function () {
+        window.ezstandalone.destroyAll();
+      });
+    } catch (e) {}
+  };
+}, [articleSegments]);
   // ─────────────────────────────────────────────────────────────────────────
 
   /* ---------- refs ---------- */
