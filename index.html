@@ -34,12 +34,23 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
     <!-- Ads -->
-    <!-- Ezoic -->
-<script async src="//www.ezojs.com/ezoic/sa.min.js"></script>
+<!-- Ezoic CMP (must be first) -->
+<script data-cfasync="false" src="https://cmp.gatekeeperconsent.com/min.js"></script>
+<script data-cfasync="false" src="https://the.gatekeeperconsent.com/cmp.min.js"></script>
+
+<!-- Ezoic -->
+<script async src="https://www.ezojs.com/ezoic/sa.min.js"></script>
 <script>
   window.ezstandalone = window.ezstandalone || {};
   ezstandalone.cmd = ezstandalone.cmd || [];
 </script>
+
+<!-- Google AdSense (runs alongside Ezoic until one approves) -->
+<script
+  async
+  src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7769353221684341"
+  crossorigin="anonymous"
+></script>
 
     <!-- Site Verifications -->
     <meta name="fo-verify" content="21a310c3-d17e-4f2f-a3c9-3cb8f1f2d16f" />
