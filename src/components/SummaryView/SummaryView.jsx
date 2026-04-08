@@ -28,7 +28,10 @@ import './SummaryView.css';
 // Your AdSense ad-slot IDs. Replace these with the actual slot IDs from your
 // AdSense account (each slot ID is a number like "1234567890").
 // You can use one slot ID for all placements — AdSense handles it fine.
-const AD_SLOT_ID = '6281602467'; // ← Replace with your real slot ID
+//const AD_SLOT_ID = '6281602467';  ← Replace with your real slot ID
+// Ezoic uses placement IDs (1, 2, 3…) set in the Ezoic dashboard — not slot IDs.
+// The AdSlot index prop maps to your Ezoic placement ID.
+const AD_SLOT_ID = null; // unused with Ezoic
 
 /* ---------- Constants ---------- */
 const SELECT_WITH_COUNTS = `*,
@@ -964,12 +967,7 @@ const SummaryView = () => {
           >
             {articleSegments.map((segment, idx) =>
               segment.type === 'ad' ? (
-                <AdSlot
-                  key={`ad-${idx}`}
-                  slot={AD_SLOT_ID}
-                  index={segment.adIndex}
-                  format="auto"
-                />
+                <AdSlot key={`ad-${idx}`} index={segment.adIndex} />
               ) : (
                 <div
                   key={`para-${idx}`}

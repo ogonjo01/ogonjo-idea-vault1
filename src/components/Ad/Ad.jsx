@@ -1,31 +1,27 @@
 // src/components/Ad/Ad.jsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import './Ad.css';
 
-const AdSlot = ({ slot = '1234567890', index = 1, className = '' }) => {
-  const pushed = useRef(false);
-
+const AdSlot = ({ index = 1, className = '' }) => {
   useEffect(() => {
-    if (pushed.current) return;
     try {
-      if (typeof window !== 'undefined') {
-        (window.adsbygoogle = window.adsbygoogle || []).push({});
-        pushed.current = true;
-      }
+      window.ezstandalone = window.ezstandalone || {};
+      ezstandalone.cmd = ezstandalone.cmd || [];
+      ezstandalone.cmd.push(function () {
+        ezstandalone.displayMore(index);
+      });
     } catch (e) {}
-  }, []);
+  }, [index]);
 
   return (
-    <div className={`ad-frame ${className}`} aria-label={`Advertisement ${index}`} role="complementary">
+    <div
+      className={`ad-frame ${className}`}
+      aria-label={`Advertisement ${index}`}
+      role="complementary"
+    >
       <span className="ad-frame__label">Advertisement</span>
       <div className="ad-frame__inner">
-        <ins
-          className="adsbygoogle"
-          data-ad-client="ca-pub-7769353221684341"
-          data-ad-slot={slot}
-          data-ad-format="horizontal"
-          data-full-width-responsive="false"
-        />
+        <div id={`ezoic-pub-ad-placeholder-${index}`} />
       </div>
     </div>
   );
