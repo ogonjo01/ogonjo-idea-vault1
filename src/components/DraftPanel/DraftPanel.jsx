@@ -6,10 +6,10 @@ import "./DraftPanel.css";
 
 /* ── constants ──────────────────────────────────────────── */
 const REAL_CATEGORIES = [
-  "Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
+  "Ogonjo Briefs","Frameworks & Models","Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
   "Business Ideas","Business Legends","Business Strategy & Systems","Career Development",
   "Companies & Organizations","Concepts","Concepts Abbreviations","Courses & Learning Paths",
-  "Digital Skills & Technology","Entrepreneurship","Leadership & Management","Marketing & Sales",
+  "Digital Skills & Technology","Entrepreneurship","How To","Leadership & Management","Library", "Workbooks","Marketing & Sales",
   "Markets & Geography","Mindset & Motivation","Money & Productivity","People","Quotes",
   "Self-Improvement","Strategic Communication","Tools & Software","Video Insights",
 ];
