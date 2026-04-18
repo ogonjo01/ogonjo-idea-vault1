@@ -195,9 +195,15 @@ const SummaryView = () => {
 
 useEffect(() => {
   if (!summary?.id) return;
+
+  // Do not show workbook recommendations when the reader is already inside a workbook
+  if (summary?.category === 'Workbooks') {
+    setSlotWorkbooks([]);
+    return;
+  }
+
   fetchWorkbookRecommendations(summary, 8)
     .then(workbooks => {
-     // console.log('[WB] fetched workbooks:', workbooks.length, workbooks.map(w => w.title));
       setSlotWorkbooks(workbooks);
     })
     .catch(() => setSlotWorkbooks([]));
