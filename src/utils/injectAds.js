@@ -32,10 +32,10 @@ const countWords = (text = '') =>
     .length;
 
 const chooseAdCount = (wordCount) => {
-  if (wordCount < 600)  return 2;
-  if (wordCount < 1200) return 3;
-  if (wordCount < 2000) return 4;
-  return 5;
+  if (wordCount < 800)  return 1; // short article — one slot only
+  if (wordCount < 1200) return 2; // medium — beginning and end
+  if (wordCount < 2000) return 3;
+  return 4;
 };
 
 /**
@@ -48,8 +48,8 @@ const computeAdPositions = (paragraphCount, adCount) => {
   if (paragraphCount < 3) return []; // too short to insert anything
 
   // Hard constraints
-  const MIN_AFTER_PARA = 1;           // earliest = after paragraph index 1 (i.e. after ¶2)
-  const MAX_AFTER_PARA = paragraphCount - 2; // never after the last paragraph
+ const MIN_AFTER_PARA = 2;          // never in the first 3 paragraphs
+const MAX_AFTER_PARA = paragraphCount - 3; // never in the last 3 paragraphs// never after the last paragraph
 
   const range = MAX_AFTER_PARA - MIN_AFTER_PARA;
   if (range <= 0) return [];

@@ -1,5 +1,7 @@
 /* src/components/Ad/Ad.css */
 
+/* ─── Original ad frame styles (UNCHANGED) ─────────────────────────────────── */
+
 .ad-frame {
   width: 100%;
   max-width: 100%;
@@ -10,7 +12,6 @@
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   overflow: hidden;
-  /* Hard height lock on the outer frame */
   height: 106px;
   max-height: 106px;
 }
@@ -48,7 +49,6 @@
   box-sizing: border-box !important;
 }
 
-/* Kill any iframe or div Google injects that tries to grow */
 .ad-frame__inner ins.adsbygoogle iframe,
 .ad-frame__inner ins.adsbygoogle > div,
 .ad-frame__inner ins.adsbygoogle > div > iframe {
@@ -78,5 +78,226 @@
   .ad-frame__inner ins.adsbygoogle > div > iframe {
     height: 90px !important;
     max-height: 90px !important;
+  }
+}
+
+/* ─── Workbook recommendation slot ─────────────────────────────────────────── */
+/* When a workbook is present, the frame height expands to fit the card.        */
+/* The outer .ad-frame keeps its border/margin/radius but drops the hard height */
+/* lock so the workbook card can breathe.                                       */
+
+.ad-frame--workbook {
+  height: auto;
+  max-height: none;
+  min-height: 90px;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid #e0e7ff;
+  border-left: 3px solid #2563eb;
+}
+
+/* Fade-in animation */
+@keyframes wb-fadein {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.wb-slot {
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.wb-slot--visible {
+  opacity: 1;
+  animation: wb-fadein 0.35s ease forwards;
+}
+
+/* Label bar — the rotating "Recommended for you" line */
+.wb-slot__label-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  background: #f0f4ff;
+  border-bottom: 1px solid #e0e7ff;
+}
+
+.wb-slot__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+
+.wb-slot__label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #2563eb;
+  font-family: system-ui, sans-serif;
+  user-select: none;
+}
+
+/* Card body — thumbnail + text + CTAs in a row */
+.wb-slot__body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  min-height: 70px;
+}
+
+/* Thumbnail */
+.wb-slot__thumb {
+  flex-shrink: 0;
+  width: 48px;
+  height: 60px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #f3f4f6;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.wb-slot__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Text block */
+.wb-slot__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.wb-slot__title {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0b1220;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-slot__desc {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-top: 3px;
+  font-family: system-ui, sans-serif;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* CTA buttons */
+.wb-slot__ctas {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.wb-slot__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: system-ui, sans-serif;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  line-height: 1;
+  border: none;
+}
+
+/* Primary CTA — View Details */
+.wb-slot__cta--primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.wb-slot__cta--primary:hover {
+  background: #1d4ed8;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.28);
+}
+
+/* Secondary CTA — Get PDF / Get Book / Open App */
+.wb-slot__cta--secondary {
+  background: transparent;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+}
+
+.wb-slot__cta--secondary:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+@media (max-width: 600px) {
+  .ad-frame--workbook {
+    margin: 10px 0;
+  }
+
+  .wb-slot__body {
+    flex-direction: column;  /* stack vertically on mobile */
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .wb-slot__thumb {
+    width: 100%;
+    height: 80px;
+    border-radius: 4px;
+  }
+
+  .wb-slot__thumb img {
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+  }
+
+  .wb-slot__text {
+    width: 100%;
+  }
+
+  .wb-slot__title {
+    font-size: 13px;
+    white-space: normal;    /* allow wrapping on mobile */
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .wb-slot__desc {
+    display: none;
+  }
+
+  .wb-slot__ctas {
+    flex-direction: row;    /* buttons side by side */
+    width: 100%;
+    gap: 8px;
+  }
+
+  .wb-slot__cta {
+    flex: 1;
+    font-size: 11px;
+    padding: 7px 6px;
+    text-align: center;
+    justify-content: center;
   }
 }

@@ -21,6 +21,7 @@ import { Helmet } from 'react-helmet-async';
 // ── NEW IMPORTS ──────────────────────────────────────────────────────────────
 import AdSlot from '../Ad/Ad';
 import { injectAds } from '../../utils/injectAds';
+import { fetchWorkbookRecommendations } from '../../utils/fetchWorkbookRecommendations';
 // ────────────────────────────────────────────────────────────────────────────
 
 import './SummaryView.css';
@@ -190,7 +191,17 @@ const SummaryView = () => {
   const [showEdit, setShowEdit] = useState(false);
 
   const [processedSummaryHtml, setProcessedSummaryHtml] = useState('');
+  const [slotWorkbooks, setSlotWorkbooks] = useState([]);
 
+useEffect(() => {
+  if (!summary?.id) return;
+  fetchWorkbookRecommendations(summary, 8)
+    .then(workbooks => {
+      console.log('[WB] fetched workbooks:', workbooks.length, workbooks.map(w => w.title));
+      setSlotWorkbooks(workbooks);
+    })
+    .catch(() => setSlotWorkbooks([]));
+}, [summary?.id]);
   // ── NEW: computed ad segments derived from processedSummaryHtml ───────────
   const articleSegments = useMemo(
     () => injectAds(processedSummaryHtml),
@@ -202,21 +213,24 @@ useEffect(() => {
   const adSegments = articleSegments.filter(s => s.type === 'ad');
   if (adSegments.length === 0) return;
 
-  const ids = adSegments.map(s => 100 + s.adIndex); // adIndex 1 → 101, etc.
+  // Only send Ezoic the slots that do NOT have a workbook assigned.
+  // Slots with a workbook render the recommendation card instead of an ad.
+  const ezoicIds = adSegments
+    .filter(s => !slotWorkbooks[s.adIndex - 1])
+    .map(s => 100 + s.adIndex);
+
+  if (ezoicIds.length === 0) return; // all slots are workbook slots — nothing for Ezoic
 
   try {
     window.ezstandalone = window.ezstandalone || {};
     window.ezstandalone.cmd = window.ezstandalone.cmd || [];
 
     window.ezstandalone.cmd.push(function () {
-      // Destroy any leftover placeholders from the previous article
       window.ezstandalone.destroyAll();
-      // Show ads for this article's placeholders
-      window.ezstandalone.showAds(...ids);
+      window.ezstandalone.showAds(...ezoicIds);
     });
   } catch (e) {}
 
-  // Cleanup: destroy placeholders when user navigates away
   return () => {
     try {
       window.ezstandalone.cmd.push(function () {
@@ -224,7 +238,7 @@ useEffect(() => {
       });
     } catch (e) {}
   };
-}, [articleSegments]);
+}, [articleSegments, slotWorkbooks]); // ← added slotWorkbooks to dependencies
   // ─────────────────────────────────────────────────────────────────────────
 
   /* ---------- refs ---------- */
@@ -994,16 +1008,26 @@ useEffect(() => {
             style={articleStyle}
             onClick={onArticleClick}
           >
-            {articleSegments.map((segment, idx) =>
-              segment.type === 'ad' ? (
-                <AdSlot key={`ad-${idx}`} index={segment.adIndex} />
-              ) : (
-                <div
-                  key={`para-${idx}`}
-                  dangerouslySetInnerHTML={{ __html: segment.content }}
-                />
-              )
-            )}
+            {articleSegments.map((segment, idx) => {
+  if (segment.type === 'ad') {
+    const workbook = slotWorkbooks[segment.adIndex - 1] ?? null;
+    // If no workbook and Ezoic is failing (400 errors), skip the slot entirely
+    if (!workbook) return null;
+    return (
+      <AdSlot
+        key={`ad-${idx}`}
+        index={segment.adIndex}
+        workbook={workbook}
+      />
+    );
+  }
+  return (
+    <div
+      key={`para-${idx}`}
+      dangerouslySetInnerHTML={{ __html: segment.content }}
+    />
+  );
+})}
           </article>
           // ───────────────────────────────────────────────────────────────
         )}
