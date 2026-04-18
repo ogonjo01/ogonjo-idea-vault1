@@ -197,7 +197,7 @@ useEffect(() => {
   if (!summary?.id) return;
   fetchWorkbookRecommendations(summary, 8)
     .then(workbooks => {
-      console.log('[WB] fetched workbooks:', workbooks.length, workbooks.map(w => w.title));
+     // console.log('[WB] fetched workbooks:', workbooks.length, workbooks.map(w => w.title));
       setSlotWorkbooks(workbooks);
     })
     .catch(() => setSlotWorkbooks([]));
