@@ -432,28 +432,24 @@ useEffect(() => {
       } catch (e) {}
 
     try {
-  await supabase.rpc('increment_views', { post_id: resolvedPostId });
-  setViews((v) => (Number(v) || 0) + 1);
-
-  // Enrich the view row the RPC just created with geo + source
   const { getGeo, getSource } = await import('../../utils/trackView');
-  const [geo, source] = await Promise.all([getGeo(), Promise.resolve(getSource())]);
-
-  const { data: latestView } = await supabase
-    .from('views')
-    .select('id')
-    .eq('post_id', resolvedPostId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestView?.id) {
-    await supabase
-      .from('views')
-      .update({ country: geo.country, city: geo.city, source })
-      .eq('id', latestView.id);
-  }
-} catch (e) {}
+  const [geo, source] = await Promise.all([
+    getGeo(),
+    Promise.resolve(getSource()),
+  ]);
+  await supabase.rpc('increment_views', {
+    post_id: resolvedPostId,
+    country: geo.country,
+    city:    geo.city,
+    source:  source,
+  });
+  setViews((v) => (Number(v) || 0) + 1);
+} catch (e) {
+  try {
+    await supabase.rpc('increment_views', { post_id: resolvedPostId });
+    setViews((v) => (Number(v) || 0) + 1);
+  } catch (e2) {}
+}
 
       if (Array.isArray(tags) && tags.length > 0) {
         fetchRecommendedByTags(tags, 10, resolvedPostId).catch(() => {});
