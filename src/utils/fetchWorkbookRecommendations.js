@@ -183,7 +183,7 @@ scored.sort((a, b) => {
 
 // Only return workbooks that meet the minimum relevance threshold.
 // If nothing is relevant enough, return empty — slots will show Ezoic ad instead.
-const MINIMUM_SCORE = 1; // requires at least one strong tag/keyword match
+const MINIMUM_SCORE = 4; // requires at least one strong tag/keyword match
 const result = scored.filter(w => w._score >= MINIMUM_SCORE);
 
 return result.slice(0, limit);

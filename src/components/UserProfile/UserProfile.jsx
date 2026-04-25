@@ -539,6 +539,159 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
 // ─────────────────────────────────────────────────────────────────────────────
 // ANALYTICS DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAFFIC PANEL
+// ─────────────────────────────────────────────────────────────────────────────
+const FLAG_MAP = {
+  'Afghanistan':'🇦🇫','Albania':'🇦🇱','Algeria':'🇩🇿','Andorra':'🇦🇩','Angola':'🇦🇴',
+  'Antigua and Barbuda':'🇦🇬','Argentina':'🇦🇷','Armenia':'🇦🇲','Australia':'🇦🇺','Austria':'🇦🇹',
+  'Azerbaijan':'🇦🇿','Bahamas':'🇧🇸','Bahrain':'🇧🇭','Bangladesh':'🇧🇩','Barbados':'🇧🇧',
+  'Belarus':'🇧🇾','Belgium':'🇧🇪','Belize':'🇧🇿','Benin':'🇧🇯','Bhutan':'🇧🇹',
+  'Bolivia':'🇧🇴','Bosnia and Herzegovina':'🇧🇦','Botswana':'🇧🇼','Brazil':'🇧🇷','Brunei':'🇧🇳',
+  'Bulgaria':'🇧🇬','Burkina Faso':'🇧🇫','Burundi':'🇧🇮','Cabo Verde':'🇨🇻','Cambodia':'🇰🇭',
+  'Cameroon':'🇨🇲','Canada':'🇨🇦','Central African Republic':'🇨🇫','Chad':'🇹🇩','Chile':'🇨🇱',
+  'China':'🇨🇳','Colombia':'🇨🇴','Comoros':'🇰🇲','Congo':'🇨🇬','Costa Rica':'🇨🇷',
+  'Croatia':'🇭🇷','Cuba':'🇨🇺','Cyprus':'🇨🇾','Czech Republic':'🇨🇿','Czechia':'🇨🇿',
+  'Denmark':'🇩🇰','Djibouti':'🇩🇯','Dominica':'🇩🇲','Dominican Republic':'🇩🇴','Ecuador':'🇪🇨',
+  'Egypt':'🇪🇬','El Salvador':'🇸🇻','Equatorial Guinea':'🇬🇶','Eritrea':'🇪🇷','Estonia':'🇪🇪',
+  'Eswatini':'🇸🇿','Ethiopia':'🇪🇹','Fiji':'🇫🇯','Finland':'🇫🇮','France':'🇫🇷',
+  'Gabon':'🇬🇦','Gambia':'🇬🇲','Georgia':'🇬🇪','Germany':'🇩🇪','Ghana':'🇬🇭',
+  'Greece':'🇬🇷','Grenada':'🇬🇩','Guatemala':'🇬🇹','Guinea':'🇬🇳','Guinea-Bissau':'🇬🇼',
+  'Guyana':'🇬🇾','Haiti':'🇭🇹','Honduras':'🇭🇳','Hungary':'🇭🇺','Iceland':'🇮🇸',
+  'India':'🇮🇳','Indonesia':'🇮🇩','Iran':'🇮🇷','Iraq':'🇮🇶','Ireland':'🇮🇪',
+  'Israel':'🇮🇱','Italy':'🇮🇹','Jamaica':'🇯🇲','Japan':'🇯🇵','Jordan':'🇯🇴',
+  'Kazakhstan':'🇰🇿','Kenya':'🇰🇪','Kiribati':'🇰🇮','Kuwait':'🇰🇼','Kyrgyzstan':'🇰🇬',
+  'Laos':'🇱🇦','Latvia':'🇱🇻','Lebanon':'🇱🇧','Lesotho':'🇱🇸','Liberia':'🇱🇷',
+  'Libya':'🇱🇾','Liechtenstein':'🇱🇮','Lithuania':'🇱🇹','Luxembourg':'🇱🇺','Madagascar':'🇲🇬',
+  'Malawi':'🇲🇼','Malaysia':'🇲🇾','Maldives':'🇲🇻','Mali':'🇲🇱','Malta':'🇲🇹',
+  'Marshall Islands':'🇲🇭','Mauritania':'🇲🇷','Mauritius':'🇲🇺','Mexico':'🇲🇽','Micronesia':'🇫🇲',
+  'Moldova':'🇲🇩','Monaco':'🇲🇨','Mongolia':'🇲🇳','Montenegro':'🇲🇪','Morocco':'🇲🇦',
+  'Mozambique':'🇲🇿','Myanmar':'🇲🇲','Namibia':'🇳🇦','Nauru':'🇳🇷','Nepal':'🇳🇵',
+  'Netherlands':'🇳🇱','New Zealand':'🇳🇿','Nicaragua':'🇳🇮','Niger':'🇳🇪','Nigeria':'🇳🇬',
+  'North Korea':'🇰🇵','North Macedonia':'🇲🇰','Norway':'🇳🇴','Oman':'🇴🇲','Pakistan':'🇵🇰',
+  'Palau':'🇵🇼','Palestine':'🇵🇸','Panama':'🇵🇦','Papua New Guinea':'🇵🇬','Paraguay':'🇵🇾',
+  'Peru':'🇵🇪','Philippines':'🇵🇭','Poland':'🇵🇱','Portugal':'🇵🇹','Qatar':'🇶🇦',
+  'Romania':'🇷🇴','Russia':'🇷🇺','Rwanda':'🇷🇼','Saint Kitts and Nevis':'🇰🇳','Saint Lucia':'🇱🇨',
+  'Saint Vincent and the Grenadines':'🇻🇨','Samoa':'🇼🇸','San Marino':'🇸🇲','Sao Tome and Principe':'🇸🇹',
+  'Saudi Arabia':'🇸🇦','Senegal':'🇸🇳','Serbia':'🇷🇸','Seychelles':'🇸🇨','Sierra Leone':'🇸🇱',
+  'Singapore':'🇸🇬','Slovakia':'🇸🇰','Slovenia':'🇸🇮','Solomon Islands':'🇸🇧','Somalia':'🇸🇴',
+  'South Africa':'🇿🇦','South Korea':'🇰🇷','South Sudan':'🇸🇸','Spain':'🇪🇸','Sri Lanka':'🇱🇰',
+  'Sudan':'🇸🇩','Suriname':'🇸🇷','Sweden':'🇸🇪','Switzerland':'🇨🇭','Syria':'🇸🇾',
+  'Taiwan':'🇹🇼','Tajikistan':'🇹🇯','Tanzania':'🇹🇿','Thailand':'🇹🇭','Timor-Leste':'🇹🇱',
+  'Togo':'🇹🇬','Tonga':'🇹🇴','Trinidad and Tobago':'🇹🇹','Tunisia':'🇹🇳','Turkey':'🇹🇷',
+  'Turkmenistan':'🇹🇲','Tuvalu':'🇹🇻','Uganda':'🇺🇬','Ukraine':'🇺🇦',
+  'United Arab Emirates':'🇦🇪','UAE':'🇦🇪','United Kingdom':'🇬🇧','United States':'🇺🇸',
+  'Uruguay':'🇺🇾','Uzbekistan':'🇺🇿','Vanuatu':'🇻🇺','Vatican City':'🇻🇦','Venezuela':'🇻🇪',
+  'Vietnam':'🇻🇳','Yemen':'🇾🇪','Zambia':'🇿🇲','Zimbabwe':'🇿🇼',
+};
+
+const SOURCE_ICONS = {
+  'Google':'🔍','Google Discover':'🔍','Bing':'🔎','Yahoo':'🟣','DuckDuckGo':'🦆',
+  'Yandex':'🟡','Baidu':'🇨🇳','Ecosia':'🌱','Brave Search':'🦁',
+  'Direct':'🏠',
+  'Facebook':'📘','Instagram':'📸','Twitter/X':'🐦','LinkedIn':'💼','TikTok':'🎵',
+  'WhatsApp':'💬','Telegram':'✈️','Pinterest':'📌','Reddit':'🤖','YouTube':'▶️',
+  'Snapchat':'👻','Threads':'🧵','Discord':'🎮','Quora':'❓','Medium':'📝',
+  'Substack':'📧','BeReal':'📷','Mastodon':'🐘',
+  'Email':'📧','Newsletter':'📧',
+  'Unknown':'🌐',
+};
+
+const TrafficPanel = ({ theme:T, rawViews, period }) => {
+  // rawViews already has country, city, source from Step 2
+  const countryMap = {}, sourceMap = {}, cityMap = {};
+  (rawViews||[]).forEach(r => {
+    if (r.country) countryMap[r.country] = (countryMap[r.country]||0) + 1;
+    if (r.source)  sourceMap[r.source]   = (sourceMap[r.source]||0)   + 1;
+    if (r.city)    cityMap[r.city]        = (cityMap[r.city]||0)       + 1;
+  });
+
+  const total = rawViews?.length || 1;
+  const topCountries = Object.entries(countryMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const topSources   = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const topCities    = Object.entries(cityMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  const Bar = ({ value, color }) => (
+    <div style={{flex:1, height:5, background:T.border, borderRadius:3, overflow:'hidden'}}>
+      <div style={{width:`${Math.round(value/total*100)}%`, height:'100%', background:color, borderRadius:3, transition:'width 0.6s ease'}}/>
+    </div>
+  );
+
+  if (!rawViews?.length) return (
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:8}}>📍 Traffic — {period}</div>
+      <div style={{color:T.textMuted,fontSize:12,textAlign:'center',padding:'16px 0'}}>No traffic data yet — make sure <code>trackView()</code> is wired up.</div>
+    </div>
+  );
+
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+      {/* Sources */}
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
+        <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:10}}>📡 Traffic Sources — {period}</div>
+        {topSources.length===0
+          ? <div style={{color:T.textMuted,fontSize:12}}>No source data yet</div>
+          : topSources.map(([src, count], i) => (
+            <div key={src} style={{marginBottom:9}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:14}}>{SOURCE_ICONS[src]||'🌐'}</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.text}}>{src}</span>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:10,color:T.textMuted}}>{count.toLocaleString()}</span>
+                  <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>
+                    {Math.round(count/total*100)}%
+                  </span>
+                </div>
+              </div>
+              <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]}/>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* Countries + Cities */}
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',flex:1}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:10}}>🌍 Top Countries — {period}</div>
+          {topCountries.length===0
+            ? <div style={{color:T.textMuted,fontSize:12}}>No country data yet</div>
+            : topCountries.map(([country, count], i) => (
+              <div key={country} style={{marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontSize:13}}>{FLAG_MAP[country]||'🏳'}</span>
+                    <span style={{fontSize:11,fontWeight:500,color:T.text}}>{country}</span>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontSize:10,color:T.textMuted}}>{count.toLocaleString()}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>
+                      {Math.round(count/total*100)}%
+                    </span>
+                  </div>
+                </div>
+                <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]}/>
+              </div>
+            ))
+          }
+        </div>
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:8}}>🏙 Top Cities</div>
+          {topCities.length===0
+            ? <div style={{color:T.textMuted,fontSize:12}}>No city data</div>
+            : topCities.map(([city, count]) => (
+              <div key={city} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                <span style={{fontSize:11,color:T.text}}>{city}</span>
+                <span style={{fontSize:11,fontWeight:600,color:T.accent}}>{count.toLocaleString()} <span style={{color:T.textMuted,fontWeight:400}}>({Math.round(count/total*100)}%)</span></span>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  );
+};
 const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const [period,setPeriod]=useState('Week');
   const [activeMetric,setMetric]=useState('views');
@@ -563,7 +716,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       const sinceB=new Date(now-curMs*2).toISOString();
       const trunc=periodTrunc[period];
       const [{data:viewRowsA},{data:likeRowsA},{data:ratingRowsA},{data:userRowsA}]=await Promise.all([
-        supabase.from('views').select('post_id,created_at').gte('created_at',sinceA),
+        supabase.from('views').select('post_id,created_at,country,city,source').gte('created_at',sinceA),
         supabase.from('likes').select('created_at').gte('created_at',sinceA),
         supabase.from('ratings').select('created_at').gte('created_at',sinceA),
         supabase.from('profiles').select('created_at').gte('created_at',sinceA),
@@ -655,7 +808,9 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
           </ResponsiveContainer>
         }
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 220px',gap:10,marginBottom:12}}>
+      <TrafficPanel theme={T} rawViews={rawViews} period={period}/>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 220px',gap:10,marginBottom:12}}>
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
             <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>Top Content — {period}</span>
