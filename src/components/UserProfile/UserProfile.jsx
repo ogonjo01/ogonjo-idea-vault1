@@ -598,7 +598,9 @@ const SOURCE_ICONS = {
 };
 
 const TrafficPanel = ({ theme:T, rawViews, period }) => {
-  // rawViews already has country, city, source from Step 2
+  const [countryFilter, setCountryFilter] = useState('All');
+  const [cityFilter, setCityFilter]       = useState('All');
+
   const countryMap = {}, sourceMap = {}, cityMap = {};
   (rawViews||[]).forEach(r => {
     if (r.country) countryMap[r.country] = (countryMap[r.country]||0) + 1;
@@ -606,12 +608,41 @@ const TrafficPanel = ({ theme:T, rawViews, period }) => {
     if (r.city)    cityMap[r.city]        = (cityMap[r.city]||0)       + 1;
   });
 
-  const total = rawViews?.length || 1;
-  const topCountries = Object.entries(countryMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const topSources   = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const topCities    = Object.entries(cityMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  // All sorted lists
+  const allCountries = Object.entries(countryMap).sort((a,b)=>b[1]-a[1]);
+  const allCities    = Object.entries(cityMap).sort((a,b)=>b[1]-a[1]);
+  const allSources   = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]);
 
-  const Bar = ({ value, color }) => (
+  // Filtered views based on dropdowns
+  const filteredViews = (rawViews||[]).filter(r => {
+    const matchCountry = countryFilter === 'All' || r.country === countryFilter;
+    const matchCity    = cityFilter    === 'All' || r.city    === cityFilter;
+    return matchCountry && matchCity;
+  });
+
+  // Recount sources based on filtered views
+  const filteredSourceMap = {};
+  filteredViews.forEach(r => {
+    if (r.source) filteredSourceMap[r.source] = (filteredSourceMap[r.source]||0) + 1;
+  });
+  const filteredSources = Object.entries(filteredSourceMap).sort((a,b)=>b[1]-a[1]);
+
+  const total = filteredViews.length || 1;
+
+  const selectStyle = {
+    padding: '5px 10px',
+    borderRadius: 7,
+    background: T.inputBg,
+    border: `1px solid ${T.inputBorder}`,
+    color: T.text,
+    fontSize: 11,
+    fontWeight: 600,
+    outline: 'none',
+    cursor: 'pointer',
+    maxWidth: 160,
+  };
+
+  const Bar = ({ value, color, total }) => (
     <div style={{flex:1, height:5, background:T.border, borderRadius:3, overflow:'hidden'}}>
       <div style={{width:`${Math.round(value/total*100)}%`, height:'100%', background:color, borderRadius:3, transition:'width 0.6s ease'}}/>
     </div>
@@ -620,18 +651,69 @@ const TrafficPanel = ({ theme:T, rawViews, period }) => {
   if (!rawViews?.length) return (
     <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12}}>
       <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:8}}>📍 Traffic — {period}</div>
-      <div style={{color:T.textMuted,fontSize:12,textAlign:'center',padding:'16px 0'}}>No traffic data yet — make sure <code>trackView()</code> is wired up.</div>
+      <div style={{color:T.textMuted,fontSize:12,textAlign:'center',padding:'16px 0'}}>No traffic data yet.</div>
     </div>
   );
 
   return (
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-      {/* Sources */}
+
+      {/* ── LEFT: Traffic Sources ── */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
-        <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:10}}>📡 Traffic Sources — {period}</div>
-        {topSources.length===0
-          ? <div style={{color:T.textMuted,fontSize:12}}>No source data yet</div>
-          : topSources.map(([src, count], i) => (
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:6}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>📡 Traffic Sources — {period}</div>
+          <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+            {/* Country filter */}
+            <select
+              value={countryFilter}
+              onChange={e=>{setCountryFilter(e.target.value);setCityFilter('All');}}
+              style={selectStyle}
+            >
+              <option value="All">🌍 All Countries ({allCountries.length})</option>
+              {allCountries.map(([c,n])=>(
+                <option key={c} value={c}>{FLAG_MAP[c]||'🏳'} {c} ({n})</option>
+              ))}
+            </select>
+            {/* City filter */}
+            <select
+              value={cityFilter}
+              onChange={e=>setCityFilter(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="All">🏙 All Cities ({allCities.length})</option>
+              {allCities
+                .filter(([city]) => {
+                  if (countryFilter === 'All') return true;
+                  // Only show cities that exist in filtered views
+                  return filteredViews.some(r => r.city === city);
+                })
+                .map(([city, n])=>(
+                  <option key={city} value={city}>{city} ({n})</option>
+                ))
+              }
+            </select>
+            {/* Clear filters */}
+            {(countryFilter !== 'All' || cityFilter !== 'All') && (
+              <button
+                onClick={()=>{setCountryFilter('All');setCityFilter('All');}}
+                style={{background:'none',border:`1px solid ${T.border}`,borderRadius:6,color:T.textMuted,padding:'4px 8px',cursor:'pointer',fontSize:10,fontWeight:700}}
+              >✕ Clear</button>
+            )}
+          </div>
+        </div>
+
+        {/* Filtered count badge */}
+        {(countryFilter !== 'All' || cityFilter !== 'All') && (
+          <div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:8,background:T.accent+'12',border:`1px solid ${T.accent}33`,borderRadius:6,padding:'3px 10px',display:'inline-block'}}>
+            Showing {filteredViews.length.toLocaleString()} views
+            {countryFilter !== 'All' ? ` · ${FLAG_MAP[countryFilter]||'🏳'} ${countryFilter}` : ''}
+            {cityFilter !== 'All' ? ` · 🏙 ${cityFilter}` : ''}
+          </div>
+        )}
+
+        {filteredSources.length === 0
+          ? <div style={{color:T.textMuted,fontSize:12}}>No source data for this filter</div>
+          : filteredSources.map(([src, count], i) => (
             <div key={src} style={{marginBottom:9}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
@@ -645,48 +727,74 @@ const TrafficPanel = ({ theme:T, rawViews, period }) => {
                   </span>
                 </div>
               </div>
-              <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]}/>
+              <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]} total={total}/>
             </div>
           ))
         }
       </div>
 
-      {/* Countries + Cities */}
+      {/* ── RIGHT: Countries + Cities ── */}
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
+
+        {/* Countries */}
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',flex:1}}>
-          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:10}}>🌍 Top Countries — {period}</div>
-          {topCountries.length===0
-            ? <div style={{color:T.textMuted,fontSize:12}}>No country data yet</div>
-            : topCountries.map(([country, count], i) => (
-              <div key={country} style={{marginBottom:8}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <span style={{fontSize:13}}>{FLAG_MAP[country]||'🏳'}</span>
-                    <span style={{fontSize:11,fontWeight:500,color:T.text}}>{country}</span>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>🌍 Top Countries — {period}</div>
+            <span style={{fontSize:10,color:T.textMuted,fontWeight:600}}>{allCountries.length} countries</span>
+          </div>
+          <div style={{maxHeight:200,overflowY:'auto'}}>
+            {allCountries.length === 0
+              ? <div style={{color:T.textMuted,fontSize:12}}>No country data yet</div>
+              : allCountries.map(([country, count], i) => (
+                <div
+                  key={country}
+                  onClick={()=>setCountryFilter(countryFilter===country?'All':country)}
+                  style={{marginBottom:8,cursor:'pointer',padding:'4px 6px',borderRadius:6,background:countryFilter===country?T.accent+'18':'transparent',border:`1px solid ${countryFilter===country?T.accent+'44':'transparent'}`,transition:'all 0.15s'}}
+                >
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontSize:13}}>{FLAG_MAP[country]||'🏳'}</span>
+                      <span style={{fontSize:11,fontWeight:500,color:T.text}}>{country}</span>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontSize:10,color:T.textMuted}}>{count.toLocaleString()}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>
+                        {Math.round(count/rawViews.length*100)}%
+                      </span>
+                    </div>
                   </div>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <span style={{fontSize:10,color:T.textMuted}}>{count.toLocaleString()}</span>
-                    <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>
-                      {Math.round(count/total*100)}%
+                  <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]} total={rawViews.length}/>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+
+        {/* Cities */}
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+            <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>🏙 Top Cities</div>
+            <span style={{fontSize:10,color:T.textMuted,fontWeight:600}}>{allCities.length} cities</span>
+          </div>
+          <div style={{maxHeight:150,overflowY:'auto'}}>
+            {allCities.length === 0
+              ? <div style={{color:T.textMuted,fontSize:12}}>No city data</div>
+              : allCities
+                  .filter(([city]) => countryFilter==='All' || filteredViews.some(r=>r.city===city))
+                  .map(([city, count]) => (
+                  <div
+                    key={city}
+                    onClick={()=>setCityFilter(cityFilter===city?'All':city)}
+                    style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5,cursor:'pointer',padding:'3px 6px',borderRadius:6,background:cityFilter===city?T.accent+'18':'transparent',border:`1px solid ${cityFilter===city?T.accent+'44':'transparent'}`,transition:'all 0.15s'}}
+                  >
+                    <span style={{fontSize:11,color:T.text}}>{city}</span>
+                    <span style={{fontSize:11,fontWeight:600,color:T.accent}}>
+                      {count.toLocaleString()} <span style={{color:T.textMuted,fontWeight:400}}>({Math.round(count/rawViews.length*100)}%)</span>
                     </span>
                   </div>
-                </div>
-                <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]}/>
-              </div>
-            ))
-          }
-        </div>
-        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
-          <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub,marginBottom:8}}>🏙 Top Cities</div>
-          {topCities.length===0
-            ? <div style={{color:T.textMuted,fontSize:12}}>No city data</div>
-            : topCities.map(([city, count]) => (
-              <div key={city} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
-                <span style={{fontSize:11,color:T.text}}>{city}</span>
-                <span style={{fontSize:11,fontWeight:600,color:T.accent}}>{count.toLocaleString()} <span style={{color:T.textMuted,fontWeight:400}}>({Math.round(count/total*100)}%)</span></span>
-              </div>
-            ))
-          }
+                ))
+            }
+          </div>
         </div>
       </div>
     </div>
@@ -715,19 +823,24 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       const sinceA=new Date(now-curMs).toISOString();
       const sinceB=new Date(now-curMs*2).toISOString();
       const trunc=periodTrunc[period];
-      const [{data:viewRowsA},{data:likeRowsA},{data:ratingRowsA},{data:userRowsA}]=await Promise.all([
-        supabase.from('views').select('post_id,created_at,country,city,source').gte('created_at',sinceA),
-        supabase.from('likes').select('created_at').gte('created_at',sinceA),
-        supabase.from('ratings').select('created_at').gte('created_at',sinceA),
-        supabase.from('profiles').select('created_at').gte('created_at',sinceA),
-      ]);
+      const [
+  {data:viewRowsA, count:viewCount},
+  {data:likeRowsA, count:likeCount},
+  {data:ratingRowsA, count:ratingCount},
+  {data:userRowsA, count:userCount}
+] = await Promise.all([
+  supabase.from('views').select('post_id,created_at,country,city,source', {count:'exact'}).gte('created_at',sinceA),
+  supabase.from('likes').select('created_at', {count:'exact'}).gte('created_at',sinceA),
+  supabase.from('ratings').select('created_at', {count:'exact'}).gte('created_at',sinceA),
+  supabase.from('profiles').select('created_at', {count:'exact'}).gte('created_at',sinceA),
+]);
       const [vB,lB,rB,uB]=await Promise.all([
         supabase.from('views').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
         supabase.from('likes').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
         supabase.from('ratings').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
         supabase.from('profiles').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
       ]);
-      setStats({views:viewRowsA?.length??0,likes:likeRowsA?.length??0,ratings:ratingRowsA?.length??0,newUsers:userRowsA?.length??0});
+      setStats({views:viewCount??0,likes:likeCount??0,ratings:ratingCount??0,newUsers:userCount??0});
       setPrev({views:vB.count??0,likes:lB.count??0,ratings:rB.count??0,newUsers:uB.count??0});
       const bucketKey=(iso)=>{const d=new Date(iso);if(trunc==='hour')return`${String(d.getHours()).padStart(2,'0')}:00`;if(trunc==='month')return d.toLocaleDateString('en-US',{month:'short'});return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
       const bkt={views:{},likes:{},ratings:{}};
