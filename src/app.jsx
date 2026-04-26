@@ -24,7 +24,7 @@ import './App.css';
 import ReactGA from 'react-ga4';
 
 // Initialize once, outside the component
-ReactGA.initialize(process.env.REACT_APP_GA4_ID);
+ReactGA.initialize(import.meta.env.VITE_GA4_ID);
 const BRIEFS_TAB = '📰 Ogonjo Briefs';
 
 const ScrollToTop = () => {
