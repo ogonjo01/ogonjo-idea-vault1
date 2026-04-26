@@ -21,7 +21,10 @@ import Footer from './components/Footer';
 import ResetPassword from "./pages/ResetPassword";
 import SubscriptionPopup from './components/SubscriptionPopup/SubscriptionPopup';
 import './App.css';
+import ReactGA from 'react-ga4';
 
+// Initialize once, outside the component
+ReactGA.initialize(process.env.REACT_APP_GA4_ID);
 const BRIEFS_TAB = '📰 Ogonjo Briefs';
 
 const ScrollToTop = () => {
@@ -114,7 +117,10 @@ const AppInner = ({ session }) => {
     setSelectedCategory('');
     navigate(query ? `/?q=${encodeURIComponent(query)}` : '/', { replace: false });
   }, [navigate]);
-
+// GA4 — track every page navigation
+useEffect(() => {
+  ReactGA.send({ hitType: 'pageview', page: location.pathname + location.search });
+}, [location]);
   /* ── handleEdit ─────────────────────────────────────────────
      Fetch full article before opening EditSummaryForm so the
      editor has the complete body, keywords, tags, image, etc.
