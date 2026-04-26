@@ -597,7 +597,7 @@ const SOURCE_ICONS = {
   'Unknown':'🌐',
 };
 
-const TrafficPanel = ({ theme:T, rawViews, period }) => {
+const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
   const [countryFilter, setCountryFilter] = useState('All');
   const [cityFilter, setCityFilter]       = useState('All');
 
@@ -815,7 +815,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const [catSearch,setCatSearch]=useState('');
   const [selectedHour,setSelectedHour]=useState(null);
   const [selectedDay,setSelectedDay]=useState(null);
-
+  const [ga4Data,setGa4Data]=useState(null);
   const load=useCallback(async()=>{
     setLoading(true);setShowAllContent(false);setSelectedHour(null);setSelectedDay(null);
     try {
@@ -834,6 +834,12 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   supabase.from('ratings').select('created_at', {count:'exact'}).gte('created_at',sinceA),
   supabase.from('profiles').select('created_at', {count:'exact'}).gte('created_at',sinceA),
 ]);
+// GA4 — bot-filtered real human traffic
+try {
+  const ga4Res = await fetch(`/.netlify/functions/analytics-ga4?period=${period}`);
+  if (ga4Res.ok) setGa4Data(await ga4Res.json());
+  else setGa4Data(null);
+} catch(e) { console.warn('GA4 fetch failed', e); setGa4Data(null); }
       const [vB,lB,rB,uB]=await Promise.all([
         supabase.from('views').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
         supabase.from('likes').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
@@ -921,7 +927,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
           </ResponsiveContainer>
         }
       </div>
-      <TrafficPanel theme={T} rawViews={rawViews} period={period}/>
+       <TrafficPanel theme={T} rawViews={rawViews} period={period} ga4Data={ga4Data}/>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 220px',gap:10,marginBottom:12}}>
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
