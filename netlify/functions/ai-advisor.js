@@ -214,7 +214,7 @@ export default async (request) => {
     // Call 1 (grounded): fetches today's real football matches, form, odds, injuries
     // Call 2 (no grounding): builds N betting slips as plain text — no JSON = no parse errors
     // ─────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────
+// ── WORLDNET (BETTING ASSISTANT) ──────────────────────────────────────────
 if (mode === 'worldnet') {
   const {
     numSlips = 3,
@@ -224,115 +224,146 @@ if (mode === 'worldnet') {
     minConfidence = 65,
   } = body;
 
-  const stakeInfo = stake
-    ? `Stake per slip: $${stake}. Calculate estimated payout for each slip based on combined odds.`
-    : targetWin
-    ? `Target winnings: $${targetWin}. Calculate required stake per slip based on combined odds to reach this target.`
-    : `No stake provided. Show combined odds only, no payout calculation.`;
-
-  const combinedRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+  // Call 1 — grounded: just fetch match data, nothing else
+  const matchRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text:
-        `You are an expert football betting analyst. Your task: find today's real football matches on the web RIGHT NOW, score them for confidence, and build ${numSlips} betting slips.
+        `Search the web for football matches happening today (${new Date().toDateString()}).
 
-TODAY'S DATE: ${new Date().toDateString()}
+Find matches from: Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS.
 
-STEP 1 — FETCH MATCHES (search the web):
-Find all football matches being played TODAY across major leagues — Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS, African leagues, and any other active competitions today.
-
-For each match collect:
-- Home Team vs Away Team
-- League name
+For each match, provide in plain text:
+- Home team vs Away team
+- League
 - Kickoff time
-- Home form (last 5: W/D/L)
-- Away form (last 5: W/D/L)
-- Head-to-head (last 3 meetings)
-- Home goals scored avg per game
-- Home goals conceded avg per game
-- Away goals scored avg per game
-- Away goals conceded avg per game
-- Key injuries/suspensions
-- Approximate odds (Home Win / Draw / Away Win)
-- Over 2.5 goals odds
+- Recent results for both teams
+- Head to head record
+- Any injury news
+- Current betting odds if available
 
-STEP 2 — SCORE EACH MATCH:
-Rate confidence 0-100 based on form, H2H, goals, injuries. Remove any match below ${minConfidence}%. If not enough qualify, use highest available and flag them.
+List as many matches as you can find. Use simple bullet points.`
+      }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { maxOutputTokens: 3000, temperature: 0.1 },
+    }),
+  });
 
-STEP 3 — BUILD ${numSlips} SLIPS:
-- Each slip has exactly ${teamsPerSlip} matches (or fewer if not enough qualify)
-- Vary slips: Slip 1 = most conservative (highest confidence), middle slips = balanced, last slip = most aggressive (riskier picks or reversed predictions)
-- For each match state: Home Win / Draw / Away Win / Over 2.5 / Under 2.5
-- Flag matches below ${minConfidence}% with [LOW CONFIDENCE]
-- Flag reversed predictions with [REVERSED]
-- ${stakeInfo}
+  if (!matchRes.ok) {
+    const err = await matchRes.text();
+    return new Response(JSON.stringify({ 
+      error: `Could not fetch matches: ${err.slice(0,150)}` 
+    }), {
+      status: matchRes.status, 
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
+  }
 
-OUTPUT FORMAT (plain text, NO JSON):
+  const matchData = await matchRes.json();
+  const matchParts = (matchData.candidates||[]).flatMap(c=>c.content?.parts||[]);
+  const matchText = matchParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
+
+  if (!matchText || matchText.length < 50) {
+    return new Response(JSON.stringify({ 
+      error: 'No matches found for today. There may be no games scheduled, or the search failed. Try again later.' 
+    }), {
+      status: 500, 
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
+  }
+
+  // Call 2 — no grounding: analyze and build slips
+  const stakeInfo = stake
+    ? `User stake per slip: $${stake}. Calculate estimated payout = stake × combined odds.`
+    : targetWin
+    ? `User wants to win: $${targetWin}. Calculate required stake = target ÷ (combined odds - 1).`
+    : `No stake provided. Just show combined odds.`;
+
+  const buildRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text:
+        `You are a football betting analyst. Below is data on today's matches.
+
+MATCHES DATA:
+${matchText}
+
+YOUR TASK:
+1. Rate each match 0-100 for confidence based on form, H2H, and context
+2. Remove matches below ${minConfidence}% confidence
+3. Build ${numSlips} betting slips, each with ${teamsPerSlip} matches
+4. Vary risk: Slip 1 = safest picks only, last slip = more aggressive
+
+For each match in each slip, state:
+- Bet type (Home Win, Draw, Away Win, Over 2.5, Under 2.5)
+- Confidence %
+- Odds
+- Brief reason
+
+${stakeInfo}
+
+FORMAT (plain text):
 
 === BETTING SLIPS — ${new Date().toDateString()} ===
-Generated: ${numSlips} slips | ${teamsPerSlip} matches/slip | Min confidence: ${minConfidence}%
 
---- MATCH CONFIDENCE SCORES ---
+--- MATCH SCORES ---
 [Home] vs [Away] | Confidence: XX% | Bet: [type] | Odds: X.XX
-[repeat for every match that qualifies]
+[list all matches above ${minConfidence}%]
 
-REMOVED MATCHES (below ${minConfidence}%):
-[Home] vs [Away] | Confidence: XX% | Reason: [why]
+REMOVED (too uncertain):
+[Home] vs [Away] | Confidence: XX% | Why: [reason]
 
 --- SLIP 1 — CONSERVATIVE ---
-Tier: Conservative
-
 Match 1: [Home] vs [Away]
-  Bet: [Home Win / Draw / Away Win / Over 2.5 / Under 2.5]
+  Bet: [type]
   Confidence: XX%
   Odds: X.XX
-  Why: [1 sentence]
+  Why: [reason]
 
-[repeat for each match]
+[repeat for ${teamsPerSlip} matches]
 
 Combined Odds: X.XX
-${stake ? `Stake: $${stake} | Payout: $XX.XX | Profit: $XX.XX` : targetWin ? `Target: $${targetWin} | Stake: $XX.XX` : ''}
+${stake ? `Stake: $${stake} | Payout: $XX | Profit: $XX` : targetWin ? `Win Target: $${targetWin} | Stake Needed: $XX` : ''}
 
 --- SLIP 2 — BALANCED ---
 [same format]
 
-[continue for all ${numSlips} slips]
+[continue for ${numSlips} slips total]
 
---- ANALYST SUMMARY ---
-Best match: [match] — [why]
-Upset risk: [match] — [why]
-Overall confidence: [High/Medium/Low] — [why]
-Recommended slip: Slip [N] — [why]
+--- SUMMARY ---
+Best match: [match and why]
+Riskiest: [match and why]
+Recommended: Slip [N] because [reason]
 
 === END ===`
       }] }],
-      tools: [{ google_search: {} }],
       generationConfig: { 
         maxOutputTokens: 8192, 
-        temperature: 0.2,
+        temperature: 0.3,
         thinkingConfig: { thinkingBudget: 0 }
       },
     }),
   });
 
-  if (!combinedRes.ok) {
-    const err = await combinedRes.text();
+  if (!buildRes.ok) {
+    const err = await buildRes.text();
     return new Response(JSON.stringify({ 
-      error: `Generation failed: ${err.slice(0,200)}. Try reducing the number of slips or matches per slip.` 
+      error: `Slip generation failed: ${err.slice(0,150)}` 
     }), {
-      status: combinedRes.status, 
+      status: buildRes.status, 
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 
-  const data = await combinedRes.json();
-  const parts = (data.candidates||[]).flatMap(c=>c.content?.parts||[]);
-  const slipsText = parts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
+  const buildData = await buildRes.json();
+  const buildParts = (buildData.candidates||[]).flatMap(c=>c.content?.parts||[]);
+  const slipsText = buildParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
 
-  if (!slipsText) {
+  if (!slipsText || slipsText.length < 100) {
     return new Response(JSON.stringify({ 
-      error: 'No matches found or generation failed. Try again or reduce complexity.' 
+      error: 'Could not generate slips. Try reducing the number of slips or matches per slip.' 
     }), {
       status: 500, 
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
