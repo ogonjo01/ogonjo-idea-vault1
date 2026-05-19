@@ -408,7 +408,7 @@ Recommended slip: Slip [N] — [reason in 1 sentence]
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(geminiBody),
     });
-
+ 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
       console.error('Gemini error:', errText);
