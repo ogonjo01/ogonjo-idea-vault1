@@ -539,9 +539,6 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
 // ─────────────────────────────────────────────────────────────────────────────
 // ANALYTICS DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// TRAFFIC PANEL
-// ─────────────────────────────────────────────────────────────────────────────
 const FLAG_MAP = {
   'Afghanistan':'🇦🇫','Albania':'🇦🇱','Algeria':'🇩🇿','Andorra':'🇦🇩','Angola':'🇦🇴',
   'Antigua and Barbuda':'🇦🇬','Argentina':'🇦🇷','Armenia':'🇦🇲','Australia':'🇦🇺','Austria':'🇦🇹',
@@ -608,38 +605,27 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
     if (r.city)    cityMap[r.city]        = (cityMap[r.city]||0)       + 1;
   });
 
-  // All sorted lists
   const allCountries = Object.entries(countryMap).sort((a,b)=>b[1]-a[1]);
   const allCities    = Object.entries(cityMap).sort((a,b)=>b[1]-a[1]);
   const allSources   = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]);
 
-  // Filtered views based on dropdowns
   const filteredViews = (rawViews||[]).filter(r => {
     const matchCountry = countryFilter === 'All' || r.country === countryFilter;
     const matchCity    = cityFilter    === 'All' || r.city    === cityFilter;
     return matchCountry && matchCity;
   });
 
-  // Recount sources based on filtered views
   const filteredSourceMap = {};
   filteredViews.forEach(r => {
     if (r.source) filteredSourceMap[r.source] = (filteredSourceMap[r.source]||0) + 1;
   });
   const filteredSources = Object.entries(filteredSourceMap).sort((a,b)=>b[1]-a[1]);
-
   const total = filteredViews.length || 1;
 
   const selectStyle = {
-    padding: '5px 10px',
-    borderRadius: 7,
-    background: T.inputBg,
-    border: `1px solid ${T.inputBorder}`,
-    color: T.text,
-    fontSize: 11,
-    fontWeight: 600,
-    outline: 'none',
-    cursor: 'pointer',
-    maxWidth: 160,
+    padding: '5px 10px', borderRadius: 7, background: T.inputBg,
+    border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 11,
+    fontWeight: 600, outline: 'none', cursor: 'pointer', maxWidth: 160,
   };
 
   const Bar = ({ value, color, total }) => (
@@ -657,52 +643,23 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
 
   return (
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-
-      {/* ── LEFT: Traffic Sources ── */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,flexWrap:'wrap',gap:6}}>
           <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>📡 Traffic Sources — {period}</div>
           <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-            {/* Country filter */}
-            <select
-              value={countryFilter}
-              onChange={e=>{setCountryFilter(e.target.value);setCityFilter('All');}}
-              style={selectStyle}
-            >
+            <select value={countryFilter} onChange={e=>{setCountryFilter(e.target.value);setCityFilter('All');}} style={selectStyle}>
               <option value="All">🌍 All Countries ({allCountries.length})</option>
-              {allCountries.map(([c,n])=>(
-                <option key={c} value={c}>{FLAG_MAP[c]||'🏳'} {c} ({n})</option>
-              ))}
+              {allCountries.map(([c,n])=>(<option key={c} value={c}>{FLAG_MAP[c]||'🏳'} {c} ({n})</option>))}
             </select>
-            {/* City filter */}
-            <select
-              value={cityFilter}
-              onChange={e=>setCityFilter(e.target.value)}
-              style={selectStyle}
-            >
+            <select value={cityFilter} onChange={e=>setCityFilter(e.target.value)} style={selectStyle}>
               <option value="All">🏙 All Cities ({allCities.length})</option>
-              {allCities
-                .filter(([city]) => {
-                  if (countryFilter === 'All') return true;
-                  // Only show cities that exist in filtered views
-                  return filteredViews.some(r => r.city === city);
-                })
-                .map(([city, n])=>(
-                  <option key={city} value={city}>{city} ({n})</option>
-                ))
-              }
+              {allCities.filter(([city]) => countryFilter==='All'||filteredViews.some(r=>r.city===city)).map(([city, n])=>(<option key={city} value={city}>{city} ({n})</option>))}
             </select>
-            {/* Clear filters */}
             {(countryFilter !== 'All' || cityFilter !== 'All') && (
-              <button
-                onClick={()=>{setCountryFilter('All');setCityFilter('All');}}
-                style={{background:'none',border:`1px solid ${T.border}`,borderRadius:6,color:T.textMuted,padding:'4px 8px',cursor:'pointer',fontSize:10,fontWeight:700}}
-              >✕ Clear</button>
+              <button onClick={()=>{setCountryFilter('All');setCityFilter('All');}} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:6,color:T.textMuted,padding:'4px 8px',cursor:'pointer',fontSize:10,fontWeight:700}}>✕ Clear</button>
             )}
           </div>
         </div>
-
-        {/* Filtered count badge */}
         {(countryFilter !== 'All' || cityFilter !== 'All') && (
           <div style={{fontSize:10,color:T.accent,fontWeight:600,marginBottom:8,background:T.accent+'12',border:`1px solid ${T.accent}33`,borderRadius:6,padding:'3px 10px',display:'inline-block'}}>
             Showing {filteredViews.length.toLocaleString()} views
@@ -710,7 +667,6 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
             {cityFilter !== 'All' ? ` · 🏙 ${cityFilter}` : ''}
           </div>
         )}
-
         {filteredSources.length === 0
           ? <div style={{color:T.textMuted,fontSize:12}}>No source data for this filter</div>
           : filteredSources.map(([src, count], i) => (
@@ -722,9 +678,7 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <span style={{fontSize:10,color:T.textMuted}}>{count.toLocaleString()}</span>
-                  <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>
-                    {Math.round(count/total*100)}%
-                  </span>
+                  <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>{Math.round(count/total*100)}%</span>
                 </div>
               </div>
               <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]} total={total}/>
@@ -732,11 +686,7 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
           ))
         }
       </div>
-
-      {/* ── RIGHT: Countries + Cities ── */}
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
-
-        {/* Countries */}
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',flex:1}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
             <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>🌍 Top Countries — {period}</div>
@@ -746,11 +696,7 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
             {allCountries.length === 0
               ? <div style={{color:T.textMuted,fontSize:12}}>No country data yet</div>
               : allCountries.map(([country, count], i) => (
-                <div
-                  key={country}
-                  onClick={()=>setCountryFilter(countryFilter===country?'All':country)}
-                  style={{marginBottom:8,cursor:'pointer',padding:'4px 6px',borderRadius:6,background:countryFilter===country?T.accent+'18':'transparent',border:`1px solid ${countryFilter===country?T.accent+'44':'transparent'}`,transition:'all 0.15s'}}
-                >
+                <div key={country} onClick={()=>setCountryFilter(countryFilter===country?'All':country)} style={{marginBottom:8,cursor:'pointer',padding:'4px 6px',borderRadius:6,background:countryFilter===country?T.accent+'18':'transparent',border:`1px solid ${countryFilter===country?T.accent+'44':'transparent'}`,transition:'all 0.15s'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
                     <div style={{display:'flex',alignItems:'center',gap:6}}>
                       <span style={{fontSize:13}}>{FLAG_MAP[country]||'🏳'}</span>
@@ -758,9 +704,7 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:6}}>
                       <span style={{fontSize:10,color:T.textMuted}}>{count.toLocaleString()}</span>
-                      <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>
-                        {Math.round(count/rawViews.length*100)}%
-                      </span>
+                      <span style={{fontSize:10,fontWeight:700,color:CAT_COLOURS[i%CAT_COLOURS.length]}}>{Math.round(count/rawViews.length*100)}%</span>
                     </div>
                   </div>
                   <Bar value={count} color={CAT_COLOURS[i%CAT_COLOURS.length]} total={rawViews.length}/>
@@ -769,8 +713,6 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
             }
           </div>
         </div>
-
-        {/* Cities */}
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
             <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>🏙 Top Cities</div>
@@ -779,20 +721,12 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
           <div style={{maxHeight:150,overflowY:'auto'}}>
             {allCities.length === 0
               ? <div style={{color:T.textMuted,fontSize:12}}>No city data</div>
-              : allCities
-                  .filter(([city]) => countryFilter==='All' || filteredViews.some(r=>r.city===city))
-                  .map(([city, count]) => (
-                  <div
-                    key={city}
-                    onClick={()=>setCityFilter(cityFilter===city?'All':city)}
-                    style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5,cursor:'pointer',padding:'3px 6px',borderRadius:6,background:cityFilter===city?T.accent+'18':'transparent',border:`1px solid ${cityFilter===city?T.accent+'44':'transparent'}`,transition:'all 0.15s'}}
-                  >
-                    <span style={{fontSize:11,color:T.text}}>{city}</span>
-                    <span style={{fontSize:11,fontWeight:600,color:T.accent}}>
-                      {count.toLocaleString()} <span style={{color:T.textMuted,fontWeight:400}}>({Math.round(count/rawViews.length*100)}%)</span>
-                    </span>
-                  </div>
-                ))
+              : allCities.filter(([city]) => countryFilter==='All'||filteredViews.some(r=>r.city===city)).map(([city, count]) => (
+                <div key={city} onClick={()=>setCityFilter(cityFilter===city?'All':city)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5,cursor:'pointer',padding:'3px 6px',borderRadius:6,background:cityFilter===city?T.accent+'18':'transparent',border:`1px solid ${cityFilter===city?T.accent+'44':'transparent'}`,transition:'all 0.15s'}}>
+                  <span style={{fontSize:11,color:T.text}}>{city}</span>
+                  <span style={{fontSize:11,fontWeight:600,color:T.accent}}>{count.toLocaleString()} <span style={{color:T.textMuted,fontWeight:400}}>({Math.round(count/rawViews.length*100)}%)</span></span>
+                </div>
+              ))
             }
           </div>
         </div>
@@ -800,6 +734,7 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
     </div>
   );
 };
+
 const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const [period,setPeriod]=useState('Week');
   const [activeMetric,setMetric]=useState('views');
@@ -816,6 +751,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
   const [selectedHour,setSelectedHour]=useState(null);
   const [selectedDay,setSelectedDay]=useState(null);
   const [ga4Data,setGa4Data]=useState(null);
+
   const load=useCallback(async()=>{
     setLoading(true);setShowAllContent(false);setSelectedHour(null);setSelectedDay(null);
     try {
@@ -824,22 +760,21 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
       const sinceB=new Date(now-curMs*2).toISOString();
       const trunc=periodTrunc[period];
       const [
-  {data:viewRowsA, count:viewCount},
-  {data:likeRowsA, count:likeCount},
-  {data:ratingRowsA, count:ratingCount},
-  {data:userRowsA, count:userCount}
-] = await Promise.all([
-  supabase.from('views').select('post_id,created_at,country,city,source', {count:'exact'}).gte('created_at',sinceA),
-  supabase.from('likes').select('created_at', {count:'exact'}).gte('created_at',sinceA),
-  supabase.from('ratings').select('created_at', {count:'exact'}).gte('created_at',sinceA),
-  supabase.from('profiles').select('created_at', {count:'exact'}).gte('created_at',sinceA),
-]);
-// GA4 — bot-filtered real human traffic
-try {
-  const ga4Res = await fetch(`/.netlify/functions/analytics-ga4?period=${period}`);
-  if (ga4Res.ok) setGa4Data(await ga4Res.json());
-  else setGa4Data(null);
-} catch(e) { console.warn('GA4 fetch failed', e); setGa4Data(null); }
+        {data:viewRowsA, count:viewCount},
+        {data:likeRowsA, count:likeCount},
+        {data:ratingRowsA, count:ratingCount},
+        {data:userRowsA, count:userCount}
+      ] = await Promise.all([
+        supabase.from('views').select('post_id,created_at,country,city,source', {count:'exact'}).gte('created_at',sinceA),
+        supabase.from('likes').select('created_at', {count:'exact'}).gte('created_at',sinceA),
+        supabase.from('ratings').select('created_at', {count:'exact'}).gte('created_at',sinceA),
+        supabase.from('profiles').select('created_at', {count:'exact'}).gte('created_at',sinceA),
+      ]);
+      try {
+        const ga4Res = await fetch(`/.netlify/functions/analytics-ga4?period=${period}`);
+        if (ga4Res.ok) setGa4Data(await ga4Res.json());
+        else setGa4Data(null);
+      } catch(e) { console.warn('GA4 fetch failed', e); setGa4Data(null); }
       const [vB,lB,rB,uB]=await Promise.all([
         supabase.from('views').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
         supabase.from('likes').select('id',{count:'exact',head:true}).gte('created_at',sinceB).lt('created_at',sinceA),
@@ -927,9 +862,8 @@ try {
           </ResponsiveContainer>
         }
       </div>
-       <TrafficPanel theme={T} rawViews={rawViews} period={period} ga4Data={ga4Data}/>
-
-        <div style={{display:'grid',gridTemplateColumns:'1fr 220px',gap:10,marginBottom:12}}>
+      <TrafficPanel theme={T} rawViews={rawViews} period={period} ga4Data={ga4Data}/>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 220px',gap:10,marginBottom:12}}>
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
             <span style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>Top Content — {period}</span>
@@ -965,7 +899,7 @@ try {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI ADVISOR — 5 tabs: Ask Marcus | Trending | Content Ideas | Business News | 🌐 World Net
+// AI ADVISOR — 5 tabs: Ask Marcus | Trending | Content Ideas | Business News | ⚽ Betting
 // ─────────────────────────────────────────────────────────────────────────────
 const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   const [subTab, setSubTab]         = useState('chat');
@@ -981,22 +915,27 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   const [messages, setMessages] = useState([
     { role:'assistant', content:"Hey — I'm Marcus, your business consultant for Ogonjo.\n\nI'm here to help you grow this platform into a real revenue machine. I can tell you what's trending right now on Google, what content to create this week, how to monetize your traffic better, and any business strategy question you have.\n\nI search the web in real-time, so my answers are based on what's actually happening today — not outdated data.\n\nWhat do you want to work on?" }
   ]);
-  const [chatInput, setChatInput]       = useState('');
-  const [chatLoading, setChatLoading]   = useState(false);
-  const chatBottomRef                   = useRef(null);
+  const [chatInput, setChatInput]     = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatBottomRef                 = useRef(null);
 
-  // ── World Net state ────────────────────────────────────────────────────────
-  const [wnLoading, setWnLoading]   = useState(false);
-  const [wnNetwork, setWnNetwork]   = useState('');
-  const [wnError,   setWnError]     = useState('');
-  const [wnLibrary, setWnLibrary]   = useState([]);
+  // ── Betting state ──────────────────────────────────────────────────────────
+  const [wnLoading,       setWnLoading]       = useState(false);
+  const [wnSlips,         setWnSlips]         = useState('');
+  const [wnError,         setWnError]         = useState('');
+  const [wnNumSlips,      setWnNumSlips]      = useState(3);
+  const [wnTeamsPerSlip,  setWnTeamsPerSlip]  = useState(3);
+  const [wnStakeMode,     setWnStakeMode]     = useState('stake'); // 'stake' | 'target'
+  const [wnStake,         setWnStake]         = useState('');
+  const [wnTargetWin,     setWnTargetWin]     = useState('');
+  const [wnMinConf,       setWnMinConf]       = useState(65);
 
   const SUB_TABS = [
     { id:'chat',            label:'💬 Ask Marcus'    },
     { id:'trending',        label:'🔍 Trending'      },
     { id:'recommendations', label:'💡 Content Ideas' },
     { id:'news',            label:'📰 Business News' },
-    { id:'worldnet',        label:'🌐 World Net'     },
+    { id:'worldnet',        label:'⚽ Betting'        },
   ];
 
   const [suggestedPrompts, setSuggestedPrompts] = useState({
@@ -1009,7 +948,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   const IMPACT_C={ high:'#ef4444', hot:'#ef4444', medium:'#f97316', low:'#f59e0b', rising:'#10b981' };
   const VOLUME_C={ high:'#06b6d4', medium:'#f97316', rising:'#10b981' };
 
-  // Load article library for World Net on mount
   useEffect(()=>{
     let mounted=true;
     (async()=>{
@@ -1025,9 +963,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
         const catMap={}; (cats||[]).forEach(r=>{const c=r.category||'Other';catMap[c]=(catMap[c]||0)+1;});
         const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,count])=>({name,count}));
         if(mounted){ setPlatform({topContent:top||[],topCategories:topCats,totalContent:count||0}); setSuggestionsLoading(false); }
-        // Also load full title list for World Net library
-        const { data:allTitles } = await supabase.from('book_summaries').select('title').order('created_at',{ascending:false}).limit(150);
-        if(mounted) setWnLibrary((allTitles||[]).map(d=>d.title).filter(Boolean));
       } catch(err){ console.error('AIAdvisor init',err); }
     })();
     return()=>{mounted=false;};
@@ -1076,24 +1011,31 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
     finally{setLoading(false);}
   };
 
-  // ── World Net generate ─────────────────────────────────────────────────────
-  const generateWorldNet=async()=>{
-    setWnLoading(true);setWnError('');setWnNetwork('');
+  // ── Betting generate ───────────────────────────────────────────────────────
+  const generateSlips = async () => {
+    setWnLoading(true); setWnError(''); setWnSlips('');
     try {
-      const res=await fetch('/api/ai-advisor',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({mode:'worldnet',existingLibrary:wnLibrary}),
+      const body = {
+        mode: 'worldnet',
+        numSlips: wnNumSlips,
+        teamsPerSlip: wnTeamsPerSlip,
+        minConfidence: wnMinConf,
+        stake: wnStakeMode === 'stake' && wnStake ? Number(wnStake) : null,
+        targetWin: wnStakeMode === 'target' && wnTargetWin ? Number(wnTargetWin) : null,
+      };
+      const res = await fetch('/api/ai-advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      // Safe parse — if response is not JSON (edge error), catch it cleanly
-      const text=await res.text();
+      const text = await res.text();
       let data;
-      try { data=JSON.parse(text); }
-      catch { throw new Error('Server error — the request took too long. Try again.'); }
-      if(!res.ok||data.error) throw new Error(data.error||'Generation failed');
-      setWnNetwork(data.network||'');
-    } catch(e){setWnError(e.message||'Something went wrong. Try again.');}
-    finally{setWnLoading(false);}
+      try { data = JSON.parse(text); }
+      catch { throw new Error('Server error — request took too long. Try again.'); }
+      if (!res.ok || data.error) throw new Error(data.error || 'Generation failed');
+      setWnSlips(data.slips || '');
+    } catch(e) { setWnError(e.message || 'Something went wrong. Try again.'); }
+    finally { setWnLoading(false); }
   };
 
   const askMarcus=(question)=>{setSubTab('chat');setTimeout(()=>sendChat(question),100);};
@@ -1160,72 +1102,131 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
     return(<><PromptStrip tab="news"/><div style={{background:T.aiSurface,border:`1px solid ${T.aiBorder}`,borderRadius:10,padding:'12px 16px',marginBottom:12}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}><div style={{flex:1}}><div style={{fontSize:11,color:T.aiAccent,fontWeight:700,marginBottom:4}}>🌐 Market Pulse — {result.category}</div><p style={{fontSize:12,color:T.text,lineHeight:1.6,margin:'0 0 6px'}}>{result.editorNote}</p><div style={{fontSize:11,color:T.textMuted}}>Key theme: <strong style={{color:T.text}}>{result.keyTheme}</strong></div></div><div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6,flexShrink:0}}><div style={{textAlign:'center'}}><div style={{fontSize:10,color:T.textMuted,marginBottom:4}}>Sentiment</div><span style={{fontSize:12,fontWeight:700,color:sentC,background:sentC+'18',padding:'4px 12px',borderRadius:20,textTransform:'uppercase',border:`1px solid ${sentC}44`}}>{result.marketSentiment}</span></div><CopyButton text={`${result.editorNote}\n\nKey theme: ${result.keyTheme}`} theme={T}/></div></div></div><SectionTitle>📰 Latest Headlines</SectionTitle><div style={{display:'flex',flexDirection:'column',gap:10}}>{(result.headlines||[]).map((h,i)=>(<div key={i} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:'14px 16px',transition:'border-color 0.15s'}} onMouseEnter={e=>e.currentTarget.style.borderColor=T.borderHover} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}><span style={{fontSize:13,fontWeight:700,color:T.text,lineHeight:1.3,flex:1}}>{h.title}</span><div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}><Badge label={h.impact} colour={IMPACT_C[h.impact]}/><CopyButton text={`${h.title}\n\n${h.summary}\n\nContent idea: ${h.contentOpportunity}`} theme={T}/></div></div><div style={{display:'flex',gap:8,marginBottom:8}}><span style={{fontSize:10,color:T.textMuted,background:T.surface,border:`1px solid ${T.border}`,padding:'1px 8px',borderRadius:20}}>{h.source}</span><span style={{fontSize:10,color:T.textMuted}}>{h.publishedAt}</span></div><p style={{fontSize:12,color:T.textSub,lineHeight:1.5,margin:'0 0 8px'}}>{h.summary}</p><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:T.aiSurface,border:`1px solid ${T.aiBorder}`,borderRadius:8,cursor:'pointer'}} onClick={()=>askMarcus(`Help me write an article based on this news: "${h.title}". Give me a full outline, key angles, and how to optimize it for Google traffic.`)} onMouseEnter={e=>e.currentTarget.style.borderColor=T.aiAccent} onMouseLeave={e=>e.currentTarget.style.borderColor=T.aiBorder}><div><span style={{fontSize:10,color:T.aiAccent,fontWeight:700}}>✍️ Content idea: </span><span style={{fontSize:11,color:T.text}}>{h.contentOpportunity}</span></div><span style={{fontSize:10,color:T.aiAccent,flexShrink:0,marginLeft:8}}>Write with Marcus →</span></div></div>))}</div></>);
   };
 
-  // ── World Net tab render ───────────────────────────────────────────────────
-  const renderWorldNet=()=>(
+  // ── Betting tab render ─────────────────────────────────────────────────────
+  const renderWorldNet = () => (
     <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflowY:'auto'}}>
       <style>{`@keyframes wnSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
-      {/* Header */}
+      {/* Config panel */}
       <div style={{background:`linear-gradient(135deg,${T.accent}10,${T.aiAccent}06)`,border:`1px solid ${T.accent}22`,borderRadius:12,padding:'16px 18px',marginBottom:14}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+        <div style={{fontSize:13,fontWeight:800,color:T.text,marginBottom:3}}>⚽ Betting Slip Generator</div>
+        <div style={{fontSize:11,color:T.textSub,lineHeight:1.6,marginBottom:14}}>
+          Fetches <strong style={{color:T.accent}}>today's real matches</strong> from the web, scores each one for confidence, removes weak picks, and builds you structured betting slips ready to use.
+        </div>
+
+        {/* Row 1: slips + teams */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
           <div>
-            <div style={{fontSize:13,fontWeight:800,color:T.text,marginBottom:3}}>🌐 World Net Generator</div>
-            <div style={{fontSize:11,color:T.textSub,lineHeight:1.6}}>
-              Crawls the last <strong style={{color:T.accent}}>12 hours</strong> of world news → generates <strong style={{color:T.text}}>10 SEO titles</strong>, <strong style={{color:T.text}}>20 network terms</strong>, library matches, and two ready-to-paste writing prompts. Copy the whole network and paste it into any AI with your article list.
+            <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8,marginBottom:5}}>Number of slips</div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              {[1,2,3,4,5,6,8,10].map(n=>(
+                <button key={n} onClick={()=>setWnNumSlips(n)} style={{padding:'4px 11px',borderRadius:20,border:`1px solid ${wnNumSlips===n?T.accent:T.border}`,background:wnNumSlips===n?T.accent+'22':T.surface,color:wnNumSlips===n?T.accent:T.textMuted,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all 0.15s'}}>{n}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8,marginBottom:5}}>Matches per slip</div>
+            <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+              {[2,3,4,5,6,7,8].map(n=>(
+                <button key={n} onClick={()=>setWnTeamsPerSlip(n)} style={{padding:'4px 11px',borderRadius:20,border:`1px solid ${wnTeamsPerSlip===n?T.accent:T.border}`,background:wnTeamsPerSlip===n?T.accent+'22':T.surface,color:wnTeamsPerSlip===n?T.accent:T.textMuted,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all 0.15s'}}>{n}</button>
+              ))}
             </div>
           </div>
         </div>
+
+        {/* Row 2: confidence threshold */}
+        <div style={{marginBottom:10}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+            <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8}}>Min confidence threshold</div>
+            <span style={{fontSize:12,fontWeight:700,color:T.accent}}>{wnMinConf}%</span>
+          </div>
+          <input
+            type="range" min={50} max={90} step={5} value={wnMinConf}
+            onChange={e=>setWnMinConf(Number(e.target.value))}
+            style={{width:'100%',accentColor:T.accent}}
+          />
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:T.textMuted,marginTop:2}}>
+            <span>50% — aggressive</span><span>70% — balanced</span><span>90% — safe only</span>
+          </div>
+        </div>
+
+        {/* Row 3: stake mode */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8,marginBottom:6}}>Money (optional)</div>
+          <div style={{display:'flex',gap:6,marginBottom:8}}>
+            <button onClick={()=>setWnStakeMode('stake')} style={{padding:'4px 14px',borderRadius:20,border:`1px solid ${wnStakeMode==='stake'?T.accent:T.border}`,background:wnStakeMode==='stake'?T.accent+'22':T.surface,color:wnStakeMode==='stake'?T.accent:T.textMuted,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all 0.15s'}}>I have a stake</button>
+            <button onClick={()=>setWnStakeMode('target')} style={{padding:'4px 14px',borderRadius:20,border:`1px solid ${wnStakeMode==='target'?T.accent:T.border}`,background:wnStakeMode==='target'?T.accent+'22':T.surface,color:wnStakeMode==='target'?T.accent:T.textMuted,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all 0.15s'}}>I want to win</button>
+          </div>
+          {wnStakeMode === 'stake' ? (
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:12,color:T.textMuted}}>Stake per slip ($)</span>
+              <input type="number" min={0} value={wnStake} onChange={e=>setWnStake(e.target.value)} placeholder="e.g. 5" style={{width:100,padding:'6px 10px',background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:8,color:T.text,fontSize:12,outline:'none'}}/>
+            </div>
+          ) : (
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:12,color:T.textMuted}}>I want to win ($)</span>
+              <input type="number" min={0} value={wnTargetWin} onChange={e=>setWnTargetWin(e.target.value)} placeholder="e.g. 50" style={{width:100,padding:'6px 10px',background:T.inputBg,border:`1px solid ${T.inputBorder}`,borderRadius:8,color:T.text,fontSize:12,outline:'none'}}/>
+            </div>
+          )}
+        </div>
+
+        {/* Generate button */}
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
           <button
-            onClick={generateWorldNet}
+            onClick={generateSlips}
             disabled={wnLoading}
             style={{padding:'9px 22px',borderRadius:9,border:'none',cursor:wnLoading?'default':'pointer',background:wnLoading?T.surface:`linear-gradient(135deg,${T.accent},${T.aiAccent})`,color:wnLoading?T.textMuted:'#fff',fontSize:12,fontWeight:800,transition:'all 0.2s',display:'flex',alignItems:'center',gap:8,flexShrink:0}}
           >
             {wnLoading
-              ? <><span style={{animation:'wnSpin 1s linear infinite',display:'inline-block'}}>◌</span> Generating… (~30s)</>
-              : '🌐 Generate Network'
+              ? <><span style={{animation:'wnSpin 1s linear infinite',display:'inline-block'}}>◌</span> Fetching matches & building slips… (~30s)</>
+              : `⚽ Generate ${wnNumSlips} Betting Slip${wnNumSlips>1?'s':''}`
             }
           </button>
-          {wnNetwork&&<CopyButton text={wnNetwork} theme={T} label="Copy Full Network"/>}
-          <span style={{fontSize:10,color:T.textMuted}}>Uses your {wnLibrary.length} article library</span>
+          {wnSlips && <CopyButton text={wnSlips} theme={T} label="Copy All Slips"/>}
         </div>
-        {wnError&&(
+
+        {wnError && (
           <div style={{marginTop:10,background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:8,padding:'8px 12px',color:'#f87171',fontSize:11}}>⚠️ {wnError}</div>
         )}
       </div>
 
-      {/* Network output */}
-      {wnLoading&&(
+      {/* Loading state */}
+      {wnLoading && (
         <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,padding:'40px 0'}}>
           <div style={{position:'relative',width:56,height:56}}>
             <div style={{position:'absolute',inset:0,borderRadius:'50%',border:`3px solid ${T.border}`}}/>
             <div style={{position:'absolute',inset:0,borderRadius:'50%',border:`3px solid transparent`,borderTopColor:T.accent,animation:'wnSpin 1s linear infinite'}}/>
-            <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🌐</div>
+            <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>⚽</div>
           </div>
           <div style={{textAlign:'center'}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Crawling the world…</div>
-            <div style={{fontSize:11,color:T.textMuted,lineHeight:1.7}}>Fetching last 12 hours of news<br/>Building your content network</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Scanning today's matches…</div>
+            <div style={{fontSize:11,color:T.textMuted,lineHeight:1.7}}>Fetching form, head-to-head, odds, injuries<br/>Scoring confidence and building your slips</div>
           </div>
         </div>
       )}
 
-      {wnNetwork&&!wnLoading&&(
+      {/* Slips output */}
+      {wnSlips && !wnLoading && (
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'16px',flex:1,minHeight:0}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-            <span style={{fontSize:11,fontWeight:700,color:T.text}}>📋 Your Content Network</span>
-            <CopyButton text={wnNetwork} theme={T} label="Copy All"/>
+            <span style={{fontSize:11,fontWeight:700,color:T.text}}>⚽ Your Betting Slips — {new Date().toDateString()}</span>
+            <div style={{display:'flex',gap:6}}>
+              <CopyButton text={wnSlips} theme={T} label="Copy All"/>
+              <button onClick={()=>{setWnSlips('');setWnError('');}} style={{background:'none',border:`1px solid ${T.border}`,borderRadius:7,color:T.textMuted,padding:'3px 10px',cursor:'pointer',fontSize:10,fontWeight:700}}>↺ Reset</button>
+            </div>
           </div>
-          <div style={{overflowY:'auto',maxHeight:'calc(100vh - 420px)',background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:'14px'}}>
-            <pre style={{fontSize:11,color:T.text,lineHeight:1.7,margin:0,whiteSpace:'pre-wrap',fontFamily:"'DM Mono', 'Fira Code', monospace"}}>{wnNetwork}</pre>
+          <div style={{overflowY:'auto',maxHeight:'calc(100vh - 500px)',background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:'14px'}}>
+            <pre style={{fontSize:11,color:T.text,lineHeight:1.8,margin:0,whiteSpace:'pre-wrap',fontFamily:"'DM Mono', 'Fira Code', monospace"}}>{wnSlips}</pre>
           </div>
         </div>
       )}
 
-      {!wnNetwork&&!wnLoading&&(
+      {/* Empty state */}
+      {!wnSlips && !wnLoading && (
         <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,padding:'40px 0',color:T.textMuted}}>
-          <div style={{fontSize:40}}>🌐</div>
+          <div style={{fontSize:40}}>⚽</div>
           <div style={{fontSize:12,textAlign:'center',lineHeight:1.7,maxWidth:360,color:T.textSub}}>
-            Hit <strong style={{color:T.text}}>Generate Network</strong> above. Marcus will crawl the last 12 hours of world news and build you a complete content network — titles, terms, library matches, and writing prompts — all in one copyable block.
+            Configure your preferences above and hit <strong style={{color:T.text}}>Generate</strong>. The AI fetches today's real matches, scores each one for confidence, removes uncertain picks, and builds your slips — Conservative to Aggressive.
           </div>
         </div>
       )}
@@ -1233,15 +1234,21 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
   );
 
   // ── Main layout ────────────────────────────────────────────────────────────
-  const isChat=subTab==='chat';
-  const isWorldNet=subTab==='worldnet';
-  const tabInputMap={
-    trending:{value:trendingInput,setter:setTrendingInput,placeholder:'e.g. "African fintech" or "AI tools for business"'},
-    recommendations:{value:recommendInput,setter:setRecommendInput,placeholder:'e.g. "personal finance" or "startup growth"'},
-    news:{value:newsInput,setter:setNewsInput,placeholder:'e.g. "electric vehicles" or "crypto regulation"'},
+  const isChat     = subTab === 'chat';
+  const isWorldNet = subTab === 'worldnet';
+  const tabInputMap = {
+    trending:        { value:trendingInput,  setter:setTrendingInput,  placeholder:'e.g. "African fintech" or "AI tools for business"' },
+    recommendations: { value:recommendInput, setter:setRecommendInput, placeholder:'e.g. "personal finance" or "startup growth"' },
+    news:            { value:newsInput,       setter:setNewsInput,       placeholder:'e.g. "electric vehicles" or "crypto regulation"' },
   };
-  const currentInput=tabInputMap[subTab];
-  const actionLabel=()=>{const topic=effectiveTopic(subTab);if(loading)return`⏳ Searching for ${topic}…`;if(subTab==='trending')return`🔍 Find Trending Searches in ${topic}`;if(subTab==='recommendations')return`💡 Generate Ideas for ${topic}`;return`📰 Load ${topic} News`;};
+  const currentInput = tabInputMap[subTab];
+  const actionLabel = () => {
+    const topic = effectiveTopic(subTab);
+    if(loading) return `⏳ Searching for ${topic}…`;
+    if(subTab==='trending') return `🔍 Find Trending Searches in ${topic}`;
+    if(subTab==='recommendations') return `💡 Generate Ideas for ${topic}`;
+    return `📰 Load ${topic} News`;
+  };
 
   return(
     <div style={{overflowY:(isChat||isWorldNet)?'hidden':'auto',flex:1,paddingRight:4,paddingBottom:8,display:'flex',flexDirection:'column'}}>
@@ -1250,7 +1257,7 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
         <div style={{display:'flex',gap:4,marginBottom:(isChat||isWorldNet)?0:12,background:T.bg,borderRadius:8,padding:3,border:`1px solid ${T.border}`}}>
           {SUB_TABS.map(t=>(<button key={t.id} onClick={()=>setSubTab(t.id)} style={{flex:1,background:subTab===t.id?(t.id==='worldnet'?T.accent+'22':T.tabActive):'transparent',border:'none',color:subTab===t.id?(t.id==='worldnet'?T.accent:T.tabText):(t.id==='worldnet'?T.accent+'88':T.tabInactive),padding:'6px 8px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600,transition:'all 0.15s',whiteSpace:'nowrap'}}>{t.label}</button>))}
         </div>
-        {!isChat&&!isWorldNet&&(
+        {!isChat && !isWorldNet && (
           <>
             <div style={{marginTop:10,marginBottom:8}}>
               <div style={{fontSize:11,color:T.textMuted,marginBottom:5,textTransform:'uppercase',letterSpacing:1,fontWeight:600}}>🔎 Custom topic (optional)</div>
@@ -1271,8 +1278,8 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
 
       {error&&!isChat&&!isWorldNet&&(<div style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 14px',color:'#f87171',fontSize:12,marginBottom:12,flexShrink:0}}>⚠️ {error}</div>)}
 
-      {isWorldNet        ? renderWorldNet()
-       : isChat          ? renderChat()
+      {isWorldNet              ? renderWorldNet()
+       : isChat                ? renderChat()
        : subTab==='trending'        ? renderTrending()
        : subTab==='recommendations' ? renderRecommendations()
        :                              renderNews()

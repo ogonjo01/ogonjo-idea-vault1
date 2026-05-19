@@ -2,9 +2,9 @@
 // Handles: trending | recommendations | news | chat | pattern | suggestions | worldnet
 // Uses Google Gemini 2.5 Flash with grounding (real-time web search)
 //
-// WORLDNET approach — two calls, plain text output:
-// Call 1 (grounded): fetches real 12hr news as plain text — no JSON pressure
-// Call 2 (no grounding): builds network as plain text — no JSON = no parse errors ever
+// WORLDNET (now: Betting Assistant) — two calls, plain text output:
+// Call 1 (grounded): fetches today's real football matches and data
+// Call 2 (no grounding): builds betting slips as plain text — no JSON = no parse errors ever
 
 const MODEL = 'gemini-2.5-flash';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -210,153 +210,137 @@ export default async (request) => {
       });
     }
 
-    // ── WORLDNET ──────────────────────────────────────────────────────────────
-    // Call 1: Grounded — get real 12hr news as plain text
-    // Call 2: No grounding — build network as plain text (plain text = zero parse errors)
+    // ── WORLDNET (BETTING ASSISTANT) ──────────────────────────────────────────
+    // Call 1 (grounded): fetches today's real football matches, form, odds, injuries
+    // Call 2 (no grounding): builds N betting slips as plain text — no JSON = no parse errors
     // ─────────────────────────────────────────────────────────────────────────
     if (mode === 'worldnet') {
-      const { existingLibrary = [] } = body;
-      const safeTitle = (t) => (t||'').replace(/"/g,"'").replace(/\\/g,'').slice(0,80);
-      const libraryList = existingLibrary.slice(0, 100).map(safeTitle).join('\n');
+      const {
+        numSlips = 3,
+        teamsPerSlip = 3,
+        stake = null,
+        targetWin = null,
+        minConfidence = 65,
+      } = body;
 
-      // Call 1 — grounded news fetch
-      const newsRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
+      // Call 1 — grounded: fetch today's matches and football data
+      const matchRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text:
-            `Search the web RIGHT NOW. Find the 10 most important world news stories from the LAST 12 HOURS (March 2026). Business, economic, political, tech, disasters, viral stories.
+            `Search the web RIGHT NOW. Find all football matches being played TODAY (${new Date().toDateString()}) across all major leagues — Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Champions League, Europa League, MLS, African leagues, and any other active competitions today.
 
-For each write:
-STORY [N]: [headline]
-SOURCE: [publication]
-SUMMARY: [2 sentences — what happened and why it matters for business/finance/career/marketing]
-ANGLE: [1 sentence — how entrepreneurs or investors should think about this]
+For each match provide:
+MATCH [N]: [Home Team] vs [Away Team]
+LEAGUE: [league name]
+KICKOFF: [time and timezone]
+HOME FORM: [last 5 results W/D/L]
+AWAY FORM: [last 5 results W/D/L]
+HEAD TO HEAD: [last 3 meetings and results]
+HOME GOALS SCORED AVG: [per game this season]
+HOME GOALS CONCEDED AVG: [per game this season]
+AWAY GOALS SCORED AVG: [per game this season]
+AWAY GOALS CONCEDED AVG: [per game this season]
+KEY INJURIES/SUSPENSIONS: [any important absences]
+APPROXIMATE ODDS: [Home Win / Draw / Away Win as decimals]
+OVER 2.5 GOALS ODDS: [decimal]
+ANALYST NOTE: [1 sentence on the key factor deciding this match]
 
-All 10 stories. Real news only.`
+List every match you can find. Real data only. No made-up fixtures.`
           }] }],
           tools: [{ google_search: {} }],
-          generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
+          generationConfig: { maxOutputTokens: 3000, temperature: 0.1 },
         }),
       });
-      if (!newsRes.ok) {
-        const err = await newsRes.text();
-        return new Response(JSON.stringify({ error: `News fetch failed: ${err.slice(0,200)}` }), {
-          status: newsRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+
+      if (!matchRes.ok) {
+        const err = await matchRes.text();
+        return new Response(JSON.stringify({ error: `Match fetch failed: ${err.slice(0,200)}` }), {
+          status: matchRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-      const newsData = await newsRes.json();
-      const newsParts = (newsData.candidates||[]).flatMap(c=>c.content?.parts||[]);
-      const newsText = newsParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
-      if (!newsText) {
-        return new Response(JSON.stringify({ error: 'Could not fetch news. Try again.' }), {
+
+      const matchData = await matchRes.json();
+      const matchParts = (matchData.candidates||[]).flatMap(c=>c.content?.parts||[]);
+      const matchText = matchParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
+
+      if (!matchText) {
+        return new Response(JSON.stringify({ error: 'Could not fetch today\'s matches. Try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      // Call 2 — build network as plain text, no grounding
+      // Call 2 — no grounding: score matches and build slips as plain text
+      const stakeInfo = stake
+        ? `Stake per slip: $${stake}. Calculate estimated payout for each slip based on combined odds.`
+        : targetWin
+        ? `Target winnings: $${targetWin}. Calculate required stake per slip based on combined odds to reach this target.`
+        : `No stake provided. Show combined odds only, no payout calculation.`;
+
       const buildRes = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text:
-            `You are a content network architect for Ogonjo, a business knowledge platform with 4 pillars: Business & Entrepreneurship, Personal Finance & Investing, Career & Leadership, Marketing & Sales.
+            `You are an expert football betting analyst. You have been given data on today's matches. Your job is to build ${numSlips} betting slips.
 
-Here are 10 real world news stories from the last 12 hours:
-${newsText}
+TODAY'S MATCH DATA:
+${matchText}
 
-Here is the existing article library to cross-reference:
-${libraryList}
+CONFIGURATION:
+- Number of slips to generate: ${numSlips}
+- Teams (matches) per slip: ${teamsPerSlip}
+- Minimum confidence to include a match: ${minConfidence}%
+- ${stakeInfo}
 
-Build a Content Network using exactly this format. Fill every section completely.
+INSTRUCTIONS:
+1. Score every match with a confidence percentage (0-100) based on form, head-to-head, goals data, and injuries.
+2. Remove any match with confidence below ${minConfidence}%. If not enough matches pass the threshold, use the highest available and flag them.
+3. Build ${numSlips} slips. Each slip must have exactly ${teamsPerSlip} matches (or fewer if not enough qualify).
+4. Vary the slips: Slip 1 = most conservative (highest confidence only), middle slips = balanced, last slip = most aggressive (includes riskier picks or reversed predictions where home/away looks weak).
+5. For each match in a slip, state the recommended bet type: Home Win, Draw, Away Win, Over 2.5 Goals, or Under 2.5 Goals.
+6. Flag any match below ${minConfidence}% confidence with [LOW CONFIDENCE].
+7. Flag any reversed prediction with [REVERSED — original favourite is weak].
 
-=== OGONJO CONTENT NETWORK ===
-Generated: ${new Date().toUTCString()}
-News window: Last 12 hours
+Use EXACTLY this format. No deviation:
 
---- 10 TITLES ---
-Transform the news into 10 evergreen SEO titles (never news headlines). Format: "How to..." / "Why..." / "What X Reveals About Y" / "The N Ways...". Mark exactly 4 as [MAGNET] — highest traffic potential.
+=== BETTING SLIPS — ${new Date().toDateString()} ===
+Generated for: ${numSlips} slips | ${teamsPerSlip} matches per slip | Min confidence: ${minConfidence}%
 
-1. [MAGNET or blank] Title here
-   Pillar: [one of the 4 pillars]
-   Inspired by: [the real news story in 1 sentence]
-   SEO keywords: keyword1, keyword2, keyword3, keyword4, keyword5
+--- MATCH CONFIDENCE SCORES ---
+[Home Team] vs [Away Team] | Confidence: XX% | Recommended: [bet type] | Odds: X.XX
+[repeat for every match that qualifies]
 
-[repeat for titles 2–10]
+REMOVED MATCHES (below ${minConfidence}%):
+[Home Team] vs [Away Team] | Confidence: XX% | Reason: [1 sentence]
 
---- 20 NEW TERMS ---
-Extract 20 key concepts from these 10 articles. Bold these in every article you write for auto-linking.
+--- SLIP 1 — CONSERVATIVE ---
+Tier: Conservative | Target: Highest certainty picks only
 
-1. Term — definition in one sentence — appears in titles: 1, 3, 5
-[repeat for all 20]
+Match 1: [Home] vs [Away]
+  Bet: [Home Win / Draw / Away Win / Over 2.5 / Under 2.5]
+  Confidence: XX%
+  Odds: X.XX
+  Why: [1 sentence reason]
 
---- LIBRARY MATCHES ---
-For each of the 10 titles, list 3 closest matching articles from the existing library below. If no match exists, write "none found".
+[repeat for each match in slip]
 
-Title 1 related: Article A | Article B | Article C
-[repeat for titles 2–10]
+Combined Odds: X.XX
+${stake ? `Stake: $${stake} | Estimated Payout: $XX.XX | Profit: $XX.XX` : targetWin ? `Target Win: $${targetWin} | Required Stake: $XX.XX` : `No stake provided.`}
 
---- LIBRARY BOLD TERMS ---
-List any terms from the existing library that also appear in the 10 new articles. Bold these to link back to old content.
+--- SLIP 2 — BALANCED ---
+[same format]
 
-- term → links to: existing article title
-[list all found, or write "none found"]
+[continue for all ${numSlips} slips, labelling them: CONSERVATIVE / BALANCED / BALANCED+ / AGGRESSIVE / HIGH-RISK as appropriate]
 
---- WRITING PROMPTS ---
+--- ANALYST SUMMARY ---
+Best single match today: [match] — [reason in 1 sentence]
+Biggest upset risk: [match] — [reason in 1 sentence]
+Today's overall confidence: [High / Medium / Low] — [1 sentence explanation]
+Recommended slip: Slip [N] — [reason in 1 sentence]
 
-[FULL ARTICLE PROMPT — for 2000–2500 word articles]
-Copy this prompt, paste your chosen title at the top, then paste it into any AI:
-
----
-You are a professional business writer for Ogonjo. Write a complete, SEO-optimized article of 2000–2500 words.
-
-TITLE: [paste title here]
-
-STRUCTURE:
-- Introduction: hook the reader, explain why this matters right now
-- Section 1: core concept / what happened
-- Section 2: why it matters for entrepreneurs/investors/professionals
-- Section 3: practical strategies and how to apply this
-- Section 4: common mistakes or what to avoid
-- Conclusion: professional advice on next steps
-
-STYLE: Educational strategy content, not news. Timeless wisdom. Short paragraphs (2–4 sentences). Clear subheadings. Bold one key insight per section.
-
-SEO: Use the title keywords naturally throughout. Optimize for Google Search and Google Discover.
-
-BOLDING FOR AUTO-LINKING: Bold every term from the 20 New Terms list and Library Bold Terms list whenever they appear in the article. This enables automatic internal linking.
-
-RELATED ARTICLES: At the end of the article, add a "Related Articles" section using the 3 library matches for this specific title.
-
-END WITH: A professional call-to-action advising the reader on their next concrete step.
----
-
-[TERM DEFINITION PROMPT — for 1500 word term articles]
-Copy this prompt, paste your chosen term at the top, then paste it into any AI:
-
----
-You are a professional business educator for Ogonjo. Write a complete term definition article of 1500 words.
-
-TERM: [paste term here]
-
-STRUCTURE:
-- Definition: clear plain-language definition
-- Why it matters: importance in business today
-- Real-world examples: 2–3 specific examples
-- How to apply it: practical steps
-- Common mistakes: what people get wrong
-- Expert advice: professional recommendation
-
-STYLE: Educational, clear, practical. Short paragraphs. Clear subheadings.
-
-SEO: Use the term as the primary keyword throughout.
-
-BOLDING FOR AUTO-LINKING: Bold every term from the 20 New Terms list and Library Bold Terms list whenever they appear.
-
-END WITH: Professional advice on how to master this concept.
----
-
-=== END OF NETWORK ===`
+=== END OF SLIPS ===`
           }] }],
           generationConfig: { maxOutputTokens: 8192, temperature: 0.2, thinkingConfig: { thinkingBudget: 0 } },
         }),
@@ -364,21 +348,23 @@ END WITH: Professional advice on how to master this concept.
 
       if (!buildRes.ok) {
         const err = await buildRes.text();
-        return new Response(JSON.stringify({ error: `Network build failed: ${err.slice(0,200)}` }), {
+        return new Response(JSON.stringify({ error: `Slip generation failed: ${err.slice(0,200)}` }), {
           status: buildRes.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
+
       const buildData = await buildRes.json();
       const buildParts = (buildData.candidates||[]).flatMap(c=>c.content?.parts||[]);
-      const networkText = buildParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
-      if (!networkText) {
-        return new Response(JSON.stringify({ error: 'Network generation failed. Try again.' }), {
+      const slipsText = buildParts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('').trim();
+
+      if (!slipsText) {
+        return new Response(JSON.stringify({ error: 'Slip generation failed. Try again.' }), {
           status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
 
-      // Return as { network: "plain text" } — no JSON parsing, no parse errors ever
-      return new Response(JSON.stringify({ network: networkText }), {
+      // Same pattern as worldnet — return plain text, zero parse errors
+      return new Response(JSON.stringify({ slips: slipsText }), {
         status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
