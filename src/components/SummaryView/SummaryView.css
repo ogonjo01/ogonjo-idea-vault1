@@ -661,3 +661,373 @@ html {
   .summary-body h2 { font-size: 1.20rem; }
   .summary-body h3 { font-size: 1.20rem; }
 }
+/* ─── ADDITIONS TO SummaryView.css ─────────────────────────────────────────
+   Append these rules to the bottom of your existing SummaryView.css file.
+   Do NOT remove the existing rules — these extend them.
+─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Expanded header state (before scroll) ────────────────────────────────── */
+.summary-header:not(.collapsed) {
+  padding: 16px 14px 12px;
+}
+
+.summary-header:not(.collapsed) .summary-title {
+  font-size: 1.15rem;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Description preview — only visible when expanded ────────────────────── */
+.summary-description-preview {
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin: 3px 0 0;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: 42px;
+  opacity: 1;
+  transition: max-height 220ms ease, opacity 200ms ease;
+}
+
+.summary-header.collapsed .summary-description-preview {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  margin: 0;
+}
+
+/* ── Export button — animated pulse ──────────────────────────────────────── */
+.export-btn {
+  background: linear-gradient(135deg, #0f7f63, #0a6b53) !important;
+  color: #fff !important;
+  border: none !important;
+  padding: 7px 12px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 0.88rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer;
+  animation: export-pulse 3.5s ease-in-out infinite;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.export-btn:hover,
+.export-btn:focus {
+  animation: none;
+  background: linear-gradient(135deg, #0a6b53, #085a45) !important;
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.export-btn:active {
+  transform: translateY(0);
+}
+
+/* Hide label text in collapsed state to save space */
+.summary-header.collapsed .export-btn-label {
+  display: none;
+}
+
+@keyframes export-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(15, 127, 99, 0.45); }
+  50%       { box-shadow: 0 0 0 7px rgba(15, 127, 99, 0); }
+}
+
+/* ── Like button — thumb-up styling ─────────────────────────────────────── */
+.like-btn {
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.like-btn:active { transform: scale(0.94); }
+
+.like-btn.liked {
+  color: #2563eb !important;
+  border-color: rgba(37, 99, 235, 0.2) !important;
+  background: rgba(37, 99, 235, 0.05) !important;
+}
+
+/* ── Comment button — make it look clickable ─────────────────────────────── */
+.eng-btn {
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.eng-btn:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+/* ── Reader controls toolbar ──────────────────────────────────────────────── */
+.reader-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 10px auto 8px;
+  max-width: 980px;
+  padding: 0 18px;
+  box-sizing: border-box;
+}
+
+.rc-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rc-value {
+  min-width: 44px;
+  text-align: center;
+  font-size: 0.88rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+/* ── Mobile adjustments for new elements ────────────────────────────────── */
+@media (max-width: 780px) {
+  .summary-description-preview {
+    display: none;
+  }
+
+  .export-btn {
+    padding: 6px 9px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .reader-controls {
+    padding: 0 10px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPEND these rules to the bottom of your existing SummaryView.css.
+   Do NOT replace the file — add these after all existing rules.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Expanded header (before scroll) ─────────────────────────────────────── */
+.summary-header.expanded {
+  padding: 16px 14px 12px;
+}
+.summary-header.expanded .summary-title {
+  font-size: 1.15rem;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ── Collapsed header (after scroll 80px) ───────────────────────────────── */
+.summary-header.collapsed {
+  padding: 8px 12px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+}
+.summary-header.collapsed .summary-title {
+  font-size: 0.93rem !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.summary-header.collapsed .summary-author {
+  font-size: 0.78rem !important;
+}
+
+/* ── Description preview — collapses on scroll ──────────────────────────── */
+.summary-description-preview {
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin: 3px 0 0;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: 42px;
+  opacity: 1;
+  transition: max-height 200ms ease, opacity 180ms ease, margin 180ms ease;
+}
+.summary-header.collapsed .summary-description-preview {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none;
+  margin: 0 !important;
+}
+
+/* ── Export button pulse ─────────────────────────────────────────────────── */
+.export-btn {
+  background: linear-gradient(135deg, #0f7f63, #0a6b53) !important;
+  color: #fff !important;
+  border: none !important;
+  padding: 7px 12px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 0.88rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer;
+  animation: export-pulse 3.5s ease-in-out infinite;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.export-btn:hover, .export-btn:focus {
+  animation: none;
+  background: linear-gradient(135deg, #0a6b53, #085a45) !important;
+  transform: translateY(-1px);
+  outline: none;
+}
+.export-btn:active { transform: translateY(0); }
+.summary-header.collapsed .export-btn-label { display: none; }
+
+@keyframes export-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(15, 127, 99, 0.45); }
+  50%       { box-shadow: 0 0 0 7px rgba(15, 127, 99, 0); }
+}
+
+/* ── Like button (thumbs-up) ─────────────────────────────────────────────── */
+.like-btn { cursor: pointer; transition: color 0.15s, background 0.15s, border-color 0.15s, transform 0.1s; }
+.like-btn:active { transform: scale(0.94); }
+.like-btn.liked {
+  color: #2563eb !important;
+  border-color: rgba(37,99,235,0.2) !important;
+  background: rgba(37,99,235,0.05) !important;
+}
+
+/* ── Reader controls toolbar ─────────────────────────────────────────────── */
+.reader-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 8px auto 6px;
+  max-width: 980px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 100;
+}
+.rc-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.rc-value {
+  min-width: 44px;
+  text-align: center;
+  font-size: 0.88rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+/* ── Theme dropdown ──────────────────────────────────────────────────────── */
+.rc-theme-wrap { position: relative; }
+
+.rc-theme-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 10px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+}
+
+.rc-theme-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.rc-theme-label { font-size: 0.83rem; }
+
+.rc-theme-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 160px;
+  z-index: 2000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-theme-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 0.87rem;
+  font-weight: 500;
+  color: #374151;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+.rc-theme-option:hover { background: #f9fafb; }
+.rc-theme-option.active { font-weight: 700; color: #0f7f63; background: #f0fdf4; }
+
+/* ── Article body — heading lines + paragraph spacing via CSS vars ─────────
+   These apply to every theme because CSS vars are set inline on the article.
+────────────────────────────────────────────────────────────────────────── */
+.summary-body h1,
+.summary-body h2,
+.summary-body h3,
+.summary-body h4 {
+  margin: 28px 0 8px !important;
+  padding-bottom: 6px !important;
+  border-bottom: 1.5px solid var(--heading-line-color, #d1d5db) !important;
+  line-height: 1.3 !important;
+}
+.summary-body h1 { font-size: 1.25em !important; }
+.summary-body h2 { font-size: 1.12em !important; }
+.summary-body h3 { font-size: 1.02em !important; }
+.summary-body h4 { font-size: 0.96em !important; }
+
+.summary-body p {
+  margin: 0 0 14px !important;
+}
+.summary-body ul,
+.summary-body ol {
+  margin: 0 0 14px !important;
+  padding-left: 22px !important;
+}
+.summary-body li { margin: 0 0 5px !important; }
+
+/* ── Per-theme text color overrides ──────────────────────────────────────── */
+.summary-theme-white  { --heading-line-color: #d1d5db; --article-accent: #2563eb; }
+.summary-theme-cream  { --heading-line-color: #d6c9b0; --article-accent: #92400e; }
+.summary-theme-brown  { --heading-line-color: #6b4c39; --article-accent: #f59e0b; }
+.summary-theme-navy   { --heading-line-color: #1e3a5f; --article-accent: #60a5fa; }
+.summary-theme-forest { --heading-line-color: #2d4a32; --article-accent: #4ade80; }
+
+/* Article links use the theme accent */
+.summary-body a {
+  color: var(--article-accent, #2563eb);
+  text-decoration: none;
+  font-weight: 530;
+}
+.summary-body a:hover { text-decoration: underline; }
+
+/* ── Mobile adjustments ──────────────────────────────────────────────────── */
+@media (max-width: 780px) {
+  .summary-description-preview { display: none !important; }
+  .export-btn { padding: 6px 9px !important; font-size: 0.82rem !important; }
+  .reader-controls { padding: 0 10px; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
+  .rc-theme-dropdown { right: auto; left: 0; }
+}
