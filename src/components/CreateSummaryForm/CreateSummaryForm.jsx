@@ -6,6 +6,7 @@ import Quill from "quill";
 import slugify from "slugify";
 import "quill/dist/quill.snow.css";
 import "./CreateSummaryForm.css";
+import BulkImporter from "./BulkImporter";
 
 /* ── Quill clipboard patch ───────────────────────────────── */
 const Clipboard = Quill.import("modules/clipboard");
@@ -169,17 +170,18 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
 
   /* ── UI state ─────────────────────────────────────────── */
   const [loading, setLoading]               = useState(false);
-  // ── NEW: separate state for Save Draft button ──────────
   const [draftSaving, setDraftSaving]       = useState(false);
   const [errorMsg, setErrorMsg]             = useState("");
   const [titleDupeWarning, setTitleDupeWarning] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading]   = useState(false);
-  // ── NEW: toast state ───────────────────────────────────
-  const [toast, setToast]                   = useState(null); // { message, type }
+  const [toast, setToast]                   = useState(null);
+
+  /* ── NEW: bulk importer toggle ────────────────────────── */
+  const [showBulkImporter, setShowBulkImporter] = useState(false);
 
   /* ── Quill / link modal ───────────────────────────────── */
-  const quillRef                        = useRef(null);
+  const quillRef                            = useRef(null);
   const [showLinkModal, setShowLinkModal]   = useState(false);
   const [linkSearch, setLinkSearch]         = useState("");
   const [linkResults, setLinkResults]       = useState([]);
@@ -250,14 +252,13 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
   }, [linkSearch]);
 
   /* ══════════════════════════════════════════════════════
-     AUTO-SAVE (background, silent — unchanged)
+     AUTO-SAVE
   ══════════════════════════════════════════════════════ */
   const buildSnapshot = useCallback(() =>
     JSON.stringify({ title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty }),
     [title, author, description, summaryText, category, imageUrl, affiliateLink, affiliateType, youtubeUrl, tags, keywordsInput, difficulty]
   );
 
-  // Internal auto-save — does NOT close form, no toast
   const _autoSave = useCallback(async () => {
     if (!title.trim() && !summaryText.trim()) return null;
     setAutoSaveStatus("saving");
@@ -327,7 +328,6 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
   /* ══════════════════════════════════════════════════════
      DUPLICATE TITLE CHECK
   ══════════════════════════════════════════════════════ */
-  // Checks ALL statuses (draft + published) so you can't save duplicate titles at all
   const checkTitleExists = useCallback(async (t, excludeId = null) => {
     if (!t?.trim()) return false;
     try {
@@ -339,14 +339,10 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
   }, []);
 
   /* ══════════════════════════════════════════════════════
-     SAVE DRAFT  (manual button — NEW behaviour)
-     • Checks title duplicate first
-     • Saves once (draftSaving guard)
-     • Closes form
-     • Shows toast
+     SAVE DRAFT
   ══════════════════════════════════════════════════════ */
   const handleSaveDraft = useCallback(async () => {
-    if (draftSaving) return; // prevent double-click
+    if (draftSaving) return;
     setTitleDupeWarning("");
     setErrorMsg("");
 
@@ -355,7 +351,6 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
       return;
     }
 
-    // Title duplicate check
     const check = await checkTitleExists(title.trim(), draftId || null);
     if (check.exists) {
       setTitleDupeWarning(
@@ -393,7 +388,6 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
           .update(payload).eq("id", draftId).eq("user_id", user.id);
         if (error) throw error;
       } else {
-        // Slug collision check
         try {
           const { data: ex } = await supabase.from("book_summaries").select("id").eq("slug", finalSlug).maybeSingle();
           if (ex) {
@@ -411,10 +405,8 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
         setDraftId(ins.id);
       }
 
-      // Signal parent to refresh, show toast, close
       if (typeof onNewSummary === "function") onNewSummary();
       setToast({ message: "✅ Draft saved successfully", type: "success" });
-      // Small delay so user sees the toast before the form closes
       setTimeout(() => {
         if (typeof onClose === "function") onClose();
       }, 1200);
@@ -437,7 +429,6 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
     const publishCategory = category === DRAFT_SENTINEL ? null : category;
     if (!publishCategory) { await _autoSave(); return; }
 
-    // Duplicate check for publish — published only
     try {
       let q = supabase.from("book_summaries").select("id").ilike("title", title.trim()).eq("status","published");
       if (draftId) q = q.neq("id", draftId);
@@ -521,7 +512,7 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
     } finally { setDeleteLoading(false); }
   };
 
-  /* ── Auto-link helpers (unchanged) ───────────────────── */
+  /* ── Auto-link helpers ────────────────────────────────── */
   const fetchTitleCandidates = async (text, limit=200) => { if (!text?.trim()) return []; try { const { data, error } = await supabase.from("book_summaries").select("id, title, slug, keywords").ilike("title", `%${text.trim()}%`).limit(limit); return error?[]:(data||[]); } catch { return []; } };
   const fetchKeywordRows = async (limit=1000) => { try { const { data, error } = await supabase.from("book_summaries").select("id, title, slug, keywords").not("keywords","is",null).limit(limit); return error?[]:(data||[]); } catch { return []; } };
   const wrapNodeInAnchor = (node, row) => {
@@ -553,14 +544,13 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
   ══════════════════════════════════════════════════════ */
   return (
     <>
-      {/* Toast */}
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
 
       <div className="modal-overlay">
         <div className="modal-content large">
           <button className="close-button" onClick={onClose}>&times;</button>
 
-          {/* Header */}
+          {/* ── Header ── */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
             <h2 style={{ margin:0 }}>
               {isEditing ? "Edit Summary" : "Create New Summary"}
@@ -578,6 +568,41 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
               )}
             </div>
           </div>
+
+          {/* ══════════════════════════════════════════════
+              BULK IMPORT — button + panel live here,
+              directly below the header, above the form
+          ══════════════════════════════════════════════ */}
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:10 }}>
+            <button
+              type="button"
+              onClick={() => setShowBulkImporter(v => !v)}
+              style={{
+                background: showBulkImporter ? "#eff6ff" : "#f3f4f6",
+                color: showBulkImporter ? "#2563eb" : "#374151",
+                border: showBulkImporter ? "1.5px solid #2563eb" : "1px solid #d1d5db",
+                borderRadius: 7,
+                padding: "7px 16px",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              <span style={{ fontSize:15 }}>📥</span>
+              {showBulkImporter ? "Hide Bulk Import" : "Bulk Import Articles"}
+            </button>
+          </div>
+
+          {showBulkImporter && (
+            <BulkImporter
+              onClose={() => setShowBulkImporter(false)}
+              onNewSummary={onNewSummary}
+            />
+          )}
+          {/* ══════════════════════════════════════════════ */}
 
           {errorMsg && <div className="form-error">{errorMsg}</div>}
           {titleDupeWarning && (
@@ -660,8 +685,6 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
 
             {/* Action bar */}
             <div style={{ display:"flex", gap:10, marginTop:16, alignItems:"center", flexWrap:"wrap" }}>
-
-              {/* ── FIXED: Save Draft button ── */}
               <button
                 type="button"
                 onClick={handleSaveDraft}
@@ -761,7 +784,6 @@ const CreateSummaryInner = ({ onClose, onNewSummary, editingSummary }) => {
         </div>
       </div>
 
-      {/* Toast keyframe — injected once */}
       <style>{`@keyframes csf-toast-in { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }`}</style>
     </>
   );
