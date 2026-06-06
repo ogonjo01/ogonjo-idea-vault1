@@ -37,9 +37,6 @@ const stripBold = (s = "") => s.replace(/\*\*/g, "").trim();
 
 /**
  * AUTO-CATEGORY RESOLUTION
- * Matches the CATEGORY field from the SEO block against REAL_CATEGORIES.
- * Exact match first (case-insensitive), then loose contains-match.
- * Falls back to DRAFT_SENTINEL if nothing matches.
  */
 const resolveCategory = (raw = "") => {
   if (!raw) return DRAFT_SENTINEL;
@@ -54,10 +51,24 @@ const resolveCategory = (raw = "") => {
 };
 
 /* ── Markdown → HTML ─────────────────────────────────────────────────────── */
+/**
+ * FIX: Added markdown link pattern [text](url) → <a href="url">text</a>
+ * Links open in a new tab and are styled as proper anchors.
+ * Order matters: links must be processed BEFORE bold/italic so that
+ * [**bold link**](url) is handled correctly.
+ */
 const inlineMarkdown = (s) =>
   s
+    // Markdown links: [anchor text](url) → clickable <a> tag
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;">$1</a>'
+    )
+    // Bold
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    // Italic
     .replace(/\*(.+?)\*/g,     "<em>$1</em>")
+    // Inline code
     .replace(/`(.+?)`/g,       "<code>$1</code>");
 
 const markdownToHtml = (md) => {
@@ -170,9 +181,8 @@ const parseArticles = (raw) => {
       statusMsg:     "",
       expanded:      false,
       draftId:       null,
-      // duplicate-check state — populated after DB lookup
-      duplicateCheck: "pending",   // "pending" | "checking" | "exists" | "clear"
-      duplicateInfo:  null,        // { id, status } of the existing article if found
+      duplicateCheck: "pending",
+      duplicateInfo:  null,
     };
   });
 };
@@ -275,8 +285,7 @@ const Toast = ({ message, type = "success", onDone }) => {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   DUPLICATE BANNER — shown at the top of an expanded card when a duplicate
-   is detected. Blocks saving and lets the user delete from here.
+   DUPLICATE BANNER
 ══════════════════════════════════════════════════════════════════════════ */
 const DuplicateBanner = ({ info, onDelete }) => (
   <div style={{
@@ -332,7 +341,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
   const errored     = status === "error";
   const deleted     = status === "deleted";
 
-  // Border colour priority: duplicate > error > saved > warning > default
   const borderColor = isDuplicate ? "#dc2626"
     : saved    ? "#16a34a"
     : errored  ? "#dc2626"
@@ -345,12 +353,10 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
 
   const setBody = (html) => onChange(art._id, "summaryText", html);
 
-  // When the title field is edited, re-run the duplicate check after a short delay
   const titleChangeTimer = useRef(null);
   const handleTitleChange = (e) => {
     const val = e.target.value;
     onChange(art._id, "title", val);
-    // Mark as pending so the user sees "checking…" feedback
     onChange(art._id, "duplicateCheck", "pending");
     clearTimeout(titleChangeTimer.current);
     titleChangeTimer.current = setTimeout(() => {
@@ -392,7 +398,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           userSelect: "none",
         }}
       >
-        {/* Index / status circle */}
         <span style={{
           background: isDuplicate ? "#dc2626" : saved ? "#16a34a" : "#2563eb",
           color: "#fff",
@@ -403,7 +408,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           {isDuplicate ? "!" : saved ? "✓" : idx + 1}
         </span>
 
-        {/* Title */}
         <span style={{
           flex: 1, fontWeight: 600, fontSize: 14,
           color: isDuplicate ? "#dc2626" : saved ? "#15803d" : "#111827",
@@ -412,7 +416,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           {art.title || <em style={{ fontWeight: 400, color: "#9ca3af" }}>Untitled</em>}
         </span>
 
-        {/* Duplicate badge */}
         {isDuplicate && (
           <span style={{
             fontSize: 11, background: "#fef2f2", color: "#dc2626",
@@ -423,7 +426,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           </span>
         )}
 
-        {/* Checking badge */}
         {isChecking && (
           <span style={{
             fontSize: 11, background: "#f3f4f6", color: "#6b7280",
@@ -434,7 +436,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           </span>
         )}
 
-        {/* Category badge */}
         {!isDuplicate && art.category !== DRAFT_SENTINEL && (
           <span style={{
             fontSize: 11, background: "#eff6ff", color: "#1d4ed8",
@@ -446,7 +447,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           </span>
         )}
 
-        {/* Status message badge */}
         {statusMsg && !isDuplicate && (
           <span style={{
             fontSize: 11, fontWeight: 600,
@@ -458,7 +458,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
           </span>
         )}
 
-        {/* Warnings badge */}
         {warnings.length > 0 && status === "idle" && !isDuplicate && (
           <span style={{
             fontSize: 11, background: "#fef3c7", color: "#92400e",
@@ -479,7 +478,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
       {expanded && (
         <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
 
-          {/* DUPLICATE BANNER — shown above everything else when duplicate detected */}
           {isDuplicate && (
             <DuplicateBanner
               info={duplicateInfo}
@@ -487,7 +485,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             />
           )}
 
-          {/* Regular warnings (non-duplicate) */}
           {warnings.length > 0 && !isDuplicate && (
             <div style={{
               background: "#fef3c7", border: "1px solid #fbbf24",
@@ -509,7 +506,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             gap: "10px 16px", marginTop: 12,
           }}>
 
-            {/* Title — full width, with re-check on change */}
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelStyle}>
                 SEO Title *
@@ -535,13 +531,11 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               />
             </div>
 
-            {/* Author */}
             <div>
               <label style={labelStyle}>Author</label>
               <input value={art.author} onChange={set("author")} style={inputStyle} />
             </div>
 
-            {/* Category */}
             <div>
               <label style={labelStyle}>
                 Category
@@ -561,7 +555,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               </select>
             </div>
 
-            {/* Difficulty */}
             <div>
               <label style={labelStyle}>Difficulty</label>
               <select value={art.difficulty} onChange={set("difficulty")} style={inputStyle}>
@@ -572,41 +565,35 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               </select>
             </div>
 
-            {/* Image URL */}
             <div>
               <label style={labelStyle}>Image URL</label>
               <input value={art.imageUrl} onChange={set("imageUrl")}
                 style={inputStyle} placeholder="https://..." />
             </div>
 
-            {/* Meta Description */}
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelStyle}>Meta Description</label>
               <textarea value={art.description} onChange={set("description")}
                 rows={2} style={{ ...inputStyle, resize: "vertical" }} />
             </div>
 
-            {/* Tags */}
             <div>
               <label style={labelStyle}>Tags</label>
               <input value={art.tags} onChange={set("tags")}
                 style={inputStyle} placeholder="business, leadership" />
             </div>
 
-            {/* Keywords */}
             <div>
               <label style={labelStyle}>Keywords (max 8, comma-separated)</label>
               <input value={art.keywordsInput} onChange={set("keywordsInput")} style={inputStyle} />
             </div>
 
-            {/* YouTube */}
             <div>
               <label style={labelStyle}>YouTube URL (optional)</label>
               <input value={art.youtubeUrl} onChange={set("youtubeUrl")}
                 style={inputStyle} placeholder="https://youtube.com/..." />
             </div>
 
-            {/* Affiliate */}
             <div>
               <label style={labelStyle}>Affiliate Link (optional)</label>
               <div style={{ display: "flex", gap: 6 }}>
@@ -621,7 +608,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               </div>
             </div>
 
-            {/* Article body */}
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={{ ...labelStyle, marginBottom: 6 }}>
                 Article Body
@@ -649,11 +635,11 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
                 .ql-editor h2 { font-size: 1.3em; font-weight: 700; margin: 1em 0 0.4em; }
                 .ql-editor h3 { font-size: 1.1em; font-weight: 700; margin: 0.8em 0 0.3em; }
                 .ql-editor p  { margin: 0 0 0.75em; }
+                .ql-editor a  { color: #2563eb; text-decoration: underline; }
               `}</style>
             </div>
           </div>
 
-          {/* Error message */}
           {errored && !isDuplicate && (
             <div style={{
               background: "#fef2f2", border: "1px solid #fca5a5",
@@ -669,10 +655,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             display: "flex", gap: 8, marginTop: 14,
             alignItems: "center", flexWrap: "wrap",
           }}>
-            {/*
-              Save Draft — BLOCKED if duplicate detected.
-              The button is disabled and a tooltip explains why.
-            */}
             <button
               type="button"
               onClick={() => onSave(art._id)}
@@ -757,24 +739,14 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
   const [bulkBusy, setBulkBusy] = useState(false);
   const listRef                 = useRef(null);
 
-  /* ════════════════════════════════════════════════════════
-     DUPLICATE TITLE CHECK
-     After parsing, we batch-check every title against the DB
-     in one go. Each article's duplicateCheck field moves:
-       "pending" → "checking" → "exists" | "clear"
-  ════════════════════════════════════════════════════════ */
+  /* ── Duplicate title check ── */
   const checkDuplicates = useCallback(async (arts) => {
     if (!arts.length) return;
 
-    // Mark all as checking
     setArticles(prev => prev.map(a => ({ ...a, duplicateCheck: "checking" })));
 
-    // Fetch all existing titles in one DB call (up to 1000)
-    let existingMap = new Map(); // lowercase title → { id, status }
+    let existingMap = new Map();
     try {
-      const titles = arts.map(a => a.title.trim().toLowerCase()).filter(Boolean);
-      // Use ilike with OR isn't directly possible in supabase-js for arrays,
-      // so we pull a broader set and match client-side — efficient for batches up to ~200
       const { data } = await supabase
         .from("book_summaries")
         .select("id, title, status")
@@ -789,12 +761,10 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
       }
     } catch (err) {
       console.error("Duplicate check error:", err);
-      // If the check fails, clear the pending state rather than leaving articles blocked
       setArticles(prev => prev.map(a => ({ ...a, duplicateCheck: "clear" })));
       return;
     }
 
-    // Update each article based on the lookup
     setArticles(prev => prev.map(a => {
       const key = a.title.trim().toLowerCase();
       const hit = existingMap.get(key);
@@ -806,7 +776,6 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     }));
   }, []);
 
-  /* Re-check a single article's title (called when user edits the title field) */
   const recheckTitle = useCallback(async (id, newTitle) => {
     setArticles(prev => prev.map(a =>
       a._id === id ? { ...a, duplicateCheck: "checking", duplicateInfo: null } : a
@@ -835,7 +804,6 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     }
   }, []);
 
-  /* ── Parse → then immediately kick off duplicate check ── */
   const handleParse = useCallback(() => {
     if (!rawText.trim()) return;
     const parsed = parseArticles(rawText);
@@ -846,19 +814,15 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     setArticles(parsed);
     setStep("review");
     setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    // Kick off the real-time duplicate check straight away
     checkDuplicates(parsed);
   }, [rawText, checkDuplicates]);
 
-  /* ── Field change ── */
   const handleChange = useCallback((id, field, value) => {
     setArticles(prev => prev.map(a => a._id === id ? { ...a, [field]: value } : a));
   }, []);
 
-  /* ── Save single ── */
   const saveSingle = useCallback(async (id, publishCategory = null) => {
     const art = articles.find(a => a._id === id);
-    // Hard block: never save a duplicate
     if (!art || art.status === "saving" || art.duplicateCheck === "exists") return;
 
     setArticles(prev => prev.map(a =>
@@ -896,7 +860,6 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
           ...a,
           status:    "saved",
           statusMsg: publishCategory ? "✅ Published" : "✅ Saved",
-          // Card stays open — user can see the result and scroll to next
         } : a
       ));
       if (typeof onNewSummary === "function") onNewSummary();
@@ -909,14 +872,12 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     }
   }, [articles, onNewSummary]);
 
-  /* ── Publish single ── */
   const publishSingle = useCallback(async (id) => {
     const art = articles.find(a => a._id === id);
     if (!art || art.category === DRAFT_SENTINEL || art.duplicateCheck === "exists") return;
     await saveSingle(id, art.category);
   }, [articles, saveSingle]);
 
-  /* ── Delete single ── */
   const deleteSingle = useCallback(async (id) => {
     const art = articles.find(a => a._id === id);
     if (!art) return;
@@ -938,10 +899,6 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     ));
   }, [articles, onNewSummary]);
 
-  /* ── Bulk: Save All Drafts ──
-     Silently skips any duplicate-flagged articles.
-     Reports how many were skipped in the toast.
-  ── */
   const saveAllDrafts = useCallback(async () => {
     const pending    = articles.filter(a =>
       (a.status === "idle" || a.status === "error") && a.duplicateCheck !== "exists"
@@ -972,9 +929,6 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     setToast({ message: msg, type: "success" });
   }, [articles, saveSingle]);
 
-  /* ── Bulk: Publish All ──
-     Skips duplicates AND articles without a category.
-  ── */
   const publishAll = useCallback(async () => {
     const publishable   = articles.filter(a =>
       a.status !== "deleted" &&
@@ -1006,7 +960,6 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     setToast({ message: `🚀 ${publishable.length} article(s) published`, type: "success" });
   }, [articles, saveSingle]);
 
-  /* ── Bulk: Delete All ── */
   const deleteAll = useCallback(async () => {
     const active = articles.filter(a => a.status !== "deleted");
     if (!active.length) return;
