@@ -1,5 +1,5 @@
 // src/components/DraftPanel/DraftPanel.jsx
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabase/supabaseClient";
 import "./DraftPanel.css";
@@ -14,44 +14,70 @@ const REAL_CATEGORIES = [
   "Self-Improvement","Strategic Communication","Tools & Software","Finance & Funding","Operations & Systems","Global & Emerging Markets","Video Insights",
 ];
 
+
+
 /* ── pure helpers ───────────────────────────────────────── */
-const normalize  = (s = "") => String(s || "").trim().toLowerCase();
+const normalize = (s = "") => String(s || "").trim().toLowerCase();
+
 const pluralVariants = (word = "") => {
-  const w = normalize(word); if (!w) return [w];
+  const w = normalize(word);
+  if (!w) return [w];
   const v = new Set([w]);
   if (!w.endsWith("s"))  v.add(`${w}s`);
   if (!w.endsWith("es")) v.add(`${w}es`);
   if (w.endsWith("s"))   v.add(w.replace(/s+$/, ""));
   return Array.from(v);
 };
+
 const toLibraryHref = (row) => row?.slug ? `/library/${row.slug}` : `/library/${row?.id}`;
+
 const fmtDate = (iso) => {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { day:"2-digit", month:"short", year:"numeric" });
+  return new Date(iso).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 };
+
 const fmtSeconds = (s) => {
   if (!isFinite(s) || s <= 0) return null;
   if (s < 60) return `~${Math.ceil(s)}s left`;
   return `~${Math.ceil(s / 60)}m left`;
 };
 
-/* ── DB helpers ─────────────────────────────────────────── */
-const fetchTitleCandidates = async (text, limit = 200) => {
-  const q = String(text || "").trim(); if (!q) return [];
-  try {
+/* ── fetch ALL titles in ONE query ──────────────────────── */
+// KEY FIX: replaces fetchTitleCandidates (called once per phrase = thousands of queries)
+// with a single upfront fetch of all titles + keywords into memory.
+const fetchAllTitles = async () => {
+  let allRows = [];
+  let from = 0;
+  const pageSize = 1000;
+  // Paginate in case there are more than 1000 articles
+  while (true) {
     const { data, error } = await supabase
-      .from("book_summaries").select("id, title, slug, keywords")
-      .ilike("title", `%${q}%`).limit(limit);
-    return error ? [] : (data || []);
-  } catch { return []; }
+      .from("book_summaries")
+      .select("id, title, slug, keywords")
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return allRows;
 };
-const fetchKeywordRows = async (limit = 400) => {
-  try {
-    const { data, error } = await supabase
-      .from("book_summaries").select("id, title, slug, keywords")
-      .not("keywords", "is", null).limit(limit);
-    return error ? [] : (data || []);
-  } catch { return []; }
+
+/* ── match a phrase against the in-memory title list ────── */
+const matchPhrase = (phrase, allTitles) => {
+  const variants = pluralVariants(phrase);
+  const nPhrase  = normalize(phrase);
+  return allTitles.find(c => {
+    if (!c?.title) return false;
+    const nt = normalize(c.title);
+    if (nt === nPhrase || variants.includes(nt)) return true;
+    // keyword fallback
+    if (Array.isArray(c.keywords)) {
+      return c.keywords.some(k => normalize(k) === nPhrase);
+    }
+    return false;
+  }) ?? null;
 };
 
 /* ── apply approved links to HTML ───────────────────────── */
@@ -85,53 +111,63 @@ const applyLinks = (html, approved) => {
 const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
   const isBulk = targets.length > 1;
 
-  // step: scanning | preview | saving | done | error
-  const [step, setStep]           = useState("scanning");
-  const [errorMsg, setErrorMsg]   = useState("");
+  const [step, setStep]         = useState("scanning"); // scanning | preview | saving | done | error
+  const [errorMsg, setErrorMsg] = useState("");
   const [saveCount, setSaveCount] = useState(0);
-  const [activeTab, setActiveTab] = useState("preview"); // preview | linked | unmatched
+  const [activeTab, setActiveTab] = useState("preview");
 
-  // draftData[]: { draft, candidates:[{phrase,matched,approved,count,alreadyLinked}] }
+  // draftData[]: { draft, html, candidates:[{phrase,matched,approved,count,alreadyLinked}] }
+  // NOTE: we store `html` here so handleConfirm never needs to re-fetch it
   const [draftData, setDraftData] = useState([]);
 
-  // Progress tracking
   const [progressCurrent, setProgressCurrent] = useState(0);
   const [progressTotal,   setProgressTotal]   = useState(0);
   const [progressPhrase,  setProgressPhrase]  = useState("");
   const [progressEta,     setProgressEta]     = useState(null);
   const scanStartRef = useRef(null);
 
-  /* ── scan all targets on mount ── */
+  /* ── scan: 1 DB query for all titles, everything else in memory ── */
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const ids = targets.map(d => d.id);
-        const { data: rows, error } = await supabase
-          .from("book_summaries").select("id, summary").in("id", ids);
-        if (error) throw error;
 
-        const kwSample = await fetchKeywordRows(400);
+        // Fetch draft summaries
+        const { data: rows, error: rowsErr } = await supabase
+          .from("book_summaries")
+          .select("id, summary")
+          .in("id", ids);
+        if (rowsErr) throw rowsErr;
 
-        // Collect all phrases across all drafts first for total count
+        // ✅ SINGLE query for ALL titles — replaces per-phrase fetchTitleCandidates
+        const allTitles = await fetchAllTitles();
+
+        // Extract phrases from each draft
         const allPhrasesByDraft = targets.map(draft => {
-          const row = (rows || []).find(r => r.id === draft.id);
+          const row  = (rows || []).find(r => r.id === draft.id);
           const html = row?.summary || "";
           const container = document.createElement("div");
           container.innerHTML = html;
-          const boldNodes = Array.from(container.querySelectorAll("strong, b"));
-          // Check which are already linked
+
           const linkedPhrases = new Set(
-            Array.from(container.querySelectorAll("a[href^='/library/'] strong, a[href^='/library/'] b, a[data-summary-id] strong, a[data-summary-id] b"))
-              .map(n => normalize((n.textContent || "").trim()))
+            Array.from(container.querySelectorAll(
+              "a[href^='/library/'] strong, a[href^='/library/'] b, a[data-summary-id] strong, a[data-summary-id] b"
+            )).map(n => normalize((n.textContent || "").trim()))
           );
+
           const phrases = Array.from(
-            new Set(boldNodes.map(n => (n.textContent || "").trim()).filter(s => s.length >= 2 && s.length <= 200))
+            new Set(
+              Array.from(container.querySelectorAll("strong, b"))
+                .map(n => (n.textContent || "").trim())
+                .filter(s => s.length >= 2 && s.length <= 200)
+            )
           ).slice(0, 200);
+
           return { draft, html, phrases, linkedPhrases };
         });
 
-        // Count how many times each phrase appears across ALL selected drafts
+        // Global phrase frequency count
         const globalPhraseCount = {};
         allPhrasesByDraft.forEach(({ phrases }) => {
           phrases.forEach(p => {
@@ -154,35 +190,26 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
             scanned++;
             setProgressCurrent(scanned);
             setProgressPhrase(phrase);
-            // ETA
+
             const elapsed = (Date.now() - scanStartRef.current) / 1000;
             const rate    = scanned / elapsed;
-            const eta     = rate > 0 ? (total - scanned) / rate : null;
-            setProgressEta(eta);
+            setProgressEta(rate > 0 ? (total - scanned) / rate : null);
 
-            try {
-              const variants = pluralVariants(phrase);
-              let matched = null;
-              for (const c of await fetchTitleCandidates(phrase, 200)) {
-                if (!c?.title) continue;
-                const nt = normalize(c.title);
-                if (nt === normalize(phrase) || variants.includes(nt)) { matched = c; break; }
-              }
-              if (!matched) {
-                for (const c of kwSample) {
-                  if (!c?.title) continue;
-                  const nt = normalize(c.title);
-                  if (nt === normalize(phrase) || variants.includes(nt)) { matched = c; break; }
-                }
-              }
-              const alreadyLinked = linkedPhrases.has(normalize(phrase));
-              const count = globalPhraseCount[normalize(phrase)] || 1;
-              candidates.push({ phrase, matched, approved: !!matched && !alreadyLinked, count, alreadyLinked });
-            } catch (_) {
-              candidates.push({ phrase, matched: null, approved: false, count: 1, alreadyLinked: false });
-            }
+            // ✅ Pure in-memory match — zero DB calls
+            const matched      = matchPhrase(phrase, allTitles);
+            const alreadyLinked = linkedPhrases.has(normalize(phrase));
+            const count        = globalPhraseCount[normalize(phrase)] || 1;
+
+            candidates.push({
+              phrase,
+              matched,
+              approved: !!matched && !alreadyLinked,
+              count,
+              alreadyLinked,
+            });
           }
-          result.push({ draft, candidates });
+          // ✅ Store html so handleConfirm doesn't need to re-fetch
+          result.push({ draft, html, candidates });
         }
 
         if (!cancelled) { setDraftData(result); setStep("preview"); }
@@ -210,6 +237,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
       candidates: d.candidates.map(c => ({ ...c, approved: !!c.matched && !c.alreadyLinked })),
     }))
   );
+
   const rejectAll = () => setDraftData(prev =>
     prev.map(d => ({ ...d, candidates: d.candidates.map(c => ({ ...c, approved: false })) }))
   );
@@ -217,40 +245,43 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
   const totalApproved = draftData.reduce((s, d) => s + d.candidates.filter(c => c.approved && c.matched).length, 0);
   const totalMatched  = draftData.reduce((s, d) => s + d.candidates.filter(c => c.matched).length, 0);
 
-  /* ── frequency views — aggregate across all drafts ── */
-  const allCandidates = draftData.flatMap(d => d.candidates);
+  /* ── frequency views (memoized) ── */
+  const { linkedPhrases, unmatchedPhrases } = useMemo(() => {
+    const phraseMap = {};
+    draftData.flatMap(d => d.candidates).forEach(c => {
+      const k = normalize(c.phrase);
+      if (!phraseMap[k]) phraseMap[k] = { phrase: c.phrase, count: 0, matched: c.matched, alreadyLinked: c.alreadyLinked };
+      phraseMap[k].count += c.count;
+      if (c.matched && !phraseMap[k].matched) phraseMap[k].matched = c.matched;
+      if (c.alreadyLinked) phraseMap[k].alreadyLinked = true;
+    });
+    const groups = Object.values(phraseMap).sort((a, b) => b.count - a.count);
+    return {
+      linkedPhrases:    groups.filter(p => p.matched),
+      unmatchedPhrases: groups.filter(p => !p.matched),
+    };
+  }, [draftData]);
 
-  // Group by phrase, sum counts, keep matched/linked status
-  const phraseMap = {};
-  allCandidates.forEach(c => {
-    const k = normalize(c.phrase);
-    if (!phraseMap[k]) phraseMap[k] = { phrase: c.phrase, count: 0, matched: c.matched, alreadyLinked: c.alreadyLinked };
-    phraseMap[k].count += c.count;
-    if (c.matched && !phraseMap[k].matched) phraseMap[k].matched = c.matched;
-    if (c.alreadyLinked) phraseMap[k].alreadyLinked = true;
-  });
-  const allPhraseGroups = Object.values(phraseMap).sort((a, b) => b.count - a.count);
-  const linkedPhrases    = allPhraseGroups.filter(p => p.matched);
-  const unmatchedPhrases = allPhraseGroups.filter(p => !p.matched);
-
-  /* ── confirm ── */
+  /* ── confirm: uses stored html, no re-fetch needed ── */
   const handleConfirm = async () => {
     if (totalApproved === 0) { onClose(); return; }
     setStep("saving");
     let saved = 0;
     try {
-      for (const { draft, candidates } of draftData) {
-        const approved = candidates.filter(c => c.approved && c.matched);
-        if (!approved.length) continue;
-        const { data: row, error } = await supabase
-          .from("book_summaries").select("summary").eq("id", draft.id).single();
-        if (error) continue;
-        const newHtml = applyLinks(row.summary || "", approved);
-        const { error: upErr } = await supabase.from("book_summaries")
-          .update({ summary: newHtml, auto_saved_at: new Date().toISOString() })
-          .eq("id", draft.id);
-        if (!upErr) saved += approved.length;
-      }
+      // Run saves in parallel for speed
+      await Promise.all(
+        draftData.map(async ({ draft, html, candidates }) => {
+          const approved = candidates.filter(c => c.approved && c.matched);
+          if (!approved.length) return;
+          // ✅ Use already-fetched html — no extra DB read
+          const newHtml = applyLinks(html, approved);
+          const { error } = await supabase
+            .from("book_summaries")
+            .update({ summary: newHtml, auto_saved_at: new Date().toISOString() })
+            .eq("id", draft.id);
+          if (!error) saved += approved.length;
+        })
+      );
       setSaveCount(saved);
       setStep("done");
       if (typeof onSaved === "function") onSaved();
@@ -262,14 +293,12 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
 
   const pct = progressTotal > 0 ? Math.round((progressCurrent / progressTotal) * 100) : 0;
 
-  /* ── tab definitions ── */
   const TABS = [
     { key: "preview",   label: "📋 Preview",   count: null },
     { key: "linked",    label: "🔗 Linked",    count: linkedPhrases.length },
     { key: "unmatched", label: "❓ Unmatched", count: unmatchedPhrases.length },
   ];
 
-  /* ── render ── */
   return (
     <div className="draft-panel__modal-overlay" style={{ zIndex: 1100 }} onClick={() => step !== "saving" && onClose()}>
       <div className="draft-panel__modal dp-autolink-modal" onClick={e => e.stopPropagation()}>
@@ -291,28 +320,17 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
         {step === "scanning" && (
           <div className="dp-scan-container">
             <div style={{ fontSize: 32, marginBottom: 10 }}>🔍</div>
-            <p style={{ fontWeight: 600, marginBottom: 4 }}>
-              Scanning bold phrases…
-            </p>
-
-            {/* Phrase being scanned */}
+            <p style={{ fontWeight: 600, marginBottom: 4 }}>Scanning bold phrases…</p>
             <p className="dp-scan-phrase">
-              {progressPhrase ? `"${progressPhrase}"` : "Starting…"}
+              {progressPhrase ? `"${progressPhrase}"` : "Loading titles…"}
             </p>
-
-            {/* Counter */}
             <div className="dp-scan-counter">
               <span className="dp-scan-counter__current">{progressCurrent}</span>
               <span style={{ color: "#9ca3af" }}> / {progressTotal || "…"} phrases</span>
               {progressEta && <span className="dp-scan-eta">{fmtSeconds(progressEta)}</span>}
             </div>
-
-            {/* Progress bar */}
             <div className="dp-progress-track">
-              <div
-                className="dp-progress-fill"
-                style={{ width: `${pct}%` }}
-              />
+              <div className="dp-progress-fill" style={{ width: `${pct}%` }} />
             </div>
             <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 6 }}>{pct}%</div>
           </div>
@@ -321,15 +339,11 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
         {/* ── PREVIEW / TABS ── */}
         {step === "preview" && (
           <>
-            {/* Tab bar */}
             <div className="dp-tab-bar">
               {TABS.map(tab => (
-                <button
-                  key={tab.key}
-                  type="button"
+                <button key={tab.key} type="button"
                   className={`dp-tab ${activeTab === tab.key ? "dp-tab--active" : ""}`}
-                  onClick={() => setActiveTab(tab.key)}
-                >
+                  onClick={() => setActiveTab(tab.key)}>
                   {tab.label}
                   {tab.count !== null && (
                     <span className={`dp-tab-badge ${activeTab === tab.key ? "dp-tab-badge--active" : ""}`}>
@@ -340,7 +354,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
               ))}
             </div>
 
-            {/* ── TAB: PREVIEW ── */}
+            {/* TAB: PREVIEW */}
             {activeTab === "preview" && (
               <>
                 {totalMatched === 0 ? (
@@ -385,13 +399,10 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                               </thead>
                               <tbody>
                                 {candidates.map((c, i) => (
-                                  <tr
-                                    key={c.phrase + i}
-                                    style={{
-                                      background: c.alreadyLinked ? "#eff6ff" : c.approved && c.matched ? "#f0fdf4" : "transparent",
-                                      opacity: c.matched ? 1 : 0.45,
-                                    }}
-                                  >
+                                  <tr key={c.phrase + i} style={{
+                                    background: c.alreadyLinked ? "#eff6ff" : c.approved && c.matched ? "#f0fdf4" : "transparent",
+                                    opacity: c.matched ? 1 : 0.45,
+                                  }}>
                                     <td>
                                       {c.alreadyLinked
                                         ? <span title="Already linked" style={{ color:"#3b82f6", fontSize:13 }}>🔗</span>
@@ -425,16 +436,11 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                     </div>
                   </>
                 )}
-
                 <div className="dp-autolink-footer">
                   <button type="button" className="dp-btn dp-btn--secondary" onClick={onClose}>Cancel</button>
                   {totalMatched > 0 && (
-                    <button
-                      type="button"
-                      className="dp-btn dp-btn--publish"
-                      onClick={handleConfirm}
-                      disabled={totalApproved === 0}
-                    >
+                    <button type="button" className="dp-btn dp-btn--publish"
+                      onClick={handleConfirm} disabled={totalApproved === 0}>
                       🔗 Apply {totalApproved} link{totalApproved !== 1 ? "s" : ""} & Save
                       {isBulk && ` (${targets.length} drafts)`}
                     </button>
@@ -443,12 +449,12 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
               </>
             )}
 
-            {/* ── TAB: LINKED ── */}
+            {/* TAB: LINKED */}
             {activeTab === "linked" && (
               <>
                 <p className="dp-tab-desc">
-                  Phrases that matched an article in the DB — ranked by how many times they appear across all selected drafts.
-                  <strong style={{ color:"#3b82f6" }}> 🔗 = already linked</strong> in the HTML.
+                  Phrases that matched an article — ranked by frequency across all selected drafts.{" "}
+                  <strong style={{ color:"#3b82f6" }}>🔗 = already linked</strong> in the HTML.
                 </p>
                 {linkedPhrases.length === 0 ? (
                   <div className="dp-empty-state">
@@ -469,9 +475,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                       <tbody>
                         {linkedPhrases.map((p, i) => (
                           <tr key={p.phrase + i} style={{ background: p.alreadyLinked ? "#eff6ff" : "transparent" }}>
-                            <td>
-                              <span className="dp-freq-badge dp-freq-badge--linked">{p.count}</span>
-                            </td>
+                            <td><span className="dp-freq-badge dp-freq-badge--linked">{p.count}</span></td>
                             <td><strong>{p.phrase}</strong></td>
                             <td style={{ color:"#2563eb" }}>{p.matched?.title || "—"}</td>
                             <td>
@@ -495,12 +499,12 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
               </>
             )}
 
-            {/* ── TAB: UNMATCHED ── */}
+            {/* TAB: UNMATCHED */}
             {activeTab === "unmatched" && (
               <>
                 <p className="dp-tab-desc">
-                  Bold phrases with <strong>no matching article</strong> in the DB — ranked by repeat count.
-                  High-count phrases = strong candidates for a new standalone article.
+                  Bold phrases with <strong>no matching article</strong> — ranked by repeat count.
+                  High-count phrases are strong candidates for new articles.
                 </p>
                 {unmatchedPhrases.length === 0 ? (
                   <div className="dp-empty-state">
@@ -527,11 +531,9 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                             </td>
                             <td><strong>{p.phrase}</strong></td>
                             <td style={{ fontSize:12, color:"#6b7280" }}>
-                              {p.count >= 5
-                                ? "🔥 High priority — create an article"
-                                : p.count >= 2
-                                  ? "📌 Consider creating an article"
-                                  : ""}
+                              {p.count >= 5 ? "🔥 High priority — create an article"
+                                : p.count >= 2 ? "📌 Consider creating an article"
+                                : ""}
                             </td>
                           </tr>
                         ))}
@@ -626,6 +628,7 @@ const DraftPanel = ({ onEdit }) => {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
+
   const toggleAll = () => selected.size === drafts.length
     ? setSelected(new Set())
     : setSelected(new Set(drafts.map(d => d.id)));
