@@ -15,7 +15,7 @@ const REAL_CATEGORIES = [
   "Companies & Organizations","Concepts","Concepts Abbreviations","Courses & Learning Paths",
   "Digital Skills & Technology","Entrepreneurship","How To","Leadership & Management","Library", "Workbooks","Marketing & Sales",
   "Markets & Geography","Mindset & Motivation","Money & Productivity","People","Quotes",
-  "Self-Improvement","Strategic Communication","Tools & Software","Finance & Funding","Operations & Systems","Global & Emerging Markets","Video Insights",
+  "Self-Improvement","Strategic Communication","Tools & Software","Finance & Funding","Operations & Systems","Global & Emerging Markets","Video Insights","Quizzes",
 ];
 
 const DIFFICULTIES = [
