@@ -66,18 +66,21 @@ const fetchAllTitles = async () => {
 
 /* ── match a phrase against the in-memory title list ────── */
 const matchPhrase = (phrase, allTitles) => {
-  const variants = pluralVariants(phrase);
-  const nPhrase  = normalize(phrase);
+  if (phrase.length > 100) {
+    console.log("LONG PHRASE:", phrase.length, phrase);
+  }
+
   return allTitles.find(c => {
-    if (!c?.title) return false;
     const nt = normalize(c.title);
-    if (nt === nPhrase || variants.includes(nt)) return true;
-    // keyword fallback
-    if (Array.isArray(c.keywords)) {
-      return c.keywords.some(k => normalize(k) === nPhrase);
+    const np = normalize(phrase);
+
+    if (nt === np) {
+      console.log("MATCHED:", np.length);
+      return true;
     }
+
     return false;
-  }) ?? null;
+  });
 };
 
 /* ── apply approved links to HTML ───────────────────────── */
@@ -160,7 +163,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
             new Set(
               Array.from(container.querySelectorAll("strong, b"))
                 .map(n => (n.textContent || "").trim())
-                .filter(s => s.length >= 2 && s.length <= 200)
+                .filter(s => s.length >= 2 && s.length <= 1000)
             )
           ).slice(0, 200);
 
