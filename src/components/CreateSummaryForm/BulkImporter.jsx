@@ -1,5 +1,5 @@
 // src/components/CreateSummaryForm/BulkImporter.jsx
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { supabase } from "../../supabase/supabaseClient";
 import ReactQuill from "react-quill";
 import "quill/dist/quill.snow.css";
@@ -19,8 +19,8 @@ const REAL_CATEGORIES = [
   "Global & Emerging Markets","Video Insights","Quizzes",
 ];
 
-const DIFFICULTIES    = ["", "Beginner", "Intermediate", "Advanced"];
-const DRAFT_SENTINEL  = "__DRAFT__";
+const DIFFICULTIES   = ["", "Beginner", "Intermediate", "Advanced"];
+const DRAFT_SENTINEL = "__DRAFT__";
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 const parseKeywords = (input, max = 8) => {
@@ -35,9 +35,6 @@ const parseKeywords = (input, max = 8) => {
 
 const stripBold = (s = "") => s.replace(/\*\*/g, "").trim();
 
-/**
- * AUTO-CATEGORY RESOLUTION
- */
 const resolveCategory = (raw = "") => {
   if (!raw) return DRAFT_SENTINEL;
   const cleaned = stripBold(raw).trim();
@@ -51,24 +48,12 @@ const resolveCategory = (raw = "") => {
 };
 
 /* ── Markdown → HTML ─────────────────────────────────────────────────────── */
-/**
- * FIX: Added markdown link pattern [text](url) → <a href="url">text</a>
- * Links open in a new tab and are styled as proper anchors.
- * Order matters: links must be processed BEFORE bold/italic so that
- * [**bold link**](url) is handled correctly.
- */
 const inlineMarkdown = (s) =>
   s
-    // Markdown links: [anchor text](url) → clickable <a> tag
-    .replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;">$1</a>'
-    )
-    // Bold
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#2563eb;text-decoration:underline;">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    // Italic
     .replace(/\*(.+?)\*/g,     "<em>$1</em>")
-    // Inline code
     .replace(/`(.+?)`/g,       "<code>$1</code>");
 
 const markdownToHtml = (md) => {
@@ -117,6 +102,7 @@ const parseArticles = (raw) => {
     ? chunks
     : raw.split(/\n---+\n/).map(c => c.trim()).filter(Boolean);
 
+  const batchId = Date.now();
   return segments.map((chunk, idx) => {
     const getField = (label) => {
       const re = new RegExp(`^\\*{0,2}${label}\\*{0,2}[:\\s]+(.+)$`, "im");
@@ -157,30 +143,30 @@ const parseArticles = (raw) => {
     const resolvedCategory = resolveCategory(categoryRaw);
 
     const warnings = [];
-    if (!seoTitle)                            warnings.push("Missing SEO Title");
-    if (!metaDesc)                            warnings.push("Missing Meta Description");
-    if (!bodyHtml)                            warnings.push("Body appears empty");
-    if (resolvedCategory === DRAFT_SENTINEL)  warnings.push("Category not recognised — please select manually");
+    if (!seoTitle)                           warnings.push("Missing SEO Title");
+    if (!metaDesc)                           warnings.push("Missing Meta Description");
+    if (!bodyHtml)                           warnings.push("Body appears empty");
+    if (resolvedCategory === DRAFT_SENTINEL) warnings.push("Category not recognised — please select manually");
 
     return {
-      _id:           `bulk-${Date.now()}-${idx}`,
+      _id:            `bulk-${batchId}-${idx}`,
       title,
-      author:        DEFAULT_AUTHOR,
-      description:   metaDesc,
-      summaryText:   bodyHtml,
-      category:      resolvedCategory,
-      imageUrl:      DEFAULT_IMAGE_URL,
-      youtubeUrl:    "",
+      author:         DEFAULT_AUTHOR,
+      description:    metaDesc,
+      summaryText:    bodyHtml,
+      category:       resolvedCategory,
+      imageUrl:       DEFAULT_IMAGE_URL,
+      youtubeUrl:     "",
       difficulty,
-      tags:          tagsClean,
-      keywordsInput: parseKeywords(keywords, 8).join(", "),
-      affiliateLink: "",
-      affiliateType: "book",
+      tags:           tagsClean,
+      keywordsInput:  parseKeywords(keywords, 8).join(", "),
+      affiliateLink:  "",
+      affiliateType:  "book",
       warnings,
-      status:        "idle",
-      statusMsg:     "",
-      expanded:      false,
-      draftId:       null,
+      status:         "idle",
+      statusMsg:      "",
+      expanded:       false,
+      draftId:        null,
       duplicateCheck: "pending",
       duplicateInfo:  null,
     };
@@ -284,9 +270,7 @@ const Toast = ({ message, type = "success", onDone }) => {
   );
 };
 
-/* ══════════════════════════════════════════════════════════════════════════
-   DUPLICATE BANNER
-══════════════════════════════════════════════════════════════════════════ */
+/* ── Duplicate Banner ─────────────────────────────────────────────────────── */
 const DuplicateBanner = ({ info, onDelete }) => (
   <div style={{
     background: "#fef2f2", border: "1.5px solid #fca5a5",
@@ -314,23 +298,17 @@ const DuplicateBanner = ({ info, onDelete }) => (
         Delete this copy to continue, or rename the title above.
       </div>
     </div>
-    <button
-      type="button"
-      onClick={onDelete}
-      style={{
-        background: "#dc2626", color: "#fff", border: "none",
-        borderRadius: 6, padding: "5px 12px",
-        fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-      }}
-    >
+    <button type="button" onClick={onDelete} style={{
+      background: "#dc2626", color: "#fff", border: "none",
+      borderRadius: 6, padding: "5px 12px",
+      fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+    }}>
       🗑 Delete this copy
     </button>
   </div>
 );
 
-/* ══════════════════════════════════════════════════════════════════════════
-   SINGLE ARTICLE CARD
-══════════════════════════════════════════════════════════════════════════ */
+/* ── Article Card ─────────────────────────────────────────────────────────── */
 const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRecheckTitle }) => {
   const { status, statusMsg, expanded, warnings, duplicateCheck, duplicateInfo } = art;
 
@@ -342,15 +320,14 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
   const deleted     = status === "deleted";
 
   const borderColor = isDuplicate ? "#dc2626"
-    : saved    ? "#16a34a"
-    : errored  ? "#dc2626"
-    : deleted  ? "#9ca3af"
+    : saved   ? "#16a34a"
+    : errored ? "#dc2626"
+    : deleted ? "#9ca3af"
     : warnings.length ? "#f59e0b"
     : "#e5e7eb";
 
   const set = (field) => (e) =>
     onChange(art._id, field, e && e.target ? e.target.value : e);
-
   const setBody = (html) => onChange(art._id, "summaryText", html);
 
   const titleChangeTimer = useRef(null);
@@ -387,8 +364,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
       boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
       transition: "border-color 0.2s",
     }}>
-
-      {/* ── Card header ── */}
+      {/* Card header */}
       <div
         onClick={() => !saving && onChange(art._id, "expanded", !expanded)}
         style={{
@@ -400,8 +376,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
       >
         <span style={{
           background: isDuplicate ? "#dc2626" : saved ? "#16a34a" : "#2563eb",
-          color: "#fff",
-          borderRadius: "50%", width: 26, height: 26, flexShrink: 0,
+          color: "#fff", borderRadius: "50%", width: 26, height: 26, flexShrink: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 12, fontWeight: 700,
         }}>
@@ -425,17 +400,14 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             🚫 Already exists
           </span>
         )}
-
         {isChecking && (
           <span style={{
             fontSize: 11, background: "#f3f4f6", color: "#6b7280",
-            borderRadius: 20, padding: "2px 9px", fontWeight: 600,
-            whiteSpace: "nowrap",
+            borderRadius: 20, padding: "2px 9px", fontWeight: 600, whiteSpace: "nowrap",
           }}>
             ⏳ Checking…
           </span>
         )}
-
         {!isDuplicate && art.category !== DRAFT_SENTINEL && (
           <span style={{
             fontSize: 11, background: "#eff6ff", color: "#1d4ed8",
@@ -446,7 +418,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             {art.category}
           </span>
         )}
-
         {statusMsg && !isDuplicate && (
           <span style={{
             fontSize: 11, fontWeight: 600,
@@ -457,7 +428,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             {statusMsg}
           </span>
         )}
-
         {warnings.length > 0 && status === "idle" && !isDuplicate && (
           <span style={{
             fontSize: 11, background: "#fef3c7", color: "#92400e",
@@ -466,7 +436,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             ⚠ {warnings.length} warning{warnings.length > 1 ? "s" : ""}
           </span>
         )}
-
         <span style={{
           fontSize: 16, color: "#9ca3af",
           transform: expanded ? "rotate(180deg)" : "none",
@@ -474,22 +443,16 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
         }}>▾</span>
       </div>
 
-      {/* ── Expanded body ── */}
+      {/* Expanded body */}
       {expanded && (
         <div style={{ padding: "0 16px 16px", borderTop: "1px solid #f3f4f6" }}>
-
           {isDuplicate && (
-            <DuplicateBanner
-              info={duplicateInfo}
-              onDelete={() => onDelete(art._id)}
-            />
+            <DuplicateBanner info={duplicateInfo} onDelete={() => onDelete(art._id)} />
           )}
-
           {warnings.length > 0 && !isDuplicate && (
             <div style={{
               background: "#fef3c7", border: "1px solid #fbbf24",
-              borderRadius: 8, padding: "8px 12px",
-              marginTop: 12, marginBottom: 12,
+              borderRadius: 8, padding: "8px 12px", marginTop: 12, marginBottom: 12,
             }}>
               <div style={{ fontWeight: 700, fontSize: 12, color: "#92400e", marginBottom: 4 }}>
                 ⚠ Review before saving:
@@ -500,12 +463,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             </div>
           )}
 
-          {/* ── Fields grid ── */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr",
-            gap: "10px 16px", marginTop: 12,
-          }}>
-
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", marginTop: 12 }}>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={labelStyle}>
                 SEO Title *
@@ -542,8 +500,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
                 {art.category !== DRAFT_SENTINEL && (
                   <span style={{
                     marginLeft: 6, fontSize: 10, fontWeight: 400,
-                    color: "#16a34a", background: "#dcfce7",
-                    padding: "1px 6px", borderRadius: 10,
+                    color: "#16a34a", background: "#dcfce7", padding: "1px 6px", borderRadius: 10,
                   }}>
                     auto-assigned
                   </span>
@@ -567,8 +524,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
 
             <div>
               <label style={labelStyle}>Image URL</label>
-              <input value={art.imageUrl} onChange={set("imageUrl")}
-                style={inputStyle} placeholder="https://..." />
+              <input value={art.imageUrl} onChange={set("imageUrl")} style={inputStyle} placeholder="https://..." />
             </div>
 
             <div style={{ gridColumn: "1 / -1" }}>
@@ -579,8 +535,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
 
             <div>
               <label style={labelStyle}>Tags</label>
-              <input value={art.tags} onChange={set("tags")}
-                style={inputStyle} placeholder="business, leadership" />
+              <input value={art.tags} onChange={set("tags")} style={inputStyle} placeholder="business, leadership" />
             </div>
 
             <div>
@@ -590,8 +545,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
 
             <div>
               <label style={labelStyle}>YouTube URL (optional)</label>
-              <input value={art.youtubeUrl} onChange={set("youtubeUrl")}
-                style={inputStyle} placeholder="https://youtube.com/..." />
+              <input value={art.youtubeUrl} onChange={set("youtubeUrl")} style={inputStyle} placeholder="https://youtube.com/..." />
             </div>
 
             <div>
@@ -615,10 +569,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
                   — fully editable, renders headings, bold, links
                 </span>
               </label>
-              <div style={{
-                border: "1.5px solid #d1d5db", borderRadius: 8,
-                overflow: "hidden", background: "#fff",
-              }}>
+              <div style={{ border: "1.5px solid #d1d5db", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
                 <ReactQuill
                   value={art.summaryText}
                   onChange={setBody}
@@ -650,11 +601,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
             </div>
           )}
 
-          {/* ── Card action buttons ── */}
-          <div style={{
-            display: "flex", gap: 8, marginTop: 14,
-            alignItems: "center", flexWrap: "wrap",
-          }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
             <button
               type="button"
               onClick={() => onSave(art._id)}
@@ -662,17 +609,9 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               title={isDuplicate ? "Duplicate title — rename or delete this article first" : ""}
               style={{
                 ...btnBase,
-                background: isDuplicate ? "#f3f4f6"
-                  : saved   ? "#d1fae5"
-                  : saving  ? "#e5e7eb"
-                  : "#f3f4f6",
-                color: isDuplicate ? "#9ca3af"
-                  : saved  ? "#15803d"
-                  : saving ? "#9ca3af"
-                  : "#374151",
-                border: isDuplicate
-                  ? "1px solid #fca5a5"
-                  : "1px solid #d1d5db",
+                background: isDuplicate ? "#f3f4f6" : saved ? "#d1fae5" : saving ? "#e5e7eb" : "#f3f4f6",
+                color: isDuplicate ? "#9ca3af" : saved ? "#15803d" : saving ? "#9ca3af" : "#374151",
+                border: isDuplicate ? "1px solid #fca5a5" : "1px solid #d1d5db",
                 cursor: (saving || saved || isDuplicate || isChecking) ? "not-allowed" : "pointer",
               }}
             >
@@ -683,10 +622,6 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               type="button"
               onClick={() => onPublish(art._id)}
               disabled={saving || art.category === DRAFT_SENTINEL || isDuplicate || isChecking}
-              title={
-                isDuplicate ? "Duplicate title — cannot publish" :
-                art.category === DRAFT_SENTINEL ? "Select a category to publish" : ""
-              }
               style={{
                 ...btnBase,
                 background: (isDuplicate || art.category === DRAFT_SENTINEL) ? "#9ca3af" : "#2563eb",
@@ -703,9 +638,7 @@ const ArticleCard = ({ art, idx, onChange, onSave, onPublish, onDelete, onRechec
               </span>
             )}
             {!isDuplicate && art.category === DRAFT_SENTINEL && (
-              <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                Select category to publish
-              </span>
+              <span style={{ fontSize: 11, color: "#9ca3af" }}>Select category to publish</span>
             )}
 
             <button
@@ -739,35 +672,45 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
   const [bulkBusy, setBulkBusy] = useState(false);
   const listRef                 = useRef(null);
 
-  /* ── Duplicate title check ── */
+  /* ─────────────────────────────────────────────────────────────────────────
+     checkDuplicates
+     ─────────────────────────────────────────────────────────────────────────
+     Matches CreateSummaryForm's checkTitleExists: NO user_id filter.
+     The single-article form finds duplicates without scoping to user_id,
+     so we do the same here. Supabase RLS handles server-side access control.
+  ───────────────────────────────────────────────────────────────────────── */
   const checkDuplicates = useCallback(async (arts) => {
     if (!arts.length) return;
 
+    // Mark all cards as "checking" immediately
     setArticles(prev => prev.map(a => ({ ...a, duplicateCheck: "checking" })));
 
-    let existingMap = new Map();
-    try {
-      const { data } = await supabase
-        .from("book_summaries")
-        .select("id, title, status")
-        .limit(10000);
-      if (data) {
-        data.forEach(row => {
-          existingMap.set(row.title.trim().toLowerCase(), {
-            existingId: row.id,
-            existingStatus: row.status,
-          });
-        });
-      }
-    } catch (err) {
-      console.error("Duplicate check error:", err);
-      setArticles(prev => prev.map(a => ({ ...a, duplicateCheck: "clear" })));
-      return;
-    }
+    // Check each title individually using ilike — exactly like CreateSummaryForm.
+    // ilike is a server-side case-insensitive match, so "How To X" === "how to x"
+    // and Postgres handles any unicode/collation differences for us.
+    const results = await Promise.all(
+      arts.map(async (art) => {
+        try {
+          const { data } = await supabase
+            .from("book_summaries")
+            .select("id, status")
+            .ilike("title", art.title.trim())
+            .limit(1)
+            .maybeSingle();
+          return {
+            _id:  art._id,
+            hit:  data ? { existingId: data.id, existingStatus: data.status } : null,
+          };
+        } catch {
+          return { _id: art._id, hit: null };
+        }
+      })
+    );
+
+    const resultMap = new Map(results.map(r => [r._id, r.hit]));
 
     setArticles(prev => prev.map(a => {
-      const key = a.title.trim().toLowerCase();
-      const hit = existingMap.get(key);
+      const hit = resultMap.get(a._id);
       return {
         ...a,
         duplicateCheck: hit ? "exists" : "clear",
@@ -776,11 +719,13 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     }));
   }, []);
 
+  /* ── Re-check a single title after the user edits it ──────────────────── */
   const recheckTitle = useCallback(async (id, newTitle) => {
     setArticles(prev => prev.map(a =>
       a._id === id ? { ...a, duplicateCheck: "checking", duplicateInfo: null } : a
     ));
     try {
+      // No user_id filter — matches CreateSummaryForm behaviour
       const { data } = await supabase
         .from("book_summaries")
         .select("id, status")
@@ -804,6 +749,7 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     }
   }, []);
 
+  /* ── Parse ─────────────────────────────────────────────────────────────── */
   const handleParse = useCallback(() => {
     if (!rawText.trim()) return;
     const parsed = parseArticles(rawText);
@@ -811,9 +757,11 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
       setToast({ message: "⚠ No articles detected. Check formatting.", type: "error" });
       return;
     }
+    // Set articles FIRST so cards render immediately
     setArticles(parsed);
     setStep("review");
     setTimeout(() => listRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    // Then check duplicates — patches state via prev.map
     checkDuplicates(parsed);
   }, [rawText, checkDuplicates]);
 
@@ -830,7 +778,8 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     ));
 
     try {
-      const { data: { user } = {} } = await supabase.auth.getUser();
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
       if (!user) throw new Error("Not logged in");
 
       const slug = await resolveSlugCollision(makeSlug(art.title));
@@ -885,7 +834,8 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
 
     if (art.draftId) {
       try {
-        const { data: { user } = {} } = await supabase.auth.getUser();
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
         if (user) {
           await supabase.from("book_summaries")
             .delete().eq("id", art.draftId).eq("user_id", user.id);
@@ -906,11 +856,12 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     const duplicates = articles.filter(a => a.duplicateCheck === "exists");
 
     if (!pending.length) {
-      if (duplicates.length) {
-        setToast({ message: `⚠ All pending articles are duplicates. Rename or delete them first.`, type: "warning" });
-      } else {
-        setToast({ message: "Nothing left to save.", type: "warning" });
-      }
+      setToast({
+        message: duplicates.length
+          ? `⚠ All pending articles are duplicates. Rename or delete them first.`
+          : "Nothing left to save.",
+        type: "warning",
+      });
       return;
     }
 
@@ -923,36 +874,37 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
     for (const art of pending) await saveSingle(art._id);
     setBulkBusy(false);
 
-    const msg = duplicates.length
-      ? `✅ ${pending.length} saved — ${duplicates.length} duplicate(s) skipped`
-      : `✅ ${pending.length} draft(s) saved`;
-    setToast({ message: msg, type: "success" });
+    setToast({
+      message: duplicates.length
+        ? `✅ ${pending.length} saved — ${duplicates.length} duplicate(s) skipped`
+        : `✅ ${pending.length} draft(s) saved`,
+      type: "success",
+    });
   }, [articles, saveSingle]);
 
   const publishAll = useCallback(async () => {
-    const publishable   = articles.filter(a =>
+    const publishable = articles.filter(a =>
       a.status !== "deleted" &&
       a.category !== DRAFT_SENTINEL &&
       a.duplicateCheck !== "exists"
     );
-    const dupCount      = articles.filter(a => a.status !== "deleted" && a.duplicateCheck === "exists").length;
-    const noCatCount    = articles.filter(a => a.status !== "deleted" && a.category === DRAFT_SENTINEL && a.duplicateCheck !== "exists").length;
+    const dupCount   = articles.filter(a => a.status !== "deleted" && a.duplicateCheck === "exists").length;
+    const noCatCount = articles.filter(a =>
+      a.status !== "deleted" && a.category === DRAFT_SENTINEL && a.duplicateCheck !== "exists"
+    ).length;
 
     if (!publishable.length) {
-      setToast({
-        message: "No publishable articles — duplicates or missing categories are blocking all of them.",
-        type: "warning",
-      });
+      setToast({ message: "No publishable articles — duplicates or missing categories blocking all.", type: "warning" });
       return;
     }
 
     const notes = [];
     if (dupCount)   notes.push(`${dupCount} duplicate(s) skipped`);
     if (noCatCount) notes.push(`${noCatCount} without category skipped`);
-    const confirmMsg = notes.length
+    const msg = notes.length
       ? `Publish ${publishable.length} article(s)? (${notes.join(", ")})`
       : `Publish all ${publishable.length} article(s)?`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!window.confirm(msg)) return;
 
     setBulkBusy(true);
     for (const art of publishable) await saveSingle(art._id, art.category);
@@ -971,12 +923,18 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
   /* ── Counts ── */
   const total          = articles.filter(a => a.status !== "deleted").length;
   const savedCount     = articles.filter(a => a.status === "saved").length;
-  const pendingCount   = articles.filter(a => (a.status === "idle" || a.status === "error") && a.duplicateCheck !== "exists").length;
-  const duplicateCount = articles.filter(a => a.status !== "deleted" && a.duplicateCheck === "exists").length;
+  const pendingCount   = articles.filter(a =>
+    (a.status === "idle" || a.status === "error") && a.duplicateCheck !== "exists"
+  ).length;
+  const duplicateCount = articles.filter(a =>
+    a.status !== "deleted" && a.duplicateCheck === "exists"
+  ).length;
   const checkingCount  = articles.filter(a => a.duplicateCheck === "checking").length;
-  const withCategory   = articles.filter(a => a.status !== "deleted" && a.category !== DRAFT_SENTINEL && a.duplicateCheck !== "exists").length;
+  const withCategory   = articles.filter(a =>
+    a.status !== "deleted" && a.category !== DRAFT_SENTINEL && a.duplicateCheck !== "exists"
+  ).length;
 
-  /* ─────────────────────────────────────────────── RENDER ─── */
+  /* ── Render ─────────────────────────────────────────────────────────────── */
   return (
     <>
       {toast && (
@@ -984,18 +942,13 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
       )}
 
       <div style={{
-        background: "#f8fafc",
-        borderRadius: 12,
-        border: "2px solid #2563eb",
-        padding: "20px 22px",
-        marginBottom: 20,
+        background: "#f8fafc", borderRadius: 12,
+        border: "2px solid #2563eb", padding: "20px 22px", marginBottom: 20,
       }}>
-
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
           <div style={{
-            background: "#2563eb", color: "#fff",
-            borderRadius: 8, padding: "6px 12px",
+            background: "#2563eb", color: "#fff", borderRadius: 8, padding: "6px 12px",
             fontWeight: 800, fontSize: 13, letterSpacing: "0.02em",
           }}>
             BULK IMPORT
@@ -1007,19 +960,13 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
             </code>{" "}
             headers
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              marginLeft: "auto", background: "none", border: "none",
-              cursor: "pointer", fontSize: 22, color: "#9ca3af", lineHeight: 1,
-            }}
-          >
-            ×
-          </button>
+          <button type="button" onClick={onClose} style={{
+            marginLeft: "auto", background: "none", border: "none",
+            cursor: "pointer", fontSize: 22, color: "#9ca3af", lineHeight: 1,
+          }}>×</button>
         </div>
 
-        {/* ── STEP: Paste ── */}
+        {/* STEP: Paste */}
         {step === "paste" && (
           <div>
             <textarea
@@ -1056,50 +1003,43 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
           </div>
         )}
 
-        {/* ── STEP: Review ── */}
+        {/* STEP: Review */}
         {step === "review" && (
           <div>
             {/* Summary bar */}
             <div style={{
               display: "flex", gap: 12, alignItems: "center",
               background: "#fff", border: "1px solid #e5e7eb",
-              borderRadius: 9, padding: "10px 16px", marginBottom: 16,
-              flexWrap: "wrap",
+              borderRadius: 9, padding: "10px 16px", marginBottom: 16, flexWrap: "wrap",
             }}>
               <span style={{ fontWeight: 700, color: "#111827", fontSize: 14 }}>
                 {total} article{total !== 1 ? "s" : ""} parsed
               </span>
-
               {checkingCount > 0 && (
                 <span style={{ fontSize: 12, background: "#f3f4f6", color: "#6b7280", borderRadius: 20, padding: "2px 9px", fontWeight: 600 }}>
                   ⏳ Checking {checkingCount} for duplicates…
                 </span>
               )}
-
               {duplicateCount > 0 && (
                 <span style={{ fontSize: 12, background: "#fef2f2", color: "#dc2626", borderRadius: 20, padding: "2px 9px", fontWeight: 700, border: "1px solid #fca5a5" }}>
                   🚫 {duplicateCount} duplicate{duplicateCount > 1 ? "s" : ""} — blocked
                 </span>
               )}
-
               {withCategory > 0 && (
                 <span style={{ fontSize: 12, background: "#eff6ff", color: "#1d4ed8", borderRadius: 20, padding: "2px 9px", fontWeight: 600 }}>
                   🏷 {withCategory} auto-categorised
                 </span>
               )}
-
               {savedCount > 0 && (
                 <span style={{ fontSize: 12, background: "#d1fae5", color: "#15803d", borderRadius: 20, padding: "2px 9px", fontWeight: 600 }}>
                   ✅ {savedCount} saved
                 </span>
               )}
-
               {pendingCount > 0 && (
                 <span style={{ fontSize: 12, background: "#eff6ff", color: "#2563eb", borderRadius: 20, padding: "2px 9px", fontWeight: 600 }}>
                   {pendingCount} ready
                 </span>
               )}
-
               <button
                 type="button"
                 onClick={() => { setStep("paste"); setArticles([]); }}
@@ -1120,7 +1060,8 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
                 Collapse All
               </button>
               {duplicateCount > 0 && (
-                <button type="button" style={{ ...smallBtn, background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}
+                <button type="button"
+                  style={{ ...smallBtn, background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}
                   onClick={() => setArticles(prev => prev.map(a => ({
                     ...a, expanded: a.duplicateCheck === "exists" ? true : a.expanded
                   })))}>
@@ -1145,21 +1086,15 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
               ))}
             </div>
 
-            {/* ── Sticky bulk action bar ── */}
+            {/* Sticky bulk action bar */}
             <div style={{
               position: "sticky", bottom: 0,
-              background: "#fff",
-              border: "1.5px solid #2563eb",
+              background: "#fff", border: "1.5px solid #2563eb",
               borderRadius: 10, padding: "12px 18px",
-              display: "flex", gap: 10, flexWrap: "wrap",
-              alignItems: "center",
-              boxShadow: "0 -4px 20px rgba(37,99,235,0.10)",
-              marginTop: 16,
+              display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center",
+              boxShadow: "0 -4px 20px rgba(37,99,235,0.10)", marginTop: 16,
             }}>
-              <span style={{ fontWeight: 700, fontSize: 13, color: "#1d4ed8" }}>
-                Bulk Actions:
-              </span>
-
+              <span style={{ fontWeight: 700, fontSize: 13, color: "#1d4ed8" }}>Bulk Actions:</span>
               {duplicateCount > 0 && (
                 <span style={{
                   fontSize: 12, color: "#dc2626", fontWeight: 600,
@@ -1169,31 +1104,25 @@ const BulkImporter = ({ onClose, onNewSummary }) => {
                   🚫 {duplicateCount} duplicate{duplicateCount > 1 ? "s" : ""} will be skipped
                 </span>
               )}
-
-              <button type="button" onClick={saveAllDrafts} disabled={bulkBusy}
-                style={{
-                  ...btnBase, background: "#f3f4f6", color: "#374151",
-                  border: "1px solid #d1d5db",
-                  cursor: bulkBusy ? "not-allowed" : "pointer",
-                }}>
+              <button type="button" onClick={saveAllDrafts} disabled={bulkBusy} style={{
+                ...btnBase, background: "#f3f4f6", color: "#374151",
+                border: "1px solid #d1d5db",
+                cursor: bulkBusy ? "not-allowed" : "pointer",
+              }}>
                 {bulkBusy ? "⏳ Working…" : `💾 Save All Drafts (${pendingCount})`}
               </button>
-
-              <button type="button" onClick={publishAll} disabled={bulkBusy}
-                style={{
-                  ...btnBase, background: "#2563eb", color: "#fff",
-                  border: "none", cursor: bulkBusy ? "not-allowed" : "pointer",
-                }}>
+              <button type="button" onClick={publishAll} disabled={bulkBusy} style={{
+                ...btnBase, background: "#2563eb", color: "#fff",
+                border: "none", cursor: bulkBusy ? "not-allowed" : "pointer",
+              }}>
                 🚀 Publish All{withCategory > 0 ? ` (${withCategory})` : ""}
               </button>
-
-              <button type="button" onClick={deleteAll} disabled={bulkBusy}
-                style={{
-                  ...btnBase, marginLeft: "auto",
-                  background: "#fff", color: "#dc2626",
-                  border: "1.5px solid #fca5a5",
-                  cursor: bulkBusy ? "not-allowed" : "pointer",
-                }}>
+              <button type="button" onClick={deleteAll} disabled={bulkBusy} style={{
+                ...btnBase, marginLeft: "auto",
+                background: "#fff", color: "#dc2626",
+                border: "1.5px solid #fca5a5",
+                cursor: bulkBusy ? "not-allowed" : "pointer",
+              }}>
                 🗑 Delete All
               </button>
             </div>
