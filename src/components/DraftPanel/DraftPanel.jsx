@@ -9,25 +9,14 @@ const REAL_CATEGORIES = [
   "Ogonjo Briefs","Frameworks & Models","Apps","Best Books","Book Summaries","Business Concepts","Business Giants",
   "Business Ideas","Business Legends","Business Strategy & Systems","Career Development","Case Studies",
   "Companies & Organizations","Concepts","Concepts Abbreviations","Courses & Learning Paths",
-  "Digital Skills & Technology","Entrepreneurship","How To","Leadership & Management","Library", "Workbooks","Marketing & Sales",
+  "Digital Skills & Technology","Entrepreneurship","How To","Leadership & Management","Library","Workbooks","Marketing & Sales",
   "Markets & Geography","Mindset & Motivation","Money & Productivity","People","Quotes",
-  "Self-Improvement","Strategic Communication","Tools & Software","Finance & Funding","Operations & Systems","Global & Emerging Markets","Video Insights","Quizzes",
+  "Self-Improvement","Strategic Communication","Tools & Software","Finance & Funding","Operations & Systems",
+  "Global & Emerging Markets","Video Insights","Quizzes",
 ];
-
-
 
 /* ── pure helpers ───────────────────────────────────────── */
 const normalize = (s = "") => String(s || "").trim().toLowerCase();
-
-const pluralVariants = (word = "") => {
-  const w = normalize(word);
-  if (!w) return [w];
-  const v = new Set([w]);
-  if (!w.endsWith("s"))  v.add(`${w}s`);
-  if (!w.endsWith("es")) v.add(`${w}es`);
-  if (w.endsWith("s"))   v.add(w.replace(/s+$/, ""));
-  return Array.from(v);
-};
 
 const toLibraryHref = (row) => row?.slug ? `/library/${row.slug}` : `/library/${row?.id}`;
 
@@ -43,13 +32,10 @@ const fmtSeconds = (s) => {
 };
 
 /* ── fetch ALL titles in ONE query ──────────────────────── */
-// KEY FIX: replaces fetchTitleCandidates (called once per phrase = thousands of queries)
-// with a single upfront fetch of all titles + keywords into memory.
 const fetchAllTitles = async () => {
   let allRows = [];
   let from = 0;
   const pageSize = 1000;
-  // Paginate in case there are more than 1000 articles
   while (true) {
     const { data, error } = await supabase
       .from("book_summaries")
@@ -64,31 +50,145 @@ const fetchAllTitles = async () => {
   return allRows;
 };
 
-/* ── match a phrase against the in-memory title list ────── */
+/* ── match a phrase against the in-memory title list (exact) ── */
 const matchPhrase = (phrase, allTitles) => {
-  if (phrase.length > 100) {
-    console.log("LONG PHRASE:", phrase.length, phrase);
-  }
-
-  return allTitles.find(c => {
-    const nt = normalize(c.title);
-    const np = normalize(phrase);
-
-    if (nt === np) {
-      console.log("MATCHED:", np.length);
-      return true;
-    }
-
-    return false;
-  });
+  const np = normalize(phrase);
+  return allTitles.find(c => normalize(c.title) === np) || null;
 };
 
-/* ── apply approved links to HTML ───────────────────────── */
-const applyLinks = (html, approved) => {
+/* ════════════════════════════════════════════════════════════
+   FEATURE 1 — Bold phrase extractor
+   Scans <strong>/<b> nodes, returns candidates
+════════════════════════════════════════════════════════════ */
+const extractBoldCandidates = (html, allTitles) => {
+  const container = document.createElement("div");
+  container.innerHTML = html || "";
+
+  // Track phrases already inside <a> tags
+  const alreadyLinkedSet = new Set(
+    Array.from(container.querySelectorAll(
+      "a[href^='/library/'] strong, a[href^='/library/'] b, a[data-summary-id] strong, a[data-summary-id] b"
+    )).map(n => normalize((n.textContent || "").trim()))
+  );
+
+  const seen = new Set();
+  const candidates = [];
+
+  Array.from(container.querySelectorAll("strong, b")).forEach(node => {
+    const phrase = (node.textContent || "").trim();
+    if (!phrase || phrase.length < 2 || phrase.length > 200) return;
+    const key = normalize(phrase);
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const matched = matchPhrase(phrase, allTitles);
+    const alreadyLinked = alreadyLinkedSet.has(key);
+
+    candidates.push({
+      phrase,
+      matched,
+      approved: !!matched && !alreadyLinked,
+      alreadyLinked,
+      source: "bold",
+    });
+  });
+
+  return { candidates, alreadyLinkedSet };
+};
+
+/* ════════════════════════════════════════════════════════════
+   FEATURE 2 — Smart unbolded phrase extractor
+   Scans plain text in <p>, <h1>-<h4>, <li>
+   Only 2–4 word titles. Skips already-linked phrases.
+════════════════════════════════════════════════════════════ */
+const extractSmartCandidates = (html, smartTitles, alreadyLinkedSet, boldLinkedSet) => {
+  if (!smartTitles.length) return [];
+
+  const container = document.createElement("div");
+  container.innerHTML = html || "";
+
+  // Build a fast lookup map: normalizedTitle -> row
+  const titleMap = new Map();
+  smartTitles.forEach(t => titleMap.set(normalize(t.title), t));
+
+  // Sort titles longest-first so longer matches win (e.g. "customer acquisition cost" before "customer acquisition")
+  const sortedTitles = [...smartTitles].sort(
+    (a, b) => b.title.split(" ").length - a.title.split(" ").length
+  );
+
+  const SCAN_SELECTORS = "p, h1, h2, h3, h4, li";
+  const found = new Map(); // normalizedPhrase -> candidate
+
+  Array.from(container.querySelectorAll(SCAN_SELECTORS)).forEach(el => {
+    // Skip if this element is inside an <a> already
+    if (el.closest("a")) return;
+
+    // Get the raw text, but skip any text that's already bolded or linked
+    // We do this by walking text nodes only (not inside <strong>, <b>, or <a>)
+    const walker = document.createTreeWalker(
+      el,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          const parent = node.parentElement;
+          // Skip text inside bold or anchor
+          if (parent.closest("strong, b, a")) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    const textChunks = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      textChunks.push(node.textContent || "");
+    }
+    const fullText = textChunks.join(" ");
+    if (!fullText.trim()) return;
+
+    // Sliding window over words — try longest titles first
+    const words = fullText.split(/\s+/).filter(Boolean);
+
+    for (const titleRow of sortedTitles) {
+      const wordCount = titleRow.title.split(" ").length;
+      if (wordCount < 2 || wordCount > 4) continue;
+
+      const normalizedTitle = normalize(titleRow.title);
+
+      // Skip if already handled by Feature 1 or already linked in HTML
+      if (alreadyLinkedSet.has(normalizedTitle)) continue;
+      if (boldLinkedSet.has(normalizedTitle)) continue;
+      if (found.has(normalizedTitle)) continue;
+
+      // Sliding window match
+      for (let i = 0; i <= words.length - wordCount; i++) {
+        const window = words.slice(i, i + wordCount).join(" ");
+        if (normalize(window) === normalizedTitle) {
+          found.set(normalizedTitle, {
+            phrase: titleRow.title, // use the canonical title casing
+            matched: titleRow,
+            approved: true,
+            alreadyLinked: false,
+            source: "smart",
+          });
+          break;
+        }
+      }
+    }
+  });
+
+  return Array.from(found.values());
+};
+
+/* ════════════════════════════════════════════════════════════
+   APPLY BOLD LINKS — injects <a> around existing <strong>/<b>
+════════════════════════════════════════════════════════════ */
+const applyBoldLinks = (html, approved) => {
   if (!approved.length) return html;
   const container = document.createElement("div");
   container.innerHTML = html || "";
   const boldNodes = Array.from(container.querySelectorAll("strong, b"));
+
   for (const { phrase, matched } of approved) {
     if (!matched?.id) continue;
     const href = toLibraryHref(matched);
@@ -108,181 +208,273 @@ const applyLinks = (html, approved) => {
   return container.innerHTML;
 };
 
+/* ════════════════════════════════════════════════════════════
+   APPLY SMART LINKS — injects <a> into raw text nodes
+════════════════════════════════════════════════════════════ */
+const applySmartLinks = (html, approved) => {
+  if (!approved.length) return html;
+
+  // Build a map for quick lookup
+  const approvedMap = new Map();
+  approved.forEach(({ phrase, matched }) => {
+    if (matched?.id) approvedMap.set(normalize(phrase), { phrase, matched });
+  });
+  if (!approvedMap.size) return html;
+
+  const container = document.createElement("div");
+  container.innerHTML = html || "";
+
+  const SCAN_SELECTORS = "p, h1, h2, h3, h4, li";
+
+  // Sort by word count descending so longer phrases are replaced first
+  const sortedApproved = [...approvedMap.values()].sort(
+    (a, b) => b.phrase.split(" ").length - a.phrase.split(" ").length
+  );
+
+  Array.from(container.querySelectorAll(SCAN_SELECTORS)).forEach(el => {
+    if (el.closest("a")) return;
+
+    for (const { phrase, matched } of sortedApproved) {
+      const href = toLibraryHref(matched);
+      // Replace plain text occurrences — case-insensitive, word boundary aware
+      // We rebuild innerHTML safely using a regex on the text content
+      replaceTextInNode(el, phrase, matched.id, href);
+    }
+  });
+
+  return container.innerHTML;
+};
+
+/**
+ * Walk text nodes inside `el`, replace occurrences of `phrase` in plain text
+ * (not inside <a>, <strong>, <b>) with an anchor tag.
+ */
+const replaceTextInNode = (el, phrase, matchedId, href) => {
+  const walker = document.createTreeWalker(
+    el,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: (node) => {
+        if (node.parentElement.closest("a, strong, b")) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+
+  const escapedPhrase = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escapedPhrase})`, "gi");
+
+  textNodes.forEach(textNode => {
+    if (!regex.test(textNode.textContent)) return;
+    regex.lastIndex = 0;
+
+    const parts = textNode.textContent.split(regex);
+    if (parts.length <= 1) return;
+
+    const frag = document.createDocumentFragment();
+    parts.forEach(part => {
+      if (normalize(part) === normalize(phrase)) {
+        const a = document.createElement("a");
+        a.setAttribute("data-summary-id", matchedId);
+        a.setAttribute("href", href);
+        a.className = "internal-summary-link internal-summary-link--smart";
+        a.textContent = part;
+        frag.appendChild(a);
+      } else {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+
+    textNode.parentNode.replaceChild(frag, textNode);
+  });
+};
+
 /* ══════════════════════════════════════════════════════════
    AUTO-LINK MODAL
 ══════════════════════════════════════════════════════════ */
 const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
   const isBulk = targets.length > 1;
 
-  const [step, setStep]         = useState("scanning"); // scanning | preview | saving | done | error
+  const [step, setStep]         = useState("scanning");
   const [errorMsg, setErrorMsg] = useState("");
   const [saveCount, setSaveCount] = useState(0);
   const [activeTab, setActiveTab] = useState("preview");
 
-  // draftData[]: { draft, html, candidates:[{phrase,matched,approved,count,alreadyLinked}] }
-  // NOTE: we store `html` here so handleConfirm never needs to re-fetch it
+  // draftData[]: { draft, html, boldCandidates, smartCandidates }
   const [draftData, setDraftData] = useState([]);
 
   const [progressCurrent, setProgressCurrent] = useState(0);
   const [progressTotal,   setProgressTotal]   = useState(0);
   const [progressPhrase,  setProgressPhrase]  = useState("");
   const [progressEta,     setProgressEta]     = useState(null);
+  const [progressStage,   setProgressStage]   = useState("bold"); // "bold" | "smart"
   const scanStartRef = useRef(null);
 
-  /* ── scan: 1 DB query for all titles, everything else in memory ── */
+  /* ── SCAN ── */
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const ids = targets.map(d => d.id);
 
-        // Fetch draft summaries
         const { data: rows, error: rowsErr } = await supabase
           .from("book_summaries")
           .select("id, summary")
           .in("id", ids);
         if (rowsErr) throw rowsErr;
 
-        // ✅ SINGLE query for ALL titles — replaces per-phrase fetchTitleCandidates
+        // Single query for all titles
         const allTitles = await fetchAllTitles();
 
-        // Extract phrases from each draft
-        const allPhrasesByDraft = targets.map(draft => {
+        // Smart titles: 2–4 words only
+        const smartTitles = allTitles.filter(t => {
+          const wc = (t.title || "").trim().split(/\s+/).length;
+          return wc >= 2 && wc <= 4;
+        });
+
+        // ── STAGE 1: Bold candidates ──
+        setProgressStage("bold");
+        const allDraftData = [];
+        let scanned = 0;
+
+        for (const draft of targets) {
+          if (cancelled) return;
           const row  = (rows || []).find(r => r.id === draft.id);
           const html = row?.summary || "";
-          const container = document.createElement("div");
-          container.innerHTML = html;
 
-          const linkedPhrases = new Set(
-            Array.from(container.querySelectorAll(
-              "a[href^='/library/'] strong, a[href^='/library/'] b, a[data-summary-id] strong, a[data-summary-id] b"
-            )).map(n => normalize((n.textContent || "").trim()))
-          );
+          setProgressPhrase(draft.title || "Untitled");
+          const { candidates: boldCandidates, alreadyLinkedSet } =
+            extractBoldCandidates(html, allTitles);
 
-          const phrases = Array.from(
-            new Set(
-              Array.from(container.querySelectorAll("strong, b"))
-                .map(n => (n.textContent || "").trim())
-                .filter(s => s.length >= 2 && s.length <= 1000)
-            )
-          ).slice(0, 200);
-
-          return { draft, html, phrases, linkedPhrases };
-        });
-
-        // Global phrase frequency count
-        const globalPhraseCount = {};
-        allPhrasesByDraft.forEach(({ phrases }) => {
-          phrases.forEach(p => {
-            const k = normalize(p);
-            globalPhraseCount[k] = (globalPhraseCount[k] || 0) + 1;
-          });
-        });
-
-        const total = allPhrasesByDraft.reduce((s, { phrases }) => s + phrases.length, 0);
-        setProgressTotal(total);
-        scanStartRef.current = Date.now();
-
-        let scanned = 0;
-        const result = [];
-
-        for (const { draft, html, phrases, linkedPhrases } of allPhrasesByDraft) {
-          const candidates = [];
-          for (const phrase of phrases) {
-            if (cancelled) return;
-            scanned++;
-            setProgressCurrent(scanned);
-            setProgressPhrase(phrase);
-
-            const elapsed = (Date.now() - scanStartRef.current) / 1000;
-            const rate    = scanned / elapsed;
-            setProgressEta(rate > 0 ? (total - scanned) / rate : null);
-
-            // ✅ Pure in-memory match — zero DB calls
-            const matched      = matchPhrase(phrase, allTitles);
-            const alreadyLinked = linkedPhrases.has(normalize(phrase));
-            const count        = globalPhraseCount[normalize(phrase)] || 1;
-
-            candidates.push({
-              phrase,
-              matched,
-              approved: !!matched && !alreadyLinked,
-              count,
-              alreadyLinked,
-            });
-          }
-          // ✅ Store html so handleConfirm doesn't need to re-fetch
-          result.push({ draft, html, candidates });
+          allDraftData.push({ draft, html, boldCandidates, alreadyLinkedSet, smartCandidates: [] });
+          scanned++;
+          setProgressCurrent(scanned);
+          setProgressTotal(targets.length * 2); // bold + smart passes
         }
 
-        if (!cancelled) { setDraftData(result); setStep("preview"); }
+        // ── STAGE 2: Smart candidates ──
+        setProgressStage("smart");
+
+        for (let i = 0; i < allDraftData.length; i++) {
+          if (cancelled) return;
+          const entry = allDraftData[i];
+          setProgressPhrase(entry.draft.title || "Untitled");
+
+          // Build set of phrases Feature 1 will link (approved bold)
+          const boldLinkedSet = new Set(
+            entry.boldCandidates
+              .filter(c => c.approved && c.matched)
+              .map(c => normalize(c.phrase))
+          );
+
+          const smartCandidates = extractSmartCandidates(
+            entry.html,
+            smartTitles,
+            entry.alreadyLinkedSet,
+            boldLinkedSet
+          );
+
+          allDraftData[i] = { ...entry, smartCandidates };
+          scanned++;
+          setProgressCurrent(scanned);
+
+          const elapsed = (Date.now() - (scanStartRef.current || Date.now())) / 1000;
+          const rate = scanned / elapsed;
+          setProgressEta(rate > 0 ? (targets.length * 2 - scanned) / rate : null);
+        }
+
+        if (!cancelled) {
+          setDraftData(allDraftData);
+          setStep("preview");
+        }
       } catch (err) {
         if (!cancelled) { setErrorMsg(err.message || "Scan failed"); setStep("error"); }
       }
     })();
+    scanStartRef.current = Date.now();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line
 
   /* ── toggle helpers ── */
-  const toggleOne = (draftId, phrase) =>
+  const toggleBold = (draftId, phrase) =>
     setDraftData(prev => prev.map(d =>
       d.draft.id !== draftId ? d : {
         ...d,
-        candidates: d.candidates.map(c =>
+        boldCandidates: d.boldCandidates.map(c =>
           c.phrase === phrase ? { ...c, approved: !c.approved } : c
         ),
       }
     ));
 
-  const approveAll = () => setDraftData(prev =>
-    prev.map(d => ({
-      ...d,
-      candidates: d.candidates.map(c => ({ ...c, approved: !!c.matched && !c.alreadyLinked })),
-    }))
-  );
+  const toggleSmart = (draftId, phrase) =>
+    setDraftData(prev => prev.map(d =>
+      d.draft.id !== draftId ? d : {
+        ...d,
+        smartCandidates: d.smartCandidates.map(c =>
+          c.phrase === phrase ? { ...c, approved: !c.approved } : c
+        ),
+      }
+    ));
 
-  const rejectAll = () => setDraftData(prev =>
-    prev.map(d => ({ ...d, candidates: d.candidates.map(c => ({ ...c, approved: false })) }))
-  );
+  const approveAll = () => setDraftData(prev => prev.map(d => ({
+    ...d,
+    boldCandidates:  d.boldCandidates.map(c  => ({ ...c,  approved: !!c.matched  && !c.alreadyLinked })),
+    smartCandidates: d.smartCandidates.map(c => ({ ...c,  approved: !!c.matched })),
+  })));
 
-  const totalApproved = draftData.reduce((s, d) => s + d.candidates.filter(c => c.approved && c.matched).length, 0);
-  const totalMatched  = draftData.reduce((s, d) => s + d.candidates.filter(c => c.matched).length, 0);
+  const rejectAll = () => setDraftData(prev => prev.map(d => ({
+    ...d,
+    boldCandidates:  d.boldCandidates.map(c  => ({ ...c, approved: false })),
+    smartCandidates: d.smartCandidates.map(c => ({ ...c, approved: false })),
+  })));
+
+  /* ── computed totals ── */
+  const totalBoldApproved  = draftData.reduce((s, d) => s + d.boldCandidates.filter(c => c.approved && c.matched).length, 0);
+  const totalBoldMatched   = draftData.reduce((s, d) => s + d.boldCandidates.filter(c => c.matched).length, 0);
+  const totalSmartApproved = draftData.reduce((s, d) => s + d.smartCandidates.filter(c => c.approved && c.matched).length, 0);
+  const totalSmartMatched  = draftData.reduce((s, d) => s + d.smartCandidates.filter(c => c.matched).length, 0);
+  const totalApproved      = totalBoldApproved + totalSmartApproved;
 
   /* ── frequency views (memoized) ── */
-  const { linkedPhrases, unmatchedPhrases } = useMemo(() => {
+  const { unmatchedPhrases } = useMemo(() => {
     const phraseMap = {};
-    draftData.flatMap(d => d.candidates).forEach(c => {
+    draftData.flatMap(d => d.boldCandidates).forEach(c => {
+      if (c.matched) return;
       const k = normalize(c.phrase);
-      if (!phraseMap[k]) phraseMap[k] = { phrase: c.phrase, count: 0, matched: c.matched, alreadyLinked: c.alreadyLinked };
-      phraseMap[k].count += c.count;
-      if (c.matched && !phraseMap[k].matched) phraseMap[k].matched = c.matched;
-      if (c.alreadyLinked) phraseMap[k].alreadyLinked = true;
+      if (!phraseMap[k]) phraseMap[k] = { phrase: c.phrase, count: 0 };
+      phraseMap[k].count++;
     });
-    const groups = Object.values(phraseMap).sort((a, b) => b.count - a.count);
     return {
-      linkedPhrases:    groups.filter(p => p.matched),
-      unmatchedPhrases: groups.filter(p => !p.matched),
+      unmatchedPhrases: Object.values(phraseMap).sort((a, b) => b.count - a.count),
     };
   }, [draftData]);
 
-  /* ── confirm: uses stored html, no re-fetch needed ── */
+  /* ── confirm: Feature 1 first, then Feature 2 ── */
   const handleConfirm = async () => {
     if (totalApproved === 0) { onClose(); return; }
     setStep("saving");
     let saved = 0;
     try {
-      // Run saves in parallel for speed
       await Promise.all(
-        draftData.map(async ({ draft, html, candidates }) => {
-          const approved = candidates.filter(c => c.approved && c.matched);
-          if (!approved.length) return;
-          // ✅ Use already-fetched html — no extra DB read
-          const newHtml = applyLinks(html, approved);
+        draftData.map(async ({ draft, html, boldCandidates, smartCandidates }) => {
+          const approvedBold  = boldCandidates.filter(c => c.approved && c.matched);
+          const approvedSmart = smartCandidates.filter(c => c.approved && c.matched);
+          if (!approvedBold.length && !approvedSmart.length) return;
+
+          // Feature 1 runs first
+          let newHtml = applyBoldLinks(html, approvedBold);
+          // Feature 2 runs on the result
+          newHtml = applySmartLinks(newHtml, approvedSmart);
+
           const { error } = await supabase
             .from("book_summaries")
             .update({ summary: newHtml, auto_saved_at: new Date().toISOString() })
             .eq("id", draft.id);
-          if (!error) saved += approved.length;
+          if (!error) saved += approvedBold.length + approvedSmart.length;
         })
       );
       setSaveCount(saved);
@@ -297,9 +489,10 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
   const pct = progressTotal > 0 ? Math.round((progressCurrent / progressTotal) * 100) : 0;
 
   const TABS = [
-    { key: "preview",   label: "📋 Preview",   count: null },
-    { key: "linked",    label: "🔗 Linked",    count: linkedPhrases.length },
-    { key: "unmatched", label: "❓ Unmatched", count: unmatchedPhrases.length },
+    { key: "preview",   label: "📋 Preview" },
+    { key: "bold",      label: "🔵 Bold Links",   count: totalBoldMatched },
+    { key: "smart",     label: "🧠 Smart Links",  count: totalSmartMatched },
+    { key: "unmatched", label: "❓ Unmatched",     count: unmatchedPhrases.length },
   ];
 
   return (
@@ -309,7 +502,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
         {/* Header */}
         <div className="dp-autolink-header">
           <div>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>🎯 Exact Auto-link</h3>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>🎯 Auto-link</h3>
             <p style={{ margin: "3px 0 0", fontSize: 13, color: "#6b7280" }}>
               {isBulk ? `${targets.length} drafts selected` : (targets[0]?.title || "Untitled")}
             </p>
@@ -322,14 +515,18 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
         {/* ── SCANNING ── */}
         {step === "scanning" && (
           <div className="dp-scan-container">
-            <div style={{ fontSize: 32, marginBottom: 10 }}>🔍</div>
-            <p style={{ fontWeight: 600, marginBottom: 4 }}>Scanning bold phrases…</p>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>
+              {progressStage === "bold" ? "🔍" : "🧠"}
+            </div>
+            <p style={{ fontWeight: 600, marginBottom: 4 }}>
+              {progressStage === "bold" ? "Pass 1 — Scanning bold phrases…" : "Pass 2 — Scanning smart phrases…"}
+            </p>
             <p className="dp-scan-phrase">
               {progressPhrase ? `"${progressPhrase}"` : "Loading titles…"}
             </p>
             <div className="dp-scan-counter">
               <span className="dp-scan-counter__current">{progressCurrent}</span>
-              <span style={{ color: "#9ca3af" }}> / {progressTotal || "…"} phrases</span>
+              <span style={{ color: "#9ca3af" }}> / {progressTotal || "…"} drafts</span>
               {progressEta && <span className="dp-scan-eta">{fmtSeconds(progressEta)}</span>}
             </div>
             <div className="dp-progress-track">
@@ -348,7 +545,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                   className={`dp-tab ${activeTab === tab.key ? "dp-tab--active" : ""}`}
                   onClick={() => setActiveTab(tab.key)}>
                   {tab.label}
-                  {tab.count !== null && (
+                  {tab.count != null && (
                     <span className={`dp-tab-badge ${activeTab === tab.key ? "dp-tab-badge--active" : ""}`}>
                       {tab.count}
                     </span>
@@ -357,14 +554,14 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
               ))}
             </div>
 
-            {/* TAB: PREVIEW */}
+            {/* ── TAB: PREVIEW (summary of both features) ── */}
             {activeTab === "preview" && (
               <>
-                {totalMatched === 0 ? (
+                {totalBoldMatched === 0 && totalSmartMatched === 0 ? (
                   <div className="dp-empty-state">
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🤷</div>
-                    <p>No bold phrases matched any article.</p>
-                    <p style={{ fontSize: 13 }}>Bold some titles in the editor first, then try again.</p>
+                    <p>No phrases matched any article.</p>
+                    <p style={{ fontSize: 13 }}>Try bolding some titles, or ensure article titles are 2–4 words.</p>
                   </div>
                 ) : (
                   <>
@@ -372,78 +569,124 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                       <button type="button" className="dp-btn dp-btn--secondary" onClick={approveAll}>✅ Approve all</button>
                       <button type="button" className="dp-btn dp-btn--secondary" onClick={rejectAll}>❌ Reject all</button>
                       <span style={{ fontSize:12, color:"#9ca3af", marginLeft:"auto" }}>
-                        {totalApproved} of {totalMatched} will be linked
+                        {totalApproved} links ready to apply
                       </span>
                     </div>
+
+                    {/* Summary cards */}
+                    <div style={{ display:"flex", gap:12, padding:"12px 16px", borderBottom:"1px solid #f3f4f6" }}>
+                      <div className="dp-summary-card dp-summary-card--blue">
+                        <div className="dp-summary-card__label">🔵 Bold Links</div>
+                        <div className="dp-summary-card__count">{totalBoldApproved}</div>
+                        <div className="dp-summary-card__sub">of {totalBoldMatched} matched</div>
+                      </div>
+                      <div className="dp-summary-card dp-summary-card--purple">
+                        <div className="dp-summary-card__label">🧠 Smart Links</div>
+                        <div className="dp-summary-card__count">{totalSmartApproved}</div>
+                        <div className="dp-summary-card__sub">of {totalSmartMatched} matched</div>
+                      </div>
+                    </div>
+
+                    {/* Per-draft preview table */}
                     <div className="dp-autolink-scroll">
-                      {draftData.map(({ draft, candidates }) => (
-                        <div key={draft.id} className="dp-autolink-section">
-                          {isBulk && (
-                            <div className="dp-autolink-section__heading">
-                              <span className="draft-panel__draft-badge">DRAFT</span>
-                              <strong style={{ fontSize:13 }}>{draft.title || "Untitled"}</strong>
-                              {!candidates.some(c => c.matched) && (
-                                <span style={{ fontSize:12, color:"#9ca3af", marginLeft:8 }}>— no matches</span>
-                              )}
-                            </div>
-                          )}
-                          {candidates.length === 0 ? (
-                            <p style={{ fontSize:13, color:"#9ca3af", padding:"6px 12px" }}>No bold phrases found.</p>
-                          ) : (
-                            <table className="dp-autolink-table">
-                              <thead>
-                                <tr>
-                                  <th style={{ width:32 }}>✓</th>
-                                  <th>Bold phrase</th>
-                                  <th style={{ width:50 }}>×</th>
-                                  <th>Matched article</th>
-                                  <th style={{ width:72 }}>Link</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {candidates.map((c, i) => (
-                                  <tr key={c.phrase + i} style={{
-                                    background: c.alreadyLinked ? "#eff6ff" : c.approved && c.matched ? "#f0fdf4" : "transparent",
-                                    opacity: c.matched ? 1 : 0.45,
-                                  }}>
-                                    <td>
-                                      {c.alreadyLinked
-                                        ? <span title="Already linked" style={{ color:"#3b82f6", fontSize:13 }}>🔗</span>
-                                        : c.matched
-                                          ? <input type="checkbox" checked={c.approved} onChange={() => toggleOne(draft.id, c.phrase)} />
-                                          : <span style={{ color:"#d1d5db" }}>—</span>
-                                      }
-                                    </td>
-                                    <td><strong>{c.phrase}</strong></td>
-                                    <td style={{ textAlign:"center", fontWeight:700, color:"#6366f1", fontSize:13 }}>
-                                      {c.count > 1 ? c.count : ""}
-                                    </td>
-                                    <td style={{ color: c.matched ? "#2563eb" : "#9ca3af" }}>
-                                      {c.matched ? c.matched.title : <em>No match</em>}
-                                    </td>
-                                    <td>
-                                      {c.matched && (
-                                        <a href={toLibraryHref(c.matched)} target="_blank" rel="noopener noreferrer"
-                                          style={{ fontSize:11, color:"#6b7280", textDecoration:"underline" }}>
-                                          preview ↗
-                                        </a>
-                                      )}
-                                    </td>
+                      {draftData.map(({ draft, boldCandidates, smartCandidates }) => {
+                        const boldMatched  = boldCandidates.filter(c => c.matched);
+                        const smartMatched = smartCandidates.filter(c => c.matched);
+                        const hasAnything  = boldMatched.length > 0 || smartMatched.length > 0;
+                        return (
+                          <div key={draft.id} className="dp-autolink-section">
+                            {isBulk && (
+                              <div className="dp-autolink-section__heading">
+                                <span className="draft-panel__draft-badge">DRAFT</span>
+                                <strong style={{ fontSize:13 }}>{draft.title || "Untitled"}</strong>
+                                {!hasAnything && (
+                                  <span style={{ fontSize:12, color:"#9ca3af", marginLeft:8 }}>— no matches</span>
+                                )}
+                              </div>
+                            )}
+                            {!hasAnything ? (
+                              <p style={{ fontSize:13, color:"#9ca3af", padding:"6px 12px" }}>No matches found.</p>
+                            ) : (
+                              <table className="dp-autolink-table">
+                                <thead>
+                                  <tr>
+                                    <th style={{ width:32 }}>✓</th>
+                                    <th>Phrase</th>
+                                    <th style={{ width:80 }}>Type</th>
+                                    <th>Matched article</th>
+                                    <th style={{ width:72 }}>Link</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      ))}
+                                </thead>
+                                <tbody>
+                                  {/* Bold candidates */}
+                                  {boldCandidates.map((c, i) => (
+                                    <tr key={"b-" + c.phrase + i} style={{
+                                      background: c.alreadyLinked ? "#eff6ff" : c.approved && c.matched ? "#f0fdf4" : "transparent",
+                                      opacity: c.matched ? 1 : 0.4,
+                                    }}>
+                                      <td>
+                                        {c.alreadyLinked
+                                          ? <span title="Already linked" style={{ color:"#3b82f6", fontSize:13 }}>🔗</span>
+                                          : c.matched
+                                            ? <input type="checkbox" checked={c.approved} onChange={() => toggleBold(draft.id, c.phrase)} />
+                                            : <span style={{ color:"#d1d5db" }}>—</span>
+                                        }
+                                      </td>
+                                      <td><strong>{c.phrase}</strong></td>
+                                      <td><span className="dp-type-badge dp-type-badge--bold">Bold</span></td>
+                                      <td style={{ color: c.matched ? "#2563eb" : "#9ca3af" }}>
+                                        {c.matched ? c.matched.title : <em>No match</em>}
+                                      </td>
+                                      <td>
+                                        {c.matched && (
+                                          <a href={toLibraryHref(c.matched)} target="_blank" rel="noopener noreferrer"
+                                            style={{ fontSize:11, color:"#6b7280", textDecoration:"underline" }}>
+                                            preview ↗
+                                          </a>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {/* Smart candidates */}
+                                  {smartCandidates.map((c, i) => (
+                                    <tr key={"s-" + c.phrase + i} style={{
+                                      background: c.approved && c.matched ? "#faf5ff" : "transparent",
+                                    }}>
+                                      <td>
+                                        {c.matched
+                                          ? <input type="checkbox" checked={c.approved} onChange={() => toggleSmart(draft.id, c.phrase)} />
+                                          : <span style={{ color:"#d1d5db" }}>—</span>
+                                        }
+                                      </td>
+                                      <td style={{ color:"#374151" }}>{c.phrase}</td>
+                                      <td><span className="dp-type-badge dp-type-badge--smart">Smart</span></td>
+                                      <td style={{ color: c.matched ? "#7c3aed" : "#9ca3af" }}>
+                                        {c.matched ? c.matched.title : <em>No match</em>}
+                                      </td>
+                                      <td>
+                                        {c.matched && (
+                                          <a href={toLibraryHref(c.matched)} target="_blank" rel="noopener noreferrer"
+                                            style={{ fontSize:11, color:"#6b7280", textDecoration:"underline" }}>
+                                            preview ↗
+                                          </a>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </>
                 )}
                 <div className="dp-autolink-footer">
                   <button type="button" className="dp-btn dp-btn--secondary" onClick={onClose}>Cancel</button>
-                  {totalMatched > 0 && (
+                  {totalApproved > 0 && (
                     <button type="button" className="dp-btn dp-btn--publish"
-                      onClick={handleConfirm} disabled={totalApproved === 0}>
+                      onClick={handleConfirm}>
                       🔗 Apply {totalApproved} link{totalApproved !== 1 ? "s" : ""} & Save
                       {isBulk && ` (${targets.length} drafts)`}
                     </button>
@@ -452,61 +695,149 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
               </>
             )}
 
-            {/* TAB: LINKED */}
-            {activeTab === "linked" && (
+            {/* ── TAB: BOLD LINKS ── */}
+            {activeTab === "bold" && (
               <>
                 <p className="dp-tab-desc">
-                  Phrases that matched an article — ranked by frequency across all selected drafts.{" "}
-                  <strong style={{ color:"#3b82f6" }}>🔗 = already linked</strong> in the HTML.
+                  Bold phrases matched to an article. <strong style={{ color:"#3b82f6" }}>🔗 = already linked</strong> in HTML.
                 </p>
-                {linkedPhrases.length === 0 ? (
+                {totalBoldMatched === 0 ? (
                   <div className="dp-empty-state">
                     <div style={{ fontSize:36, marginBottom:10 }}>🔍</div>
-                    <p>No matched phrases found.</p>
+                    <p>No bold phrases matched any article.</p>
                   </div>
                 ) : (
                   <div className="dp-autolink-scroll">
-                    <table className="dp-autolink-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width:50 }}>Count</th>
-                          <th>Bold phrase</th>
-                          <th>Matched article</th>
-                          <th style={{ width:72 }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {linkedPhrases.map((p, i) => (
-                          <tr key={p.phrase + i} style={{ background: p.alreadyLinked ? "#eff6ff" : "transparent" }}>
-                            <td><span className="dp-freq-badge dp-freq-badge--linked">{p.count}</span></td>
-                            <td><strong>{p.phrase}</strong></td>
-                            <td style={{ color:"#2563eb" }}>{p.matched?.title || "—"}</td>
-                            <td>
-                              {p.alreadyLinked
-                                ? <span style={{ color:"#3b82f6", fontSize:12, fontWeight:600 }}>🔗 linked</span>
-                                : <span style={{ color:"#9ca3af", fontSize:12 }}>not yet</span>
-                              }
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    {draftData.map(({ draft, boldCandidates }) => {
+                      const matched = boldCandidates.filter(c => c.matched);
+                      if (!matched.length) return null;
+                      return (
+                        <div key={draft.id} className="dp-autolink-section">
+                          {isBulk && (
+                            <div className="dp-autolink-section__heading">
+                              <span className="draft-panel__draft-badge">DRAFT</span>
+                              <strong style={{ fontSize:13 }}>{draft.title || "Untitled"}</strong>
+                            </div>
+                          )}
+                          <table className="dp-autolink-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width:32 }}>✓</th>
+                                <th>Bold phrase</th>
+                                <th>Matched article</th>
+                                <th style={{ width:72 }}>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {matched.map((c, i) => (
+                                <tr key={c.phrase + i} style={{ background: c.alreadyLinked ? "#eff6ff" : "transparent" }}>
+                                  <td>
+                                    {c.alreadyLinked
+                                      ? <span style={{ color:"#3b82f6", fontSize:13 }}>🔗</span>
+                                      : <input type="checkbox" checked={c.approved} onChange={() => toggleBold(draft.id, c.phrase)} />
+                                    }
+                                  </td>
+                                  <td><strong>{c.phrase}</strong></td>
+                                  <td style={{ color:"#2563eb" }}>{c.matched?.title}</td>
+                                  <td>
+                                    {c.alreadyLinked
+                                      ? <span style={{ color:"#3b82f6", fontSize:12, fontWeight:600 }}>linked</span>
+                                      : <span style={{ color: c.approved ? "#16a34a" : "#9ca3af", fontSize:12 }}>
+                                          {c.approved ? "✓ approved" : "skipped"}
+                                        </span>
+                                    }
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 <div className="dp-autolink-footer">
                   <button type="button" className="dp-btn dp-btn--secondary" onClick={onClose}>Close</button>
                   <button type="button" className="dp-btn dp-btn--publish" onClick={() => setActiveTab("preview")} disabled={totalApproved === 0}>
-                    ← Back to preview ({totalApproved} approved)
+                    ← Back to preview
                   </button>
                 </div>
               </>
             )}
 
-            {/* TAB: UNMATCHED */}
+            {/* ── TAB: SMART LINKS ── */}
+            {activeTab === "smart" && (
+              <>
+                <p className="dp-tab-desc">
+                  Unbolded 2–4 word phrases found in plain text, headers, and list items that match an article title.
+                  These are <strong>not yet linked</strong> in the article.
+                </p>
+                {totalSmartMatched === 0 ? (
+                  <div className="dp-empty-state">
+                    <div style={{ fontSize:36, marginBottom:10 }}>🧠</div>
+                    <p>No smart phrase matches found.</p>
+                    <p style={{ fontSize:13, color:"#6b7280" }}>Smart links only match article titles that are 2–4 words long.</p>
+                  </div>
+                ) : (
+                  <div className="dp-autolink-scroll">
+                    {draftData.map(({ draft, smartCandidates }) => {
+                      if (!smartCandidates.length) return null;
+                      return (
+                        <div key={draft.id} className="dp-autolink-section">
+                          {isBulk && (
+                            <div className="dp-autolink-section__heading">
+                              <span className="draft-panel__draft-badge">DRAFT</span>
+                              <strong style={{ fontSize:13 }}>{draft.title || "Untitled"}</strong>
+                            </div>
+                          )}
+                          <table className="dp-autolink-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width:32 }}>✓</th>
+                                <th>Phrase found in text</th>
+                                <th>Matched article</th>
+                                <th style={{ width:72 }}>Link</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {smartCandidates.map((c, i) => (
+                                <tr key={c.phrase + i} style={{
+                                  background: c.approved ? "#faf5ff" : "transparent",
+                                }}>
+                                  <td>
+                                    <input type="checkbox" checked={c.approved} onChange={() => toggleSmart(draft.id, c.phrase)} />
+                                  </td>
+                                  <td style={{ color:"#374151" }}>{c.phrase}</td>
+                                  <td style={{ color:"#7c3aed" }}>{c.matched?.title}</td>
+                                  <td>
+                                    <a href={toLibraryHref(c.matched)} target="_blank" rel="noopener noreferrer"
+                                      style={{ fontSize:11, color:"#6b7280", textDecoration:"underline" }}>
+                                      preview ↗
+                                    </a>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="dp-autolink-footer">
+                  <button type="button" className="dp-btn dp-btn--secondary" onClick={onClose}>Close</button>
+                  <button type="button" className="dp-btn dp-btn--publish" onClick={() => setActiveTab("preview")} disabled={totalApproved === 0}>
+                    ← Back to preview
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── TAB: UNMATCHED ── */}
             {activeTab === "unmatched" && (
               <>
                 <p className="dp-tab-desc">
-                  Bold phrases with <strong>no matching article</strong> — ranked by repeat count.
+                  Bold phrases with <strong>no matching article</strong> — ranked by frequency.
                   High-count phrases are strong candidates for new articles.
                 </p>
                 {unmatchedPhrases.length === 0 ? (
@@ -547,7 +878,7 @@ const AutoLinkModal = ({ drafts: targets, onClose, onSaved }) => {
                 <div className="dp-autolink-footer">
                   <button type="button" className="dp-btn dp-btn--secondary" onClick={onClose}>Close</button>
                   <button type="button" className="dp-btn dp-btn--publish" onClick={() => setActiveTab("preview")} disabled={totalApproved === 0}>
-                    ← Back to preview ({totalApproved} approved)
+                    ← Back to preview
                   </button>
                 </div>
               </>
