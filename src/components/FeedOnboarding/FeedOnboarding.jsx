@@ -1,5 +1,6 @@
 // src/components/FeedOnboarding/FeedOnboarding.jsx
 import React, { useState, useMemo, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { supabase } from '../../supabase/supabaseClient';
 import './FeedOnboarding.css';
 
@@ -94,7 +95,6 @@ const FeedOnboarding = ({ onComplete }) => {
       completedAt: Date.now(),
     }));
 
-    // Safety: ensure onComplete exists and is callable
     if (typeof onComplete === 'function') {
       onComplete();
     }
@@ -110,16 +110,19 @@ const FeedOnboarding = ({ onComplete }) => {
   const totalSelected = selectedCategories.length + selectedTags.length;
 
   if (!tagsLoaded) {
-    return (
+    // Loading state also rendered via portal
+    return ReactDOM.createPortal(
       <div className="onboarding-overlay">
         <div className="onboarding-modal">
           <p style={{ textAlign: 'center', padding: '2rem' }}>Loading topics…</p>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
-  return (
+  // Render the modal via portal directly into document.body
+  return ReactDOM.createPortal(
     <div className="onboarding-overlay">
       <div className="onboarding-modal">
         <div className="onboarding-header">
@@ -189,7 +192,8 @@ const FeedOnboarding = ({ onComplete }) => {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
