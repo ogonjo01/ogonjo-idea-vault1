@@ -81,13 +81,15 @@
 
 /* category chips bar */
 .categories-bar {
-  margin: 12px 0 6px;
-  overflow-x: auto;
-  padding: 6px 4px;
   display: flex;
-  gap: 8px;
+  flex-wrap: nowrap;            
   align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: auto;          
+  padding: 4px 0 8px;
 }
 .category-chip {
   padding: 6px 10px;
@@ -841,4 +843,29 @@ background: linear-gradient(
   font-size: 12px;
   color: #d1d5db;
   margin: 16px 0 0;
+}
+
+/* WebKit scrollbar for tags */
+.categories-bar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.categories-bar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+}
+
+.categories-bar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.categories-bar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Ensure tag chips stay on one line */
+.category-chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }

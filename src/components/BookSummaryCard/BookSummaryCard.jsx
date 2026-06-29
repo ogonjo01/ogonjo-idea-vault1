@@ -6,25 +6,21 @@ import { FaHeart, FaEye, FaComment, FaStar } from 'react-icons/fa';
 import DOMPurify from 'dompurify';
 import './BookSummaryCard.css';
 
-/**
- * BookSummaryCard (Content Feed)
- * - Uses ONLY `description` for preview text
- * - No fallback to full summary (performance + SEO)
- *
- * Changes:
- * - Navigates to /library/:slug instead of /summary/:slug
- * - memoized preview text and utility functions
- * - keeps image focal heuristics for small screens
- */
-
-const DEFAULT_PREVIEW_LENGTH = 140;
+const DEFAULT_PREVIEW_LENGTH = 120;
 
 const cleanAndTruncate = (text, maxLength = DEFAULT_PREVIEW_LENGTH) => {
   if (!text) return '';
-  // sanitize and strip tags
   const cleaned = DOMPurify.sanitize(String(text), { ALLOWED_TAGS: [] });
   const stripped = cleaned.replace(/<[^>]*>/g, '').trim();
   return stripped.length > maxLength ? `${stripped.substring(0, maxLength)}…` : stripped;
+};
+
+const getTitleFontSize = (title = '') => {
+  const len = String(title).trim().length;
+  if (len <= 20) return '1.05rem';
+  if (len <= 40) return '0.92rem';
+  if (len <= 70) return '0.82rem';
+  return '0.74rem';
 };
 
 const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
@@ -32,7 +28,6 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     title = 'Untitled',
     author = 'Unknown',
     description = '',
-    // full summary intentionally ignored for feed preview (performance/SEO)
     id,
     slug,
     likes_count = 0,
@@ -43,23 +38,21 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     difficulty_level = null,
   } = summary || {};
 
-  // Prefer the library route for canonical linking
   const summaryPath = useMemo(() => (slug ? `/library/${slug}` : `/library/${id}`), [slug, id]);
 
-  // preview text is memoized
   const previewText = useMemo(() => {
-    return description && String(description).trim() ? cleanAndTruncate(description, DEFAULT_PREVIEW_LENGTH) : '';
+    return description && String(description).trim()
+      ? cleanAndTruncate(description, DEFAULT_PREVIEW_LENGTH)
+      : '';
   }, [description]);
 
   const renderDifficultyBadge = useCallback((lvl) => {
     if (!lvl) return null;
     const text = String(lvl);
-    const cls = `difficulty-badge difficulty-${text.toLowerCase().replace(/\s+/g, '-')}`;
     return (
       <span
-        className={cls}
+        className={`difficulty-badge difficulty-${text.toLowerCase().replace(/\s+/g, '-')}`}
         title={text}
-        aria-hidden="false"
         role="note"
       >
         {text}
@@ -67,7 +60,6 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
     );
   }, []);
 
-  // image focal control
   const [imgObjectPosition, setImgObjectPosition] = useState('center center');
 
   const handleImageLoad = useCallback((e) => {
@@ -76,25 +68,20 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
       const w = img.naturalWidth || img.width || 1;
       const h = img.naturalHeight || img.height || 1;
       const ratio = w / h;
-      const vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024;
-
-      if (vw <= 640) {
-        if (h > w || ratio < 0.9) {
-          setImgObjectPosition('center top');
-        } else {
-          setImgObjectPosition('center center');
-        }
+      const vw = window.innerWidth || 1024;
+      if (vw <= 640 && (h > w || ratio < 0.9)) {
+        setImgObjectPosition('center top');
       } else {
         setImgObjectPosition('center center');
       }
-    } catch (err) {
+    } catch {
       setImgObjectPosition('center center');
     }
   }, []);
 
-  const handleImageError = useCallback(() => {
-    setImgObjectPosition('center center');
-  }, []);
+  const handleImageError = useCallback(() => setImgObjectPosition('center center'), []);
+
+  const titleFontSize = getTitleFontSize(title);
 
   return (
     <li
@@ -103,24 +90,20 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
       data-post-id={id}
       data-post-slug={slug || ''}
     >
-      <Link
-        to={summaryPath}
-        className="card-link"
-        aria-label={`Read ${title}`}
-      >
+      <Link to={summaryPath} className="card-link" aria-label={`Read ${title}`}>
         <motion.article
           className="summary-card"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.32 }}
-          style={{ height: '100%' }}
         >
-          {image_url ? (
-            <div className="cover-wrap">
-              <div className="difficulty-overlay">
-                {renderDifficultyBadge(difficulty_level)}
-              </div>
+          {/* ── Cover image with title overlay ── */}
+          <div className="cover-wrap">
+            <div className="difficulty-overlay">
+              {renderDifficultyBadge(difficulty_level)}
+            </div>
 
+            {image_url ? (
               <img
                 src={image_url}
                 alt={`Cover of ${title}`}
@@ -129,20 +112,25 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
                 onLoad={handleImageLoad}
                 onError={handleImageError}
                 style={{ objectPosition: imgObjectPosition }}
-                // defensive attributes
                 decoding="async"
                 draggable={false}
               />
-            </div>
-          ) : (
-            <div className="cover-placeholder" aria-hidden="true">
-              <div className="difficulty-overlay">
-                {renderDifficultyBadge(difficulty_level)}
-              </div>
-            </div>
-          )}
+            ) : (
+              <div className="cover-placeholder-bg" aria-hidden="true" />
+            )}
 
+            {/* Title centered on the image */}
+            <div className="cover-title-overlay">
+              <h3 className="cover-title" style={{ fontSize: titleFontSize }}>
+                {title}
+              </h3>
+            </div>
+          </div>
+
+          {/* ── Card body below image ── */}
           <div className="card-content">
+
+            {/* Title repeated below image in green — like before */}
             <h3 className="book-title">{title}</h3>
 
             <p className="book-author">
@@ -150,9 +138,7 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
             </p>
 
             {previewText ? (
-              <p className="summary-text">
-                {previewText}
-              </p>
+              <p className="summary-text">{previewText}</p>
             ) : (
               <div className="summary-text" aria-hidden="true" />
             )}
@@ -162,17 +148,14 @@ const BookSummaryCard = ({ summary = {}, onEdit, onDelete }) => {
                 <FaHeart className="footer-icon" />
                 <span className="eng-count">{likes_count || 0}</span>
               </div>
-
               <div className="engagement-item" title={`${comments_count || 0} comments`}>
                 <FaComment className="footer-icon" />
                 <span className="eng-count">{comments_count || 0}</span>
               </div>
-
               <div className="engagement-item" title={`${views_count || 0} views`}>
                 <FaEye className="footer-icon" />
                 <span className="eng-count">{views_count || 0}</span>
               </div>
-
               <div className="engagement-item rating" title={`Rating ${avg_rating ? Number(avg_rating).toFixed(1) : '0.0'}`}>
                 <FaStar className="footer-icon star-icon" />
                 <span className="eng-count">

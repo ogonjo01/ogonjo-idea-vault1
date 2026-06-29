@@ -1,33 +1,41 @@
 // src/components/ContentFeed/ContentFeed.jsx
-import React, {
-  useState, useEffect, useCallback, useRef
-} from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { supabase } from '../../supabase/supabaseClient';
-import { FaHeart, FaEye, FaStar } from 'react-icons/fa';
+import { FaHeart, FaEye, FaStar, FaSync } from 'react-icons/fa';
 import DOMPurify from 'dompurify';
 import BookSummaryCard from '../BookSummaryCard/BookSummaryCard';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
 import DraftPanel from '../DraftPanel/DraftPanel';
+import FeedOnboarding, {
+  ONBOARDING_KEY,
+  ONBOARDING_SKIPPED_KEY,
+} from '../FeedOnboarding/FeedOnboarding';
 import './ContentFeed.css';
 
 /* ─────────────────────────────────────────────────────────────
    CONSTANTS
 ───────────────────────────────────────────────────────────── */
-const ITEMS_PER_CAROUSEL = 12;
+const ITEMS_PER_CAROUSEL = 12;   // cards per horizontal row — UNCHANGED
+const INITIAL_ROWS       = 5;    // show 5 rows (60 cards) on first load
+const LOAD_MORE_ROWS     = 2;    // add 2 rows (24 cards) each scroll
+const INITIAL_VISIBLE    = ITEMS_PER_CAROUSEL * INITIAL_ROWS;   // 60
+const LOAD_MORE_BATCH    = ITEMS_PER_CAROUSEL * LOAD_MORE_ROWS; // 24
+const MAX_FEED_ITEMS     = 500;  // fetch up to 500 articles so there are plenty of rows
 const CATEGORY_BATCH     = 3;
 const MIN_LOAD_MS        = 350;
 const DRAFTS_TAB         = '📝 Drafts';
 const FOR_YOU_TAB        = 'For You';
 const BRIEFS_TAB         = '📰 Ogonjo Briefs';
-const BRIEFS_CATEGORY    = 'Ogonjo Briefs';   // actual DB value
-const BRIEFS_PAGE_SIZE   = 100;   // fetch all, paginate client-side
+const BRIEFS_CATEGORY    = 'Ogonjo Briefs';
+const BRIEFS_PAGE_SIZE   = 100;
+const BRIEFS_MAX_AGE_HOURS = 48;
 
 /* ─────────────────────────────────────────────────────────────
    SELECT STRINGS
 ───────────────────────────────────────────────────────────── */
 const LIGHT_SELECT = `
-  id, created_at, title, author, description, category, tags,
+  id, created_at, title, author, description, category, tags, keywords,
   user_id, image_url, affiliate_link, avg_rating, slug, difficulty_level,
   likes_count:likes!likes_post_id_fkey(count),
   views_count:views!views_post_id_fkey(count),
@@ -35,7 +43,7 @@ const LIGHT_SELECT = `
 `;
 
 const SELECT_WITH_COUNTS = `
-  id, created_at, title, author, description, category, tags,
+  id, created_at, title, author, description, category, tags, keywords,
   user_id, image_url, affiliate_link, avg_rating, slug, difficulty_level,
   likes_count:likes!likes_post_id_fkey(count),
   views_count:views!views_post_id_fkey(count),
@@ -67,32 +75,37 @@ const _safeStr = (v) => {
 };
 
 const normalizeRow = (r = {}) => {
-  const likes      = parseNumber(r.likes_count);
-  const views      = parseNumber(r.views_count);
-  const comments   = parseNumber(r.comments_count);
-  const avg_rating = parseNumber(r.avg_rating ?? r.avg ?? r.rating ?? r.average_rating);
+  const likes        = parseNumber(r.likes_count);
+  const views        = parseNumber(r.views_count);
+  const comments     = parseNumber(r.comments_count);
+  const avg_rating   = parseNumber(r.avg_rating ?? r.avg ?? r.rating ?? r.average_rating);
   const rating_count = parseNumber(r.rating_count ?? r.ratings_count ?? r.count);
-  const rawTags = r.tags || [];
+  const rawTags      = r.tags || [];
   const tags = Array.isArray(rawTags)
     ? rawTags.map(t => (typeof t === 'string' ? t.trim().toLowerCase() : String(t).toLowerCase()))
     : [];
+  const rawKeywords = r.keywords || [];
+  const keywords = Array.isArray(rawKeywords)
+    ? rawKeywords.map(k => (typeof k === 'string' ? k.trim().toLowerCase() : String(k).toLowerCase()))
+    : [];
   return {
-    id:            r.id,
-    slug:          r.slug ?? null,
-    title:         _safeStr(r.title) || 'Untitled',
-    author:        _safeStr(r.author) || _safeStr(r.creator_name) || '',
-    description:   r.description ?? null,
-    summary:       r.summary ?? null,
-    category:      r.category,
+    id:             r.id,
+    slug:           r.slug ?? null,
+    title:          _safeStr(r.title) || 'Untitled',
+    author:         _safeStr(r.author) || _safeStr(r.creator_name) || '',
+    description:    r.description ?? null,
+    summary:        r.summary ?? null,
+    category:       r.category,
     tags,
-    image_url:     _safeStr(r.image_url) || _safeStr(r.cover) || null,
+    keywords,
+    image_url:      _safeStr(r.image_url) || _safeStr(r.cover) || null,
     affiliate_link: r.affiliate_link,
-    likes_count:   Number(likes    || 0),
-    views_count:   Number(views    || 0),
+    likes_count:    Number(likes    || 0),
+    views_count:    Number(views    || 0),
     comments_count: Number(comments || 0),
-    avg_rating:    Number(avg_rating  || 0),
-    rating_count:  Number(rating_count || 0),
-    created_at:    r.created_at ?? null,
+    avg_rating:     Number(avg_rating  || 0),
+    rating_count:   Number(rating_count || 0),
+    created_at:     r.created_at ?? null,
     difficulty_level: r.difficulty_level ?? null,
   };
 };
@@ -123,6 +136,14 @@ const similarityScore = (item, query) => {
       else if (q.includes(tt) || tt.includes(q)) score += 20;
     });
   }
+  if (Array.isArray(item.keywords)) {
+    item.keywords.forEach(k => {
+      const kk = normalizeText(k);
+      if (!kk) return;
+      if (q === kk) score += 50;
+      else if (q.includes(kk) || kk.includes(q)) score += 15;
+    });
+  }
   return score;
 };
 
@@ -137,9 +158,22 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '';
   try {
     return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric'
+      month: 'short', day: 'numeric', year: 'numeric',
     });
   } catch { return ''; }
+};
+
+/* ─────────────────────────────────────────────────────────────
+   FILTER: remove Ogonjo Briefs older than 48h from any list
+───────────────────────────────────────────────────────────── */
+const filterOutOldBriefs = (items) => {
+  const now      = Date.now();
+  const maxAgeMs = BRIEFS_MAX_AGE_HOURS * 3600000;
+  return items.filter(item => {
+    if (!item.category || item.category !== BRIEFS_CATEGORY) return true;
+    if (!item.created_at) return false;
+    return (now - new Date(item.created_at).getTime()) <= maxAgeMs;
+  });
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -151,64 +185,42 @@ const fetchRpcOrFallback = async (rpcName, { limit = ITEMS_PER_CAROUSEL, categor
     return msg.includes('Could not choose the best candidate function') ||
            msg.includes('could not choose the best candidate');
   };
-
   const sortRows = (rows) => {
     const copy = (rows || []).slice();
-    if (rpcName.includes('new'))         copy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    else if (rpcName.includes('liked'))  copy.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
-    else if (rpcName.includes('rated'))  copy.sort((a, b) => (b.avg_rating || 0)   - (a.avg_rating || 0));
-    else if (rpcName.includes('view'))   copy.sort((a, b) => (b.views_count || 0)  - (a.views_count || 0));
+    if (rpcName.includes('new'))        copy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    else if (rpcName.includes('liked')) copy.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+    else if (rpcName.includes('rated')) copy.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
+    else if (rpcName.includes('view'))  copy.sort((a, b) => (b.views_count  || 0) - (a.views_count  || 0));
     return copy.slice(0, limit);
   };
-
   try {
     const args = { p_limit: limit };
     if (category) args.p_category = category;
     const rpcRes = await supabase.rpc(rpcName, args);
-    if (!rpcRes.error && rpcRes.data) {
-      return sortRows(safeData(rpcRes.data).map(normalizeRow));
-    }
-    if (rpcRes.error && !isAmbiguous(rpcRes.error)) {
-      console.warn(`[RPC] ${rpcName} error — falling back`, rpcRes.error);
-    }
-  } catch (e) {
-    console.warn(`[rpc] ${rpcName} threw`, e?.message || e);
-  }
-
+    if (!rpcRes.error && rpcRes.data) return sortRows(safeData(rpcRes.data).map(normalizeRow));
+    if (rpcRes.error && !isAmbiguous(rpcRes.error)) console.warn(`[RPC] ${rpcName} error`, rpcRes.error);
+  } catch (e) { console.warn(`[rpc] ${rpcName} threw`, e?.message || e); }
   try {
     if (rpcName.includes('new')) {
-      let q = supabase.from('book_summaries')
-        .select(LIGHT_SELECT)
-        .eq('status', 'published')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      let q = supabase.from('book_summaries').select(LIGHT_SELECT).eq('status', 'published')
+        .order('created_at', { ascending: false }).limit(limit);
       if (category) q = q.eq('category', category);
       const { data, error } = await q;
       if (error) throw error;
       return (data || []).map(normalizeRow);
     }
-    let q = supabase.from('book_summaries')
-      .select(SELECT_WITH_COUNTS)
-      .eq('status', 'published')
-      .limit(500);
+    let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS).eq('status', 'published').limit(500);
     if (category) q = q.eq('category', category);
     const { data, error } = await q;
     if (error) throw error;
     return sortRows((data || []).map(normalizeRow));
-  } catch (err) {
-    console.error('[fallback] fetch error', err);
-    return [];
-  }
+  } catch (err) { console.error('[fallback] fetch error', err); return []; }
 };
 
 const fetchTopCategories = async (limit = 50) => {
   try {
-    const { data, error } = await supabase
-      .from('book_summaries')
-      .select('category')
-      .eq('status', 'published')
-      .not('category', 'is', null)
-      .limit(2000);
+    const { data, error } = await supabase.from('book_summaries').select('category')
+      .eq('status', 'published').not('category', 'is', null).limit(2000);
     if (error) throw error;
     const counts = (data || []).reduce((acc, r) => {
       const key = (r.category || '').trim();
@@ -217,10 +229,7 @@ const fetchTopCategories = async (limit = 50) => {
       return acc;
     }, {});
     return Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, limit);
-  } catch (err) {
-    console.error('fetchTopCategories error', err);
-    return [];
-  }
+  } catch (err) { console.error('fetchTopCategories error', err); return []; }
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -228,416 +237,398 @@ const fetchTopCategories = async (limit = 50) => {
 ───────────────────────────────────────────────────────────── */
 const fetchBriefs = async (sortBy = 'newest', limit = BRIEFS_PAGE_SIZE) => {
   try {
-    let q = supabase
-      .from('book_summaries')
-      .select(SELECT_WITH_COUNTS)
-      .eq('status', 'published')
-      .eq('category', BRIEFS_CATEGORY)
-      .limit(limit);
-
-    if (sortBy === 'newest')  q = q.order('created_at', { ascending: false });
-    if (sortBy === 'views')   q = q.order('created_at', { ascending: false });
-    if (sortBy === 'liked')   q = q.order('created_at', { ascending: false });
-    if (sortBy === 'rated')   q = q.order('created_at', { ascending: false });
-
+    let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS)
+      .eq('status', 'published').eq('category', BRIEFS_CATEGORY)
+      .order('created_at', { ascending: false }).limit(limit);
     const { data, error } = await q;
     if (error) throw error;
     const rows = (data || []).map(normalizeRow);
-
-    if (sortBy === 'views')  rows.sort((a, b) => (b.views_count  || 0) - (a.views_count  || 0));
-    if (sortBy === 'liked')  rows.sort((a, b) => (b.likes_count  || 0) - (a.likes_count  || 0));
-    if (sortBy === 'rated')  rows.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
-
-    return rows;
-  } catch (err) {
-    console.error('fetchBriefs error', err);
-    return [];
-  }
+    const now = Date.now();
+    const maxAgeMs = BRIEFS_MAX_AGE_HOURS * 3600000;
+    const filtered = rows.filter(item => item.created_at && (now - new Date(item.created_at).getTime()) <= maxAgeMs);
+    if (sortBy === 'views')  filtered.sort((a, b) => (b.views_count  || 0) - (a.views_count  || 0));
+    else if (sortBy === 'liked') filtered.sort((a, b) => (b.likes_count  || 0) - (a.likes_count  || 0));
+    else if (sortBy === 'rated') filtered.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
+    else filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return filtered;
+  } catch (err) { console.error('fetchBriefs error', err); return []; }
 };
 
 /* ─────────────────────────────────────────────────────────────
-   BRIEF ROW COMPONENT — editorial list style
+   BRIEF ROW
 ───────────────────────────────────────────────────────────── */
 const BriefRow = ({ item, index }) => {
-  const path = item.slug ? `/library/${item.slug}` : `/library/${item.id}`;
+  const path    = item.slug ? `/library/${item.slug}` : `/library/${item.id}`;
   const preview = cleanPreview(item.description, 160);
-
   return (
     <Link to={path} className="brief-row" aria-label={`Read: ${item.title}`}>
       <div className="brief-row-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div>
-
       <div className="brief-row-body">
         <h3 className="brief-row-title">{item.title}</h3>
         {preview && <p className="brief-row-desc">{preview}</p>}
       </div>
-
       <div className="brief-row-meta" aria-hidden="true">
-        <span className="brief-meta-item" title={`${item.likes_count} likes`}>
-          <FaHeart className="brief-meta-icon" /> {item.likes_count || 0}
+        <span className="brief-meta-item"><FaHeart className="brief-meta-icon" /> {item.likes_count || 0}</span>
+        <span className="brief-meta-item"><FaEye  className="brief-meta-icon" /> {item.views_count  || 0}</span>
+        <span className="brief-meta-item">
+          <FaStar className="brief-meta-icon brief-meta-star" />{' '}
+          {item.avg_rating ? Number(item.avg_rating).toFixed(1) : '0.0'}
         </span>
-        <span className="brief-meta-item" title={`${item.views_count} views`}>
-          <FaEye className="brief-meta-icon" /> {item.views_count || 0}
-        </span>
-        <span className="brief-meta-item" title={`Rating: ${item.avg_rating ? Number(item.avg_rating).toFixed(1) : '0.0'}`}>
-          <FaStar className="brief-meta-icon brief-meta-star" /> {item.avg_rating ? Number(item.avg_rating).toFixed(1) : '0.0'}
-        </span>
-        {item.created_at && (
-          <span className="brief-meta-date">{formatDate(item.created_at)}</span>
-        )}
+        {item.created_at && <span className="brief-meta-date">{formatDate(item.created_at)}</span>}
       </div>
     </Link>
   );
 };
 
 /* ─────────────────────────────────────────────────────────────
-   BRIEFS FEED — full tab layout
+   BRIEFS FEED
 ───────────────────────────────────────────────────────────── */
-const BRIEF_SORT_OPTIONS = [
-  { key: 'newest', label: 'Newest' },
-  { key: 'views',  label: 'Most Viewed' },
-  { key: 'liked',  label: 'Most Liked' },
-  { key: 'rated',  label: 'Top Rated' },
-];
-
-const MONTH_NAMES = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December'
-];
-
-const BRIEFS_PER_PAGE = 10;
-
 const BriefsFeed = () => {
-  const [sortBy, setSortBy]           = useState('newest');
-  const [allItems, setAllItems]       = useState([]);
-  const [visible, setVisible]         = useState(BRIEFS_PER_PAGE);
-  const [loading, setLoading]         = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [briefs,  setBriefs]  = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sortBy,  setSortBy]  = useState('newest');
 
-  // ── date filter state — default to current month+day (day is pre-set but changeable) ──
-  const _today = new Date();
-  const [selectedYear,  setSelectedYear]  = useState(String(_today.getFullYear()));
-  const [selectedMonth, setSelectedMonth] = useState(String(_today.getMonth()));
-  const [selectedDay,   setSelectedDay]   = useState(String(_today.getDate()));
-
-  // Fetch full sorted list; reset visible + date filter whenever sort changes
-  useEffect(() => {
-    let alive = true;
+  const load = useCallback(async () => {
     setLoading(true);
-    setVisible(BRIEFS_PER_PAGE);
-    const _t = new Date();
-    setSelectedYear(String(_t.getFullYear()));
-    setSelectedMonth(String(_t.getMonth()));
-    setSelectedDay(String(_t.getDate())); // default to today's day
-    fetchBriefs(sortBy).then(rows => {
-      if (alive) { setAllItems(rows); setLoading(false); }
-    });
-    return () => { alive = false; };
+    setBriefs(await fetchBriefs(sortBy, BRIEFS_PAGE_SIZE));
+    setLoading(false);
   }, [sortBy]);
 
-  // ── NEW: derive available years from allItems ─────────────────────────────
-  const availableYears = React.useMemo(() => {
-    const years = new Set(
-      allItems
-        .filter(r => r.created_at)
-        .map(r => new Date(r.created_at).getFullYear())
-    );
-    return [...years].sort((a, b) => b - a); // newest first
-  }, [allItems]);
+  useEffect(() => { load(); }, [load]);
 
-  // ── NEW: derive available months for the selected year ────────────────────
-  const availableMonths = React.useMemo(() => {
-    if (!selectedYear) return [];
-    const months = new Set(
-      allItems
-        .filter(r => {
-          if (!r.created_at) return false;
-          return new Date(r.created_at).getFullYear() === Number(selectedYear);
-        })
-        .map(r => new Date(r.created_at).getMonth()) // 0-indexed
-    );
-    return [...months].sort((a, b) => a - b);
-  }, [allItems, selectedYear]);
+  if (loading) return (
+    <div className="centered-loader-viewport">
+      <div className="centered-loader"><div className="spinner" /><p className="loader-text">Loading briefs…</p></div>
+    </div>
+  );
 
-  // ── all 31 days always available so user can freely navigate ────────────
-  const availableDays = React.useMemo(() => {
-    if (!selectedYear || selectedMonth === '') return [];
-    // Get max days for the selected month/year
-    const daysInMonth = new Date(Number(selectedYear), Number(selectedMonth) + 1, 0).getDate();
-    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  }, [selectedYear, selectedMonth]);
-
-  // ── NEW: apply date filter client-side (only for non-newest sorts) ─────────
-  const dateFilteredItems = React.useMemo(() => {
-    if (sortBy === 'newest') return allItems;
-    return allItems.filter(r => {
-      if (!r.created_at) return false;
-      const d = new Date(r.created_at);
-      if (selectedYear  && d.getFullYear() !== Number(selectedYear))  return false;
-      if (selectedMonth !== '' && d.getMonth() !== Number(selectedMonth)) return false;
-      if (selectedDay   && d.getDate()    !== Number(selectedDay))    return false;
-      return true;
-    });
-  }, [allItems, sortBy, selectedYear, selectedMonth, selectedDay]);
-
-  const displayedItems = dateFilteredItems.slice(0, visible);
-  const hasMore        = visible < dateFilteredItems.length;
-  const showDateFilter = sortBy !== 'newest';
-  const _todayRef      = new Date();
-  const dateFilterActive = true; // always active when shown (defaults to today)
-
-  const handleLoadMore = () => {
-    setLoadingMore(true);
-    setTimeout(() => {
-      setVisible(v => v + BRIEFS_PER_PAGE);
-      setLoadingMore(false);
-    }, 200);
-  };
-
-  const handleSortChange = (key) => {
-    setSortBy(key);
-    setVisible(BRIEFS_PER_PAGE);
-    try {
-      const el = document.querySelector('.briefs-feed');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (_) {}
-  };
-
-  // ── NEW: when year changes, reset month and day ──────────────────────────
-  const handleYearChange = (e) => {
-    setSelectedYear(e.target.value);
-    setSelectedMonth('');
-    setSelectedDay('');
-    setVisible(BRIEFS_PER_PAGE);
-  };
-
-  const handleMonthChange = (e) => {
-    setSelectedMonth(e.target.value);
-    setSelectedDay('');
-    setVisible(BRIEFS_PER_PAGE);
-  };
-
-  const handleDayChange = (e) => {
-    setSelectedDay(e.target.value);
-    setVisible(BRIEFS_PER_PAGE);
-  };
-
-  const clearDateFilter = () => {
-    const _t = new Date();
-    setSelectedYear(String(_t.getFullYear()));
-    setSelectedMonth(String(_t.getMonth()));
-    setSelectedDay(String(_t.getDate()));
-    setVisible(BRIEFS_PER_PAGE);
-  };
-
-  // Shared select style (inline so no CSS changes needed)
-  const selectStyle = {
-    padding: '5px 10px',
-    borderRadius: 6,
-    border: '1px solid rgba(255,255,255,0.12)',
-    background: 'rgba(255,255,255,0.06)',
-    color: 'inherit',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    outline: 'none',
-  };
+  if (!briefs.length) return (
+    <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+      <p>No Ogonjo Briefs from the last {BRIEFS_MAX_AGE_HOURS} hours.</p>
+      <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>Check back later for fresh business intelligence.</p>
+    </div>
+  );
 
   return (
     <div className="briefs-feed">
-      {/* Header */}
-      <div className="briefs-feed-header">
-        <div className="briefs-feed-title-block">
-          <h2 className="briefs-feed-title">Ogonjo Briefs</h2>
-          <p className="briefs-feed-subtitle">
-            Business intelligence for founders, builders, and investors.
-          </p>
-        </div>
-
-        {/* Sort controls */}
-        <div className="briefs-sort-bar" role="group" aria-label="Sort briefs">
-          {BRIEF_SORT_OPTIONS.map(opt => (
-            <button
-              key={opt.key}
-              type="button"
-              className={`briefs-sort-btn${sortBy === opt.key ? ' active' : ''}`}
-              onClick={() => handleSortChange(opt.key)}
-              aria-pressed={sortBy === opt.key}
-            >
-              {opt.label}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f1f5f9' }}>📰 Ogonjo Briefs</h2>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {['newest', 'views', 'liked', 'rated'].map(opt => (
+            <button key={opt} onClick={() => setSortBy(opt)}
+              style={{ padding: '4px 12px', borderRadius: '20px', border: '1px solid', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.15s',
+                borderColor: sortBy === opt ? '#06b6d4' : 'rgba(255,255,255,0.1)',
+                background:  sortBy === opt ? 'rgba(6,182,212,0.15)' : 'transparent',
+                color:       sortBy === opt ? '#06b6d4' : '#94a3b8' }}>
+              {opt === 'newest' ? 'Newest' : opt === 'views' ? 'Most Viewed' : opt === 'liked' ? 'Most Liked' : 'Most Rated'}
             </button>
           ))}
+          <button onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); load(); }}
+            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+            title="Refresh briefs"><FaSync /></button>
         </div>
       </div>
+      <div className="briefs-list">
+        {briefs.map((item, idx) => <BriefRow key={item.id} item={item} index={idx} />)}
+      </div>
+    </div>
+  );
+};
 
-      {/* ── NEW: Date filter bar — only shown for non-newest sorts ── */}
-      {showDateFilter && !loading && allItems.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-          padding: '10px 0', marginBottom: 8,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.5 }}>
-            📅 Filter by
-          </span>
+/* ─────────────────────────────────────────────────────────────
+   SECTION DEFINITIONS (for category view)
+───────────────────────────────────────────────────────────── */
+const SECTIONS = [
+  { key: 'newest',       title: 'Newest',      sortKey: 'newest' },
+  { key: 'mostLiked',    title: 'Most Liked',   sortKey: 'likes'  },
+  { key: 'highestRated', title: 'Most Rated',   sortKey: 'rating' },
+  { key: 'mostViewed',   title: 'Most Viewed',  sortKey: 'views'  },
+];
 
-          {/* Year dropdown */}
-          <select
-            value={selectedYear}
-            onChange={handleYearChange}
-            style={selectStyle}
-            aria-label="Filter by year"
-          >
-            <option value="">All years</option>
-            {availableYears.map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+/* ─────────────────────────────────────────────────────────────
+   PERSONALISED FEED
+   Key numbers:
+     • INITIAL_VISIBLE = 60  → 5 horizontal rows shown immediately
+     • LOAD_MORE_BATCH = 24  → 2 more rows appear each scroll
+     • MAX_FEED_ITEMS  = 500 → up to ~41 rows available before refresh
+───────────────────────────────────────────────────────────── */
+const PersonalisedFeed = ({ userId }) => {
+  const [allArticles,    setAllArticles]    = useState([]);
+  const [visibleCount,   setVisibleCount]   = useState(INITIAL_VISIBLE);
+  const [loading,        setLoading]        = useState(true);
+  const [activeTag,      setActiveTag]      = useState(null);
+  const [availableTags,  setAvailableTags]  = useState([]);
+  const [refreshKey,     setRefreshKey]     = useState(0);
+  const sentinelRef = useRef(null);
 
-          {/* Month dropdown — only shown when a year is selected */}
-          {selectedYear && (
-            <select
-              value={selectedMonth}
-              onChange={handleMonthChange}
-              style={selectStyle}
-              aria-label="Filter by month"
-            >
-              <option value="">All months</option>
-              {availableMonths.map(m => (
-                <option key={m} value={m}>{MONTH_NAMES[m]}</option>
-              ))}
-            </select>
-          )}
+  const loadFeed = useCallback(async () => {
+    setLoading(true);
+    setVisibleCount(INITIAL_VISIBLE);
+    setActiveTag(null);
 
-          {/* Day dropdown — only shown when both year and month are selected */}
-          {selectedYear && selectedMonth !== '' && (
-            <select
-              value={selectedDay}
-              onChange={handleDayChange}
-              style={selectStyle}
-              aria-label="Filter by day"
-            >
-              <option value="">All days</option>
-              {availableDays.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          )}
+    /* 1. weights */
+    let weights = {};
+    if (userId) {
+      const { data: profile } = await supabase.from('user_topic_profiles')
+        .select('topic_weights').eq('user_id', userId).maybeSingle();
+      if (profile?.topic_weights) weights = profile.topic_weights;
+    }
+    if (!Object.keys(weights).length) {
+      try { const s = JSON.parse(localStorage.getItem(ONBOARDING_KEY) || '{}'); if (s.weights) weights = s.weights; } catch {}
+    }
+    if (!Object.keys(weights).length) {
+      weights = {
+        'entrepreneurship': 0.5, 'business strategy & systems': 0.5,
+        'career development': 0.4, 'finance & funding': 0.4,
+        'marketing & sales': 0.4, 'leadership & management': 0.4,
+        'digital skills & technology': 0.3, 'mindset & motivation': 0.3,
+        'business ideas': 0.3, 'self-improvement': 0.3,
+      };
+    }
 
-          {/* Reset button — goes back to current month */}
-          <button
-            type="button"
-            onClick={clearDateFilter}
-            style={{
-              background: 'none',
-              border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 6,
-              color: 'inherit',
-              fontSize: 11,
-              padding: '4px 10px',
-              cursor: 'pointer',
-              opacity: 0.6,
-            }}
-          >
-            ↺ This month
-          </button>
+    /* 2. behavior vectors */
+    const tagWeights = {}, kwWeights = {}, catWeights = {};
+    let recentlySeen = new Set();
+    const now = Date.now(), DAY = 86400000;
 
-          {/* Active filter label */}
-          <span style={{ fontSize: 11, opacity: 0.5 }}>
-            {selectedDay
-              ? `${MONTH_NAMES[Number(selectedMonth)]} ${selectedDay}, ${selectedYear}`
-              : `${MONTH_NAMES[Number(selectedMonth)]} ${selectedYear}`}
-          </span>
-        </div>
-      )}
+    if (userId) {
+      try {
+        const { data: events } = await supabase.from('behavior_events')
+          .select('article_id, event_type, value, created_at').eq('user_id', userId)
+          .gte('created_at', new Date(now - 90 * DAY).toISOString()).limit(5000);
+        if (events) {
+          events.filter(e => new Date(e.created_at).getTime() > now - 2 * DAY)
+            .forEach(e => recentlySeen.add(e.article_id));
+          const articleIds = [...new Set(events.map(e => e.article_id))];
+          if (articleIds.length) {
+            const chunks = [];
+            for (let i = 0; i < articleIds.length; i += 100) chunks.push(articleIds.slice(i, i + 100));
+            const metaMap = {};
+            (await Promise.all(chunks.map(ids =>
+              supabase.from('book_summaries').select('id, tags, keywords, category').in('id', ids).then(r => r.data || [])
+            ))).flat().forEach(a => { metaMap[a.id] = a; });
+            events.forEach(e => {
+              const meta = metaMap[e.article_id]; if (!meta) return;
+              const decay = Math.pow(0.95, Math.max(0, (now - new Date(e.created_at).getTime()) / DAY));
+              let w = 0;
+              if      (e.event_type === 'completed')    w = 15;
+              else if (e.event_type === 'saved')        w = 12;
+              else if (e.event_type === 'time_spent')   w = Math.min(10, (e.value || 0) / 30);
+              else if (e.event_type === 'scroll_depth') w = Math.min(8,  (e.value || 0) / 12.5);
+              else w = 1;
+              const eff = w * decay;
+              (meta.tags     || []).forEach(t => { const k = t.toLowerCase().trim(); tagWeights[k] = (tagWeights[k] || 0) + eff; });
+              (meta.keywords || []).forEach(k => { const kk = k.toLowerCase().trim(); kwWeights[kk] = (kwWeights[kk] || 0) + eff; });
+              const cat = (meta.category || '').toLowerCase().trim();
+              if (cat) catWeights[cat] = (catWeights[cat] || 0) + eff;
+            });
+          }
+        }
+      } catch (e) { console.debug('Behavior vector build failed', e); }
+    }
 
-      {/* List */}
-      {loading ? (
-        <div className="briefs-loading">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="brief-row-skeleton" aria-hidden="true">
-              <div className="brs-index" />
-              <div className="brs-body">
-                <div className="brs-title" />
-                <div className="brs-desc" />
-              </div>
-              <div className="brs-meta" />
-            </div>
-          ))}
-        </div>
-      ) : allItems.length === 0 ? (
-        <div className="briefs-empty">
-          <p>No briefs published yet. Check back soon.</p>
-        </div>
-      ) : dateFilteredItems.length === 0 ? (
-        /* ── NEW: empty state for date filter ── */
-        <div className="briefs-empty" style={{ padding: '3rem 0', textAlign: 'center' }}>
-          <p style={{ fontSize: 15, opacity: 0.5, margin: 0 }}>
-            No data available for{' '}
-            {selectedDay
-              ? `${MONTH_NAMES[Number(selectedMonth)]} ${selectedDay}, ${selectedYear}`
-              : `${MONTH_NAMES[Number(selectedMonth)]} ${selectedYear}`}.
-          </p>
-          <p style={{ fontSize: 12, opacity: 0.4, margin: '6px 0 0' }}>
-            Try changing the date or explore other {selectedDay ? 'days' : 'months'}.
-          </p>
-          <button
-            type="button"
-            onClick={clearDateFilter}
-            style={{
-              marginTop: 12, background: 'none',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: 8, color: 'inherit',
-              fontSize: 12, padding: '6px 16px', cursor: 'pointer',
-            }}
-          >
-            Clear filter
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="briefs-list" role="list">
-            {displayedItems.map((item, i) => (
-              <BriefRow key={item.id ?? item.slug} item={item} index={i} />
+    /* 3. merge */
+    const merged = { ...weights };
+    for (const [k, v] of Object.entries(tagWeights)) merged[k] = (merged[k] || 0) + v * 0.5;
+    for (const [k, v] of Object.entries(kwWeights))  merged[k] = (merged[k] || 0) + v * 0.4;
+    for (const [k, v] of Object.entries(catWeights)) merged[k] = (merged[k] || 0) + v * 0.6;
+
+    /* 4. collaborative */
+    let collabBoost = {};
+    if (userId) {
+      try {
+        const { data: allProfiles } = await supabase.from('user_topic_profiles')
+          .select('user_id, topic_weights').neq('user_id', userId).limit(200);
+        if (allProfiles?.length) {
+          const cv = Object.values(weights);
+          const cn = Math.sqrt(cv.reduce((s, v) => s + v * v, 0)) || 1;
+          const topPeers = allProfiles.map(p => {
+            const ow = p.topic_weights || {};
+            let dot = 0; for (const [k, v] of Object.entries(ow)) dot += (weights[k] || 0) * v;
+            const on = Math.sqrt(Object.values(ow).reduce((s, v) => s + v * v, 0)) || 1;
+            return { uid: p.user_id, sim: dot / (cn * on) };
+          }).sort((a, b) => b.sim - a.sim).slice(0, 20).map(x => x.uid);
+
+          const { data: ce } = await supabase.from('behavior_events').select('article_id')
+            .in('user_id', topPeers).in('event_type', ['time_spent', 'completed', 'saved'])
+            .gte('created_at', new Date(now - 60 * DAY).toISOString()).limit(5000);
+          if (ce) {
+            const cnt = {}; ce.forEach(e => { cnt[e.article_id] = (cnt[e.article_id] || 0) + 1; });
+            const mx = Math.max(...Object.values(cnt), 1);
+            for (const [id, c] of Object.entries(cnt)) collabBoost[id] = Math.min(0.4, (c / mx) * 0.4);
+          }
+        }
+      } catch {}
+    }
+
+    /* 5. fetch pool — 1000 articles gives plenty of rows */
+    const { data: articles } = await supabase.from('book_summaries').select(`
+        id, created_at, title, author, description, category, tags, keywords,
+        image_url, avg_rating, slug,
+        likes_count:likes!likes_post_id_fkey(count),
+        views_count:views!views_post_id_fkey(count),
+        comments_count:comments!comments_post_id_fkey(count)
+      `).eq('status', 'published').order('created_at', { ascending: false }).limit(1000);
+
+    let pool = filterOutOldBriefs(
+      (articles || []).map(a => ({
+        ...a,
+        likes_count:    parseNumber(a.likes_count),
+        views_count:    parseNumber(a.views_count),
+        comments_count: parseNumber(a.comments_count),
+        avg_rating:     parseNumber(a.avg_rating),
+      }))
+    ).filter(a => {
+      const ck = (a.category || '').toLowerCase().trim();
+      const CLUTTER = new Set(['business concepts', 'concepts', 'concepts abbreviations']);
+      return CLUTTER.has(ck) ? (merged[ck] || 0) > 0 : true;
+    });
+
+    /* 6. score */
+    const scored = pool.map(a => {
+      let score = 0;
+      (a.tags     || []).forEach(t => { const k = t.toLowerCase().trim(); if (merged[k]) score += merged[k]; });
+      (a.keywords || []).forEach(k => { const kk = k.toLowerCase().trim(); if (merged[kk]) score += merged[kk] * 0.8; });
+      const ck = (a.category || '').toLowerCase().trim();
+      if (ck && merged[ck]) score += merged[ck];
+      score += collabBoost[a.id] || 0;
+      if (recentlySeen.has(a.id)) score -= 3;
+      const daysOld = Math.max(0, (now - new Date(a.created_at).getTime()) / DAY);
+      score += Math.max(0, (30 - daysOld) * 0.02);
+      return { ...a, _score: score };
+    });
+
+    /* 7. blend */
+    scored.sort((a, b) => b._score - a._score);
+    const total    = scored.length;
+    const topMatch = scored.slice(0, Math.floor(total * 0.5));
+    const related  = scored.slice(Math.floor(total * 0.5), Math.floor(total * 0.75));
+    const fresh    = [...scored].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, Math.floor(total * 0.2));
+    const rand     = scored.slice(Math.floor(total * 0.8));
+    const shuffle  = arr => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+    /* ★ Use MAX_FEED_ITEMS (500) so there are ~41 rows available */
+    const finalFeed = shuffle([
+      ...shuffle(topMatch).slice(0, Math.ceil(MAX_FEED_ITEMS * 0.50)),
+      ...shuffle(related).slice(0,  Math.ceil(MAX_FEED_ITEMS * 0.25)),
+      ...shuffle(fresh).slice(0,    Math.ceil(MAX_FEED_ITEMS * 0.15)),
+      ...shuffle(rand).slice(0,     Math.ceil(MAX_FEED_ITEMS * 0.10)),
+    ]).slice(0, MAX_FEED_ITEMS);
+
+    /* 8. tags for filter bar */
+    const tagSet = new Set();
+    finalFeed.forEach(a => (a.tags || []).forEach(t => tagSet.add(t)));
+
+    setAllArticles(finalFeed);
+    setAvailableTags([...tagSet].sort());
+    setVisibleCount(INITIAL_VISIBLE); // show 60 cards = 5 rows immediately
+    setLoading(false);
+  }, [userId]);
+
+  useEffect(() => { loadFeed(); }, [loadFeed, refreshKey]);
+
+  /* IntersectionObserver: add LOAD_MORE_BATCH (24) cards = 2 more rows each time */
+  useEffect(() => {
+    if (!sentinelRef.current || loading) return;
+    const obs = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting)
+          setVisibleCount(prev => Math.min(prev + LOAD_MORE_BATCH, filteredArticles.length));
+      },
+      { rootMargin: '400px' }
+    );
+    obs.observe(sentinelRef.current);
+    return () => obs.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, allArticles, activeTag]);
+
+  const filteredArticles = activeTag
+    ? allArticles.filter(a => (a.tags || []).includes(activeTag))
+    : allArticles;
+
+  /* Split into horizontal rows of ITEMS_PER_CAROUSEL (12) */
+  const visible = filteredArticles.slice(0, visibleCount);
+  const rows    = [];
+  for (let i = 0; i < visible.length; i += ITEMS_PER_CAROUSEL)
+    rows.push(visible.slice(i, i + ITEMS_PER_CAROUSEL));
+
+  const handleTagClick = (tag) => {
+    setActiveTag(prev => prev === tag ? null : tag);
+    setVisibleCount(INITIAL_VISIBLE);
+  };
+  const handleRefresh = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setRefreshKey(prev => prev + 1);
+  };
+
+  if (loading) return (
+    <div className="centered-loader-viewport">
+      <div className="centered-loader"><div className="spinner" /><p className="loader-text">Loading your personalised feed…</p></div>
+    </div>
+  );
+
+  if (!rows.length) return (
+    <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+      No content found. Read a few articles to train the algorithm.
+    </div>
+  );
+
+  return (
+    <div className="personalised-feed">
+      {/* Tag filter bar */}
+      {availableTags.length > 0 && (
+        <div className="categories-bar" style={{ alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', flexWrap: 'nowrap',
+            WebkitOverflowScrolling: 'touch', padding: '0 8px 8px', maxWidth: '100%' }}>
+            {availableTags.map(tag => (
+              <button key={tag} type="button" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                className={`category-chip${activeTag === tag ? ' active' : ''}`}
+                onClick={() => handleTagClick(tag)}>
+                {tag}
+              </button>
             ))}
           </div>
-
-          {/* Count */}
-          <p className="briefs-count" aria-live="polite">
-            Showing {displayedItems.length} of {dateFilteredItems.length}
-            {dateFilterActive && allItems.length !== dateFilteredItems.length
-              ? ` (filtered from ${allItems.length} total)`
-              : ''}
-          </p>
-
-          {/* Load more button */}
-          {hasMore && (
-            <div className="briefs-load-more-wrapper">
-              <button
-                type="button"
-                className="briefs-load-more-btn"
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-              >
-                {loadingMore
-                  ? 'Loading…'
-                  : `Load more (${dateFilteredItems.length - visible} remaining)`}
-              </button>
-            </div>
+          {activeTag && (
+            <button className="hf-btn" type="button" onClick={() => setActiveTag(null)} style={{ marginLeft: 8 }}>
+              Clear
+            </button>
           )}
-        </>
+        </div>
       )}
 
-      {/* For You CTA — only shown once all items are visible */}
-      {!loading && dateFilteredItems.length > 0 && !hasMore && (
-        <div className="briefs-footer-cta">
-          <p className="briefs-footer-text">You've read them all. Explore the full library.</p>
-          <button
-            type="button"
-            className="briefs-footer-btn"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('ogonjo:navigate-tab', { detail: { tab: 'For You' } }));
-            }}
-          >
-            More content →
+      {/* ★ Horizontal rows — each row = one HorizontalCarousel */}
+      {rows.map((row, idx) => (
+        <HorizontalCarousel
+          key={idx}
+          title={idx === 0 ? '✨ For You' : ''}
+          items={row}
+          loading={false}
+          skeletonCount={6}
+        >
+          {row.map(article => (
+            <BookSummaryCard key={article.id} summary={article} />
+          ))}
+        </HorizontalCarousel>
+      ))}
+
+      {/* Sentinel: triggers 2 more rows */}
+      {visibleCount < filteredArticles.length && (
+        <div ref={sentinelRef} style={{ height: 1, width: '100%' }} aria-hidden="true" />
+      )}
+
+      {/* End of feed */}
+      {visibleCount >= filteredArticles.length && allArticles.length > 0 && (
+        <div style={{ textAlign: 'center', padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <p style={{ color: '#9ca3af', fontSize: '0.85rem', margin: 0 }}>
+            You've seen everything. Keep reading to improve your recommendations.
+          </p>
+          <button onClick={handleRefresh}
+            style={{ padding: '6px 20px', borderRadius: '20px', border: '1px solid #2d3748',
+              background: 'transparent', color: '#9ca3af', fontSize: '0.8rem', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#06b6d4'; e.currentTarget.style.color = '#06b6d4'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2d3748'; e.currentTarget.style.color = '#9ca3af'; }}>
+            <FaSync /> Refresh Feed
           </button>
         </div>
       )}
@@ -645,25 +636,14 @@ const BriefsFeed = () => {
   );
 };
 
-/* ─────────────────────────────────────────────────────────────
-   SECTION DEFINITIONS
-───────────────────────────────────────────────────────────── */
-const SECTIONS = [
-  { key: 'newest',       title: 'Newest',     sortKey: 'newest' },
-  { key: 'mostLiked',    title: 'Most Liked',  sortKey: 'likes'  },
-  { key: 'highestRated', title: 'Most Rated',  sortKey: 'rating' },
-  { key: 'mostViewed',   title: 'Most Viewed', sortKey: 'views'  },
-];
-
-/* ─────────────────────────────────────────────────────────────
-   COMPONENT
-───────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   MAIN CONTENT FEED
+══════════════════════════════════════════════════════════════════════════ */
 const ContentFeed = ({
   selectedCategory = FOR_YOU_TAB,
-  onEdit,
-  onDelete,
-  searchQuery = '',
-  userRole = 'user',
+  onEdit, onDelete,
+  searchQuery  = '',
+  userRole     = 'user',
   onSelectCategory,
 }) => {
   const location = useLocation();
@@ -673,85 +653,64 @@ const ContentFeed = ({
   const rootRef       = useRef(null);
   const sentinelRef   = useRef(null);
 
-  /* ── state ── */
-  const [loadingGlobal, setLoadingGlobal]   = useState(true);
-  const [globalContent, setGlobalContent]   = useState({
-    newest: [], mostLiked: [], highestRated: [], mostViewed: []
-  });
+  const [loadingGlobal,        setLoadingGlobal]        = useState(true);
+  const [globalContent,        setGlobalContent]        = useState({ newest: [], mostLiked: [], highestRated: [], mostViewed: [] });
+  const [categoryQueue,        setCategoryQueue]        = useState([]);
+  const [loadedCategoryBlocks, setLoadedCategoryBlocks] = useState([]);
+  const [loadingCategories,    setLoadingCategories]    = useState(false);
+  const [hasMoreCategories,    setHasMoreCategories]    = useState(false);
+  const [availableTags,        setAvailableTags]        = useState([]);
+  const [selectedTags,         setSelectedTags]         = useState([]);
+  const [taggedResults,        setTaggedResults]        = useState(null);
+  const [taggedLoading,        setTaggedLoading]        = useState(false);
+  const [searchResults,        setSearchResults]        = useState([]);
+  const [searchRelated,        setSearchRelated]        = useState([]);
+  const [tagsReloadKey,        setTagsReloadKey]        = useState(0);
+  const [effectiveQuery,       setEffectiveQuery]       = useState((searchQuery || '').trim());
+  const [currentUserId,        setCurrentUserId]        = useState(null);
+  const [authChecked,          setAuthChecked]          = useState(false);
+  const [onboardingComplete,   setOnboardingComplete]   = useState(() =>
+    !!(localStorage.getItem(ONBOARDING_KEY) || localStorage.getItem(ONBOARDING_SKIPPED_KEY))
+  );
 
-  const [categoryQueue,         setCategoryQueue]         = useState([]);
-  const [loadedCategoryBlocks,  setLoadedCategoryBlocks]  = useState([]);
-  const [loadingCategories,     setLoadingCategories]     = useState(false);
-  const [hasMoreCategories,     setHasMoreCategories]     = useState(false);
-
-  const [availableTags,  setAvailableTags]  = useState([]);
-  const [selectedTags,   setSelectedTags]   = useState([]);
-  const [taggedResults,  setTaggedResults]  = useState(null);
-  const [taggedLoading,  setTaggedLoading]  = useState(false);
-
-  const [searchResults,  setSearchResults]  = useState([]);
-  const [searchRelated,  setSearchRelated]  = useState([]);
-
-  const [tagsReloadKey,  setTagsReloadKey]  = useState(0);
-  const [effectiveQuery, setEffectiveQuery] = useState((searchQuery || '').trim());
-
-  /* ── derived flags ── */
-  const isDraftTab  = selectedCategory === DRAFTS_TAB;
-  const isBriefTab  = selectedCategory === BRIEFS_TAB;
-  const isForYou    = !isDraftTab && !isBriefTab &&
-    (selectedCategory === FOR_YOU_TAB || selectedCategory === 'All');
+  const isDraftTab   = selectedCategory === DRAFTS_TAB;
+  const isBriefTab   = selectedCategory === BRIEFS_TAB;
+  const isForYou     = !isDraftTab && !isBriefTab && (selectedCategory === FOR_YOU_TAB || selectedCategory === 'All');
   const canSeeDrafts = userRole === 'admin' || userRole === 'team';
 
-  /* ── listen for BriefsFeed "More content" CTA ── */
   useEffect(() => {
-    if (!onSelectCategory) return;
-    const handler = (e) => {
-      if (e.detail?.tab) onSelectCategory(e.detail.tab);
-    };
-    window.addEventListener('ogonjo:navigate-tab', handler);
-    return () => window.removeEventListener('ogonjo:navigate-tab', handler);
-  }, [onSelectCategory]);
-
-  /* ── lifecycle ── */
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    supabase.auth.getUser().then(({ data }) => {
+      if (mountedRef.current) { setCurrentUserId(data?.user?.id ?? null); setAuthChecked(true); }
+    });
   }, []);
 
   useEffect(() => {
-    setEffectiveQuery((searchQuery || '').trim());
-  }, [searchQuery]);
+    if (!onSelectCategory) return;
+    const h = (e) => { if (e.detail?.tab) onSelectCategory(e.detail.tab); };
+    window.addEventListener('ogonjo:navigate-tab', h);
+    return () => window.removeEventListener('ogonjo:navigate-tab', h);
+  }, [onSelectCategory]);
 
-  useEffect(() => {
-    try {
-      window.scrollTo({ top: 0, behavior: 'auto' });
-      if (document.documentElement) document.documentElement.scrollTop = 0;
-      if (document.body)            document.body.scrollTop = 0;
-    } catch (_) {}
-  }, [location.pathname]);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => { setEffectiveQuery((searchQuery || '').trim()); }, [searchQuery]);
+  useEffect(() => { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) {} }, [location.pathname]);
 
   useEffect(() => {
     const root = rootRef.current || document;
     if (!root) return;
-    const handler = (e) => {
+    const h = (e) => {
       try {
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        const a = e.target?.closest?.('a');
-        if (!a) return;
-        const href = a.getAttribute('href') || a.href;
-        if (!href) return;
-        let url;
-        try { url = new URL(href, window.location.origin); } catch { return; }
+        const a = e.target?.closest?.('a'); if (!a) return;
+        const href = a.getAttribute('href') || a.href; if (!href) return;
+        let url; try { url = new URL(href, window.location.origin); } catch { return; }
         if (url.origin !== window.location.origin) return;
-        if (url.pathname.startsWith('/summary/') || url.pathname.startsWith('/library/')) {
+        if (url.pathname.startsWith('/summary/') || url.pathname.startsWith('/library/'))
           window.scrollTo({ top: 0, behavior: 'auto' });
-          if (document.documentElement) document.documentElement.scrollTop = 0;
-          if (document.body)            document.body.scrollTop = 0;
-        }
       } catch (_) {}
     };
-    root.addEventListener('click', handler, true);
-    return () => root.removeEventListener('click', handler, true);
+    root.addEventListener('click', h, true);
+    return () => root.removeEventListener('click', h, true);
   }, []);
 
   useEffect(() => {
@@ -759,109 +718,62 @@ const ContentFeed = ({
       try {
         const el = rootRef.current;
         if (el) {
-          const header  = document.querySelector('header');
-          const headerH = header ? header.offsetHeight : 0;
-          const top = Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - headerH - 8);
-          window.scrollTo({ top, behavior: 'auto' });
-        } else {
-          window.scrollTo({ top: 0, behavior: 'auto' });
-        }
-      } catch (_) {
-        try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (__) {}
-      }
+          const hH = document.querySelector('header')?.offsetHeight || 0;
+          window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - hH - 8), behavior: 'auto' });
+        } else window.scrollTo({ top: 0, behavior: 'auto' });
+      } catch (_) { try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (__) {} }
     };
-    go();
-    const t = setTimeout(go, 120);
-    return () => clearTimeout(t);
+    go(); const t = setTimeout(go, 120); return () => clearTimeout(t);
   }, [selectedCategory, effectiveQuery]);
 
-  /* ── SEO ── */
   useEffect(() => {
     try {
-      const BASE   = 'OGONJO — Business Knowledge for Builders';
-      const BASE_D = 'Business knowledge, book summaries, and practical insights for builders, founders, and ambitious entrepreneurs.';
-      let title = BASE, description = BASE_D;
-      if (isDraftTab) {
-        title       = 'Drafts — OGONJO';
-        description = 'Your unpublished drafts.';
-      } else if (isBriefTab) {
-        title       = 'Ogonjo Briefs — Business Intelligence for Founders';
-        description = 'Curated business intelligence, market analysis, and actionable strategies for founders and investors.';
-      } else if (effectiveQuery) {
-        title       = `Results for "${effectiveQuery}" — OGONJO`;
-        description = `Search results for "${effectiveQuery}" on OGONJO.`;
-      } else if (!isForYou) {
-        title       = `${selectedCategory} — OGONJO`;
-        description = `Explore ${selectedCategory} content on OGONJO.`;
-      }
+      const BASE = 'OGONJO — Business Knowledge for Builders';
+      let title = BASE, description = BASE;
+      if (isDraftTab)        { title = 'Drafts — OGONJO'; description = 'Your unpublished drafts.'; }
+      else if (isBriefTab)   { title = 'Ogonjo Briefs — Business Intelligence'; description = 'Curated business intelligence for founders and investors.'; }
+      else if (effectiveQuery) { title = `Results for "${effectiveQuery}" — OGONJO`; description = `Search results for "${effectiveQuery}".`; }
+      else if (!isForYou)    { title = `${selectedCategory} — OGONJO`; description = `Explore ${selectedCategory} on OGONJO.`; }
       document.title = title;
       let meta = document.querySelector('meta[name="description"]');
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', 'description');
-        document.head.appendChild(meta);
-      }
+      if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name', 'description'); document.head.appendChild(meta); }
       meta.setAttribute('content', description);
     } catch (_) {}
   }, [effectiveQuery, selectedCategory, isDraftTab, isBriefTab, isForYou]);
 
-  /* ── tags loader (skip for drafts + briefs) ── */
   useEffect(() => {
     if (isDraftTab || isBriefTab) return;
     (async () => {
       try {
-        const specific = !isForYou;
-        let q = supabase.from('book_summaries')
-          .select('tags')
-          .eq('status', 'published')
-          .limit(5000);
-        if (specific) q = q.eq('category', selectedCategory);
-        const { data, error } = await q;
-        if (error) throw error;
+        let q = supabase.from('book_summaries').select('tags').eq('status', 'published').limit(5000);
+        if (!isForYou) q = q.eq('category', selectedCategory);
+        const { data, error } = await q; if (error) throw error;
         const set = new Set();
-        (data || []).forEach(row => {
-          const arr = row?.tags || [];
-          if (Array.isArray(arr)) arr.forEach(t => { if (t && typeof t === 'string') set.add(t.trim().toLowerCase()); });
-        });
-        const list = Array.from(set).sort();
+        (data || []).forEach(row => { (row?.tags || []).forEach(t => { if (t && typeof t === 'string') set.add(t.trim().toLowerCase()); }); });
+        const list = [...set].sort();
         if (mountedRef.current) {
           setAvailableTags(list);
-          setSelectedTags(prev => {
-            if (!prev.length) return [];
-            const avail = new Set(list);
-            return prev.filter(t => avail.has(t.toLowerCase()));
-          });
+          setSelectedTags(prev => { if (!prev.length) return []; const a = new Set(list); return prev.filter(t => a.has(t.toLowerCase())); });
         }
-      } catch (err) {
-        console.warn('Could not load tags', err);
-      }
+      } catch (err) { console.warn('Could not load tags', err); }
     })();
   }, [selectedCategory, tagsReloadKey, isDraftTab, isBriefTab, isForYou]);
 
-  /* ── fast lightweight fetch (cached) ── */
   const fastFetchList = useCallback(async (limit = ITEMS_PER_CAROUSEL, category = null) => {
     const key = category ? `cat:${category}` : 'global';
-    const cached = fastCacheRef.current.get(key);
-    if (cached) return cached;
+    if (fastCacheRef.current.has(key)) return fastCacheRef.current.get(key);
     try {
-      let q = supabase.from('book_summaries')
-        .select(LIGHT_SELECT)
-        .eq('status', 'published')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      let q = supabase.from('book_summaries').select(LIGHT_SELECT).eq('status', 'published')
+        .order('created_at', { ascending: false }).limit(limit);
       if (category) q = q.eq('category', category);
-      const { data, error } = await q;
-      if (error) throw error;
-      const rows = (data || []).map(normalizeRow);
-      fastCacheRef.current.set(key, rows);
-      return rows;
-    } catch (err) {
-      console.warn('fastFetchList failed', err);
-      return [];
-    }
+      const { data, error } = await q; if (error) throw error;
+      const rows     = (data || []).map(normalizeRow);
+      const filtered = category === BRIEFS_CATEGORY ? filterOutOldBriefs(rows) : rows;
+      fastCacheRef.current.set(key, filtered);
+      return filtered;
+    } catch (err) { console.warn('fastFetchList failed', err); return []; }
   }, []);
 
-  /* ── full content block (4 sort variants) ── */
   const fetchContentBlock = useCallback(async (category = null) => {
     try {
       const start = Date.now();
@@ -872,34 +784,24 @@ const ContentFeed = ({
         fetchRpcOrFallback('get_top_viewed',    { category }),
       ]);
       if (Date.now() - start < 50) await sleep(50);
-      return {
-        category,
-        newest:       newest       || [],
-        mostLiked:    mostLiked    || [],
-        highestRated: highestRated || [],
-        mostViewed:   mostViewed   || [],
-      };
-    } catch (err) {
-      console.error('fetchContentBlock error', category, err);
-      return { category, newest: [], mostLiked: [], highestRated: [], mostViewed: [] };
-    }
+      const f = items => category === BRIEFS_CATEGORY ? filterOutOldBriefs(items) : items;
+      return { category, newest: f(newest || []), mostLiked: f(mostLiked || []), highestRated: f(highestRated || []), mostViewed: f(mostViewed || []) };
+    } catch (err) { console.error('fetchContentBlock error', err); return { category, newest: [], mostLiked: [], highestRated: [], mostViewed: [] }; }
   }, []);
 
   const replaceCategoryBlock = useCallback((newBlock) => {
     setLoadedCategoryBlocks(prev => {
       const idx = prev.findIndex(b => String(b.category) === String(newBlock.category));
       if (idx === -1) return [...prev, newBlock];
-      const copy = [...prev];
-      copy[idx] = newBlock;
-      return copy;
+      const copy = [...prev]; copy[idx] = newBlock; return copy;
     });
   }, []);
 
-  /* ── ranking ── */
   const rankItemsWithBoost = useCallback((items = [], tags = [], sortKey = 'newest') => {
     if (!items.length) return [];
+    const filtered = filterOutOldBriefs(items); if (!filtered.length) return [];
     if (!tags.length) {
-      const copy = items.slice();
+      const copy = filtered.slice();
       if (sortKey === 'newest') return copy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       if (sortKey === 'likes')  return copy.sort((a, b) => (b.likes_count  || 0) - (a.likes_count  || 0));
       if (sortKey === 'rating') return copy.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
@@ -907,83 +809,53 @@ const ContentFeed = ({
       return copy;
     }
     const tagSet = new Set(tags.map(t => t.toLowerCase()));
-    return items
-      .map(it => {
-        const itemTags   = Array.isArray(it.tags) ? it.tags.map(t => t.toLowerCase()) : [];
-        const matchCount = itemTags.reduce((acc, t) => acc + (tagSet.has(t) ? 1 : 0), 0);
-        return { it, matchCount };
-      })
-      .sort((a, b) => {
-        if (b.matchCount !== a.matchCount) return b.matchCount - a.matchCount;
-        if (sortKey === 'newest') return new Date(b.it.created_at) - new Date(a.it.created_at);
-        if (sortKey === 'likes')  return (b.it.likes_count  || 0) - (a.it.likes_count  || 0);
-        if (sortKey === 'rating') return (b.it.avg_rating   || 0) - (a.it.avg_rating   || 0);
-        if (sortKey === 'views')  return (b.it.views_count  || 0) - (a.it.views_count  || 0);
-        return 0;
-      })
-      .map(s => s.it);
+    return filtered.map(it => {
+      const mc = (Array.isArray(it.tags) ? it.tags.map(t => t.toLowerCase()) : []).reduce((acc, t) => acc + (tagSet.has(t) ? 1 : 0), 0);
+      return { it, mc };
+    }).sort((a, b) => {
+      if (b.mc !== a.mc) return b.mc - a.mc;
+      if (sortKey === 'newest') return new Date(b.it.created_at) - new Date(a.it.created_at);
+      if (sortKey === 'likes')  return (b.it.likes_count  || 0) - (a.it.likes_count  || 0);
+      if (sortKey === 'rating') return (b.it.avg_rating   || 0) - (a.it.avg_rating   || 0);
+      if (sortKey === 'views')  return (b.it.views_count  || 0) - (a.it.views_count  || 0);
+      return 0;
+    }).map(s => s.it);
   }, []);
 
-  /* ── batch load next categories ── */
   const loadNextCategoryBatch = useCallback(async () => {
-    if (loadingCategories || !categoryQueue.length) {
-      setHasMoreCategories(false);
-      return;
-    }
+    if (loadingCategories || !categoryQueue.length) { setHasMoreCategories(false); return; }
     setLoadingCategories(true);
     const batch = categoryQueue.slice(0, CATEGORY_BATCH);
     const rest  = categoryQueue.slice(batch.length);
     setCategoryQueue(rest);
     try {
       const placeholders = await Promise.all(
-        batch.map(c => fastFetchList(4, c).then(items => ({
-          category: c, newest: items, mostLiked: items, highestRated: items, mostViewed: items
-        })))
+        batch.map(c => fastFetchList(4, c).then(items => ({ category: c, newest: items, mostLiked: items, highestRated: items, mostViewed: items })))
       );
       if (!mountedRef.current) return;
       setLoadedCategoryBlocks(prev => [...prev, ...placeholders]);
-
       (async () => {
         try {
           const blocks = await Promise.all(batch.map(c => fetchContentBlock(c)));
           if (!mountedRef.current) return;
-          blocks
-            .filter(b => b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length)
+          blocks.filter(b => b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length)
             .forEach(blk => replaceCategoryBlock(blk));
         } catch (err) { console.error('background batch error', err); }
       })();
-
       setHasMoreCategories(rest.length > 0);
-    } catch (err) {
-      console.error('loadNextCategoryBatch err', err);
-    } finally {
-      if (mountedRef.current) setLoadingCategories(false);
-    }
+    } catch (err) { console.error('loadNextCategoryBatch err', err); }
+    finally { if (mountedRef.current) setLoadingCategories(false); }
   }, [categoryQueue, loadingCategories, fetchContentBlock, fastFetchList, replaceCategoryBlock]);
 
-  /* ── main orchestration effect ── */
   useEffect(() => {
-    if (isDraftTab || isBriefTab) {
-      setLoadingGlobal(false);
-      return;
-    }
-
+    if (isDraftTab || isBriefTab) { setLoadingGlobal(false); return; }
     let cancelled = false;
     (async () => {
       generationRef.current += 1;
       const gen     = generationRef.current;
       const isStale = () => gen !== generationRef.current || cancelled || !mountedRef.current;
-
       fastCacheRef.current.clear();
-
-      const safeSetGlobal = (updater) => {
-        if (isStale()) return;
-        setGlobalContent(prev => {
-          const next = typeof updater === 'function' ? updater(prev) : updater;
-          return { ...prev, ...next };
-        });
-      };
-
+      const safeSet = u => { if (isStale()) return; setGlobalContent(p => ({ ...p, ...(typeof u === 'function' ? u(p) : u) })); };
       setLoadingGlobal(true);
       setLoadedCategoryBlocks([]);
       setCategoryQueue([]);
@@ -991,208 +863,91 @@ const ContentFeed = ({
       setSearchResults([]);
       setSearchRelated([]);
 
-      /* ── SEARCH ── */
       if (effectiveQuery.trim()) {
         const start = Date.now();
         try {
-          const scopeCat = !isForYou ? selectedCategory : null;
-          const fast = await fastFetchList(ITEMS_PER_CAROUSEL, scopeCat);
+          const sc = !isForYou ? selectedCategory : null;
+          const fast = await fastFetchList(ITEMS_PER_CAROUSEL, sc);
           if (isStale()) return;
-          safeSetGlobal({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
-
-          let q = supabase.from('book_summaries')
-            .select(SELECT_WITH_COUNTS)
-            .eq('status', 'published')
-            .limit(1200);
-          if (scopeCat) q = q.eq('category', scopeCat);
-          const { data, error } = await q;
-          if (isStale()) return;
-          if (error) throw error;
-
-          const rows   = safeData(data).map(normalizeRow);
+          safeSet({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
+          let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS).eq('status', 'published').limit(1200);
+          if (sc) q = q.eq('category', sc);
+          const { data, error } = await q; if (isStale()) return; if (error) throw error;
+          const rows   = filterOutOldBriefs(safeData(data).map(normalizeRow));
           const qnorm  = normalizeText(effectiveQuery);
           const tokens = qnorm.split(/\s+/).filter(Boolean);
-
-          const scored = rows
-            .map(r => {
-              let boost = 0;
-              const title = normalizeText(r.title || '');
-              const desc  = normalizeText(r.description || '');
-              tokens.forEach(tok => {
-                if (title.includes(tok)) boost += 30;
-                if (desc.includes(tok))  boost += 10;
-                if ((Array.isArray(r.tags) ? r.tags.map(normalizeText) : []).some(t => t === tok)) boost += 20;
-              });
-              return { ...r, _score: similarityScore(r, qnorm) + boost };
-            })
-            .filter(r => r._score > 0)
-            .sort((a, b) => b._score - a._score);
-
+          const scored = rows.map(r => {
+            let b = 0;
+            const t = normalizeText(r.title || ''), d = normalizeText(r.description || '');
+            tokens.forEach(tok => {
+              if (t.includes(tok)) b += 30; if (d.includes(tok)) b += 10;
+              if ((Array.isArray(r.tags) ? r.tags.map(normalizeText) : []).some(x => x === tok)) b += 20;
+            });
+            return { ...r, _score: similarityScore(r, qnorm) + b };
+          }).filter(r => r._score > 0).sort((a, b) => b._score - a._score);
           let primary = scored.slice(0, ITEMS_PER_CAROUSEL);
-          if (!primary.length) {
-            primary = rows.filter(r => {
-              const title  = normalizeText(r.title || '');
-              const desc   = normalizeText(r.description || '');
-              const author = normalizeText(r.author || '');
-              return tokens.some(tok =>
-                title.includes(tok) || desc.includes(tok) || author.includes(tok) ||
-                (Array.isArray(r.tags) && r.tags.some(t => normalizeText(t).includes(tok)))
-              );
-            }).slice(0, ITEMS_PER_CAROUSEL);
-          }
-
-          const primaryIds  = new Set(primary.map(p => p.id));
-          const primaryTags = new Set(primary.flatMap(p => p.tags || []));
-          const related = rows.filter(r => {
-            if (primaryIds.has(r.id)) return false;
-            if (Array.isArray(r.tags) && r.tags.some(t => primaryTags.has(t))) return true;
-            if (primary[0] && r.category === primary[0].category) return true;
-            const title = normalizeText(r.title || '');
-            const desc  = normalizeText(r.description || '');
-            return tokens.some(tok => title.includes(tok) || desc.includes(tok));
+          if (!primary.length) primary = rows.filter(r => {
+            const t = normalizeText(r.title || ''), d = normalizeText(r.description || ''), a = normalizeText(r.author || '');
+            return tokens.some(tok => t.includes(tok) || d.includes(tok) || a.includes(tok) ||
+              (Array.isArray(r.tags) && r.tags.some(x => normalizeText(x).includes(tok))));
           }).slice(0, ITEMS_PER_CAROUSEL);
-
+          const pIds = new Set(primary.map(p => p.id));
+          const pTags = new Set(primary.flatMap(p => p.tags || []));
+          const related = rows.filter(r => {
+            if (pIds.has(r.id)) return false;
+            if (Array.isArray(r.tags) && r.tags.some(t => pTags.has(t))) return true;
+            if (primary[0] && r.category === primary[0].category) return true;
+            const t = normalizeText(r.title || ''), d = normalizeText(r.description || '');
+            return tokens.some(tok => t.includes(tok) || d.includes(tok));
+          }).slice(0, ITEMS_PER_CAROUSEL);
           if (isStale()) return;
           setSearchResults(primary);
           setSearchRelated(related);
           setTagsReloadKey(k => k + 1);
-        } catch (err) {
-          console.error('search error', err);
-        } finally {
-          const elapsed = Date.now() - start;
-          if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-          if (!isStale()) setLoadingGlobal(false);
-        }
+        } catch (err) { console.error('search error', err); }
+        finally { const e = Date.now() - start; if (e < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - e); if (!isStale()) setLoadingGlobal(false); }
         return;
       }
 
-      /* ── SPECIFIC CATEGORY ── */
       if (!isForYou) {
         const start = Date.now();
         try {
-          const placeholder = await fastFetchList(ITEMS_PER_CAROUSEL, selectedCategory);
+          const block = await fetchContentBlock(selectedCategory);
           if (isStale()) return;
-          setLoadedCategoryBlocks([{
-            category: selectedCategory,
-            newest: placeholder, mostLiked: placeholder, highestRated: placeholder, mostViewed: placeholder
-          }]);
-
-          (async () => {
-            try {
-              const block = await fetchContentBlock(selectedCategory);
-              if (isStale()) return;
-              if (block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length) {
-                setLoadedCategoryBlocks([block]);
-              }
-              setTagsReloadKey(k => k + 1);
-            } catch (err) { console.error('specific cat bg fetch error', err); }
-          })();
-        } catch (err) {
-          console.error('specific cat fetch error', err);
-        } finally {
-          const elapsed = Date.now() - start;
-          if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-          if (!isStale()) setLoadingGlobal(false);
-        }
+          if (block.newest.length || block.mostLiked.length || block.highestRated.length || block.mostViewed.length)
+            setLoadedCategoryBlocks([block]);
+          setTagsReloadKey(k => k + 1);
+        } catch (err) { console.error('specific cat fetch error', err); }
+        finally { const e = Date.now() - start; if (e < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - e); if (!isStale()) setLoadingGlobal(false); }
         return;
       }
 
-      /* ── FOR YOU (default) ── */
-      const start = Date.now();
-      try {
-        const fast = await fastFetchList(ITEMS_PER_CAROUSEL);
-        if (isStale()) return;
-        safeSetGlobal({ newest: fast, mostLiked: fast, highestRated: fast, mostViewed: fast });
-
-        (async () => {
-          try {
-            const [globalBlock, cats] = await Promise.all([
-              fetchContentBlock(),
-              fetchTopCategories(200),
-            ]);
-            if (isStale()) return;
-
-            safeSetGlobal(prev => ({
-              newest:       globalBlock.newest.length       ? globalBlock.newest       : prev.newest,
-              mostLiked:    globalBlock.mostLiked.length    ? globalBlock.mostLiked    : prev.mostLiked,
-              highestRated: globalBlock.highestRated.length ? globalBlock.highestRated : prev.highestRated,
-              mostViewed:   globalBlock.mostViewed.length   ? globalBlock.mostViewed   : prev.mostViewed,
-            }));
-
-            setTagsReloadKey(k => k + 1);
-            setCategoryQueue(cats);
-            setHasMoreCategories(cats.length > 0);
-
-            const initialBatch = cats.slice(0, CATEGORY_BATCH);
-            const rest         = cats.slice(initialBatch.length);
-            if (initialBatch.length) {
-              const placeholders = await Promise.all(
-                initialBatch.map(c => fastFetchList(4, c).then(items => ({
-                  category: c, newest: items, mostLiked: items, highestRated: items, mostViewed: items
-                })))
-              );
-              if (isStale()) return;
-              setLoadedCategoryBlocks(placeholders);
-              setCategoryQueue(rest);
-              setHasMoreCategories(rest.length > 0);
-
-              (async () => {
-                try {
-                  const blocks = await Promise.all(initialBatch.map(c => fetchContentBlock(c)));
-                  if (isStale()) return;
-                  blocks
-                    .filter(b => b.newest.length || b.mostLiked.length || b.highestRated.length || b.mostViewed.length)
-                    .forEach(blk => replaceCategoryBlock(blk));
-                } catch (err) { console.error('bg initial cat fetch failed', err); }
-              })();
-            }
-          } catch (err) { console.error('bg load failed', err); }
-        })();
-      } catch (err) {
-        console.error('Initial global fast load failed', err);
-      } finally {
-        const elapsed = Date.now() - start;
-        if (elapsed < MIN_LOAD_MS) await sleep(MIN_LOAD_MS - elapsed);
-        if (!isStale()) setLoadingGlobal(false);
-      }
+      // ForYou is handled inside PersonalisedFeed
+      setLoadingGlobal(false);
     })();
-
     return () => { cancelled = true; generationRef.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory, effectiveQuery, isDraftTab, isBriefTab, isForYou]);
 
-  /* ── sentinel IntersectionObserver ── */
   useEffect(() => {
     if (!sentinelRef.current) return;
-    const node = sentinelRef.current;
     const obs = new IntersectionObserver(
-      entries => entries.forEach(e => {
-        if (e.isIntersecting && hasMoreCategories && !loadingCategories) loadNextCategoryBatch();
-      }),
+      entries => entries.forEach(e => { if (e.isIntersecting && hasMoreCategories && !loadingCategories) loadNextCategoryBatch(); }),
       { root: null, rootMargin: '600px', threshold: 0.1 }
     );
-    obs.observe(node);
+    obs.observe(sentinelRef.current);
     return () => obs.disconnect();
   }, [hasMoreCategories, loadingCategories, loadNextCategoryBatch]);
 
-  /* ── tagged content ── */
   const fetchTaggedContent = useCallback(async (tag, category = null, limit = ITEMS_PER_CAROUSEL) => {
     if (!tag) return [];
     try {
-      let q = supabase.from('book_summaries')
-        .select(SELECT_WITH_COUNTS)
-        .eq('status', 'published')
-        .contains('tags', [tag])
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS).eq('status', 'published')
+        .contains('tags', [tag]).order('created_at', { ascending: false }).limit(limit);
       if (category) q = q.eq('category', category);
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data || []).map(normalizeRow);
-    } catch (err) {
-      console.error('fetchTaggedContent error', err);
-      return [];
-    }
+      const { data, error } = await q; if (error) throw error;
+      return filterOutOldBriefs((data || []).map(normalizeRow));
+    } catch (err) { console.error('fetchTaggedContent error', err); return []; }
   }, []);
 
   useEffect(() => {
@@ -1201,35 +956,21 @@ const ContentFeed = ({
       if (!selectedTags.length) { setTaggedResults(null); setTaggedLoading(false); return; }
       setTaggedLoading(true);
       try {
-        const rows = await fetchTaggedContent(
-          selectedTags[0],
-          !isForYou ? selectedCategory : null,
-          ITEMS_PER_CAROUSEL
-        );
+        const rows = await fetchTaggedContent(selectedTags[0], !isForYou ? selectedCategory : null, ITEMS_PER_CAROUSEL);
         if (mountedRef.current && alive) setTaggedResults(rows);
-      } catch (err) {
-        if (mountedRef.current && alive) setTaggedResults([]);
-      } finally {
-        if (mountedRef.current && alive) setTaggedLoading(false);
-      }
+      } catch (err) { if (mountedRef.current && alive) setTaggedResults([]); }
+      finally { if (mountedRef.current && alive) setTaggedLoading(false); }
     })();
     return () => { alive = false; };
   }, [selectedTags, selectedCategory, fetchTaggedContent, isForYou]);
 
-  const toggleTag  = useCallback((tag) => {
-    const lower = tag.toLowerCase();
-    setSelectedTags(prev => (prev.length > 0 && prev[0] === lower) ? [] : [lower]);
-  }, []);
+  const toggleTag    = useCallback((tag) => { setSelectedTags(prev => (prev.length > 0 && prev[0] === tag.toLowerCase()) ? [] : [tag.toLowerCase()]); }, []);
+  const clearTags    = useCallback(() => setSelectedTags([]), []);
 
-  const clearTags = useCallback(() => setSelectedTags([]), []);
-
-  /* ── render helpers ── */
-  const renderCards = useCallback((items, mode = 'newest') => {
+  const renderCards  = useCallback((items, mode = 'newest') => {
     if (!items || !Array.isArray(items)) return null;
     const src = mode === 'search' ? items : rankItemsWithBoost(items, selectedTags, mode);
-    return (src || []).map(s => (
-      <BookSummaryCard key={String(s.id ?? s.slug)} summary={s} onEdit={onEdit} onDelete={onDelete} />
-    ));
+    return (src || []).map(s => <BookSummaryCard key={String(s.id ?? s.slug)} summary={s} onEdit={onEdit} onDelete={onDelete} />);
   }, [onEdit, onDelete, rankItemsWithBoost, selectedTags]);
 
   const buildViewAllLink = useCallback((sortKey = 'newest', category = null, tag = null) => {
@@ -1237,15 +978,11 @@ const ContentFeed = ({
     if (sortKey)  p.set('sort', sortKey);
     if (category) p.set('category', category);
     if (tag)      { p.set('tag', tag); p.set('tag_only', '1'); }
-    const s = p.toString();
-    return s ? `/explore?${s}` : '/explore';
+    const s = p.toString(); return s ? `/explore?${s}` : '/explore';
   }, []);
 
   const buildSeeMoreText = useCallback(({ sortKey = 'newest', category = null, tag = null } = {}) => {
-    const map = {
-      newest: 'Newest Content', likes: 'Most Liked content',
-      rating: 'Most Rated Content', views: 'Most Viewed Content',
-    };
+    const map = { newest: 'Newest Content', likes: 'Most Liked content', rating: 'Most Rated Content', views: 'Most Viewed Content' };
     const base = map[sortKey] || 'more content';
     if (tag)      return `Explore More From ${base} In "${tag}"`;
     if (category) return `Explore More From ${base} In ${category}`;
@@ -1254,46 +991,92 @@ const ContentFeed = ({
 
   const SeeMoreCTA = useCallback(({ href, text }) => {
     if (!href) return null;
-    return (
-      <div className="see-more-wrapper">
-        <a href={href} className="see-more-btn" role="button">{text}</a>
-      </div>
-    );
+    return <div className="see-more-wrapper"><a href={href} className="see-more-btn" role="button">{text}</a></div>;
   }, []);
 
-  /* ── DRAFT TAB ── */
-  if (isDraftTab && canSeeDrafts) {
-    return (
+  /* ── Early returns ── */
+  if (isDraftTab && canSeeDrafts)  return <div className="content-feed-root" ref={rootRef}><DraftPanel onEdit={onEdit} /></div>;
+  if (isDraftTab && !canSeeDrafts) return <div className="content-feed-root" ref={rootRef}><p style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>You don't have permission to view drafts.</p></div>;
+  if (isBriefTab)                  return <div className="content-feed-root" ref={rootRef}><BriefsFeed /></div>;
+
+  if (isForYou) {
+    if (!authChecked) return (
       <div className="content-feed-root" ref={rootRef}>
-        <DraftPanel onEdit={onEdit} />
+        <div className="centered-loader-viewport"><div className="centered-loader"><div className="spinner" /><p className="loader-text">Loading…</p></div></div>
+      </div>
+    );
+    if (!onboardingComplete) return (
+      <div className="content-feed-root" ref={rootRef}>
+        <FeedOnboarding onComplete={() => setOnboardingComplete(true)} />
       </div>
     );
   }
 
-  if (isDraftTab && !canSeeDrafts) {
-    return (
-      <div className="content-feed-root" ref={rootRef}>
-        <p style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
-          You don't have permission to view drafts.
-        </p>
-      </div>
-    );
-  }
+  /* ── Render ── */
+  const renderContent = () => {
+    if (isForYou) return <PersonalisedFeed userId={currentUserId} />;
 
-  /* ── BRIEFS TAB ── */
-  if (isBriefTab) {
     return (
-      <div className="content-feed-root" ref={rootRef}>
-        <BriefsFeed />
-      </div>
-    );
-  }
+      <>
+        <div className="categories-bar" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+            {availableTags.length === 0
+              ? <div className="hf-loading">{!isForYou ? 'No tags for this category.' : 'Loading tags…'}</div>
+              : availableTags.map(tag => {
+                  const active = selectedTags.includes(tag.toLowerCase());
+                  return <button key={tag} className={`category-chip${active ? ' active' : ''}`} onClick={() => toggleTag(tag)} aria-pressed={active} type="button" title={`Filter by ${tag}`}>{tag}</button>;
+                })
+            }
+          </div>
+          {selectedTags.length > 0 && <button className="hf-btn" type="button" onClick={clearTags}>Clear tags ({selectedTags.length})</button>}
+        </div>
 
-  /* ── NORMAL FEED ── */
+        {selectedTags.length > 0 && (
+          <section className="feed-section">
+            <HorizontalCarousel title={`Tag: ${selectedTags[0]}`} items={taggedResults || []} loading={taggedLoading} skeletonCount={6}>
+              {renderCards(taggedResults || [], 'newest')}
+            </HorizontalCarousel>
+            <SeeMoreCTA href={buildViewAllLink('newest', !isForYou ? selectedCategory : null, selectedTags[0])}
+              text={buildSeeMoreText({ sortKey: 'newest', category: !isForYou ? selectedCategory : null, tag: selectedTags[0] })} />
+          </section>
+        )}
+
+        {effectiveQuery.trim() && (<>
+          <section className="feed-section">
+            <HorizontalCarousel title={`Results for "${effectiveQuery}"`} items={searchResults} loading={loadingGlobal} skeletonCount={6} emptyMessage={`No results for "${effectiveQuery}"`}>
+              {renderCards(searchResults, 'search')}
+            </HorizontalCarousel>
+            <SeeMoreCTA href={`/explore?q=${encodeURIComponent(effectiveQuery)}`} text={`Explore more results for "${effectiveQuery}"`} />
+          </section>
+          {searchRelated.length > 0 && (
+            <section className="feed-section">
+              <HorizontalCarousel title="Related content" items={searchRelated} loading={loadingGlobal} skeletonCount={6}>{renderCards(searchRelated, 'search')}</HorizontalCarousel>
+              <SeeMoreCTA href={buildViewAllLink('newest')} text="Explore more related content" />
+            </section>
+          )}
+        </>)}
+
+        {!isForYou && !effectiveQuery && loadedCategoryBlocks.length > 0 && (
+          <div key={`${loadedCategoryBlocks[0].category}-single`}>
+            {SECTIONS.map(({ key, title, sortKey }) => {
+              const items = loadedCategoryBlocks[0][key];
+              return (
+                <section className="feed-section" key={key}>
+                  <HorizontalCarousel title={`${title} in ${loadedCategoryBlocks[0].category}`} items={items} loading={loadingGlobal} skeletonCount={6}>
+                    {renderCards(items, sortKey)}
+                  </HorizontalCarousel>
+                  <SeeMoreCTA href={buildViewAllLink(sortKey, loadedCategoryBlocks[0].category)} text={buildSeeMoreText({ sortKey, category: loadedCategoryBlocks[0].category })} />
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="content-feed-root" ref={rootRef}>
-
-      {/* Mission banner */}
       <section className="intro-banner" role="region" aria-label="Mission statement" aria-live="polite">
         <div className="intro-banner-inner">
           <div className="intro-banner-icon" aria-hidden="true">
@@ -1311,152 +1094,7 @@ const ContentFeed = ({
           </div>
         </div>
       </section>
-
-      {/* Tags bar */}
-      <div className="categories-bar" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-          {availableTags.length === 0 ? (
-            <div className="hf-loading">
-              {!isForYou ? 'No tags for this category.' : 'Loading tags…'}
-            </div>
-          ) : (
-            availableTags.map(tag => {
-              const active = selectedTags.includes(tag.toLowerCase());
-              return (
-                <button
-                  key={tag}
-                  className={`category-chip${active ? ' active' : ''}`}
-                  onClick={() => toggleTag(tag)}
-                  aria-pressed={active}
-                  type="button"
-                  title={`Filter by ${tag}`}
-                >
-                  {tag}
-                </button>
-              );
-            })
-          )}
-        </div>
-        {selectedTags.length > 0 && (
-          <button className="hf-btn" type="button" onClick={clearTags}>
-            Clear tags ({selectedTags.length})
-          </button>
-        )}
-      </div>
-
-      {/* Tagged results */}
-      {selectedTags.length > 0 && (
-        <section className="feed-section">
-          <HorizontalCarousel
-            title={`Tag: ${selectedTags[0]}`}
-            items={taggedResults || []}
-            loading={taggedLoading}
-            skeletonCount={6}
-          >
-            {renderCards(taggedResults || [], 'newest')}
-          </HorizontalCarousel>
-          <SeeMoreCTA
-            href={buildViewAllLink('newest', !isForYou ? selectedCategory : null, selectedTags[0])}
-            text={buildSeeMoreText({ sortKey: 'newest', category: !isForYou ? selectedCategory : null, tag: selectedTags[0] })}
-          />
-        </section>
-      )}
-
-      {/* Search results */}
-      {effectiveQuery.trim() && (
-        <>
-          <section className="feed-section">
-            <HorizontalCarousel
-              title={`Results for "${effectiveQuery}"`}
-              items={searchResults}
-              loading={loadingGlobal}
-              skeletonCount={6}
-              emptyMessage={`No results for "${effectiveQuery}"`}
-            >
-              {renderCards(searchResults, 'search')}
-            </HorizontalCarousel>
-            <SeeMoreCTA href={`/explore?q=${encodeURIComponent(effectiveQuery)}`} text={`Explore more results for "${effectiveQuery}"`} />
-          </section>
-
-          {searchRelated.length > 0 && (
-            <section className="feed-section">
-              <HorizontalCarousel title="Related content" items={searchRelated} loading={loadingGlobal} skeletonCount={6}>
-                {renderCards(searchRelated, 'search')}
-              </HorizontalCarousel>
-              <SeeMoreCTA href={buildViewAllLink('newest')} text="Explore more related content" />
-            </section>
-          )}
-        </>
-      )}
-
-      {/* Specific category (no search) */}
-      {!isForYou && !effectiveQuery && loadedCategoryBlocks.length > 0 && (
-        <div key={`${loadedCategoryBlocks[0].category}-single`}>
-          {SECTIONS.map(({ key, title, sortKey }) => {
-            const items = loadedCategoryBlocks[0][key];
-            return (
-              <section className="feed-section" key={key}>
-                <HorizontalCarousel
-                  title={`${title} in ${loadedCategoryBlocks[0].category}`}
-                  items={items}
-                  loading={loadingGlobal}
-                  skeletonCount={6}
-                >
-                  {renderCards(items, sortKey)}
-                </HorizontalCarousel>
-                <SeeMoreCTA
-                  href={buildViewAllLink(sortKey, loadedCategoryBlocks[0].category)}
-                  text={buildSeeMoreText({ sortKey, category: loadedCategoryBlocks[0].category })}
-                />
-              </section>
-            );
-          })}
-        </div>
-      )}
-
-      {/* For You / All (default) */}
-      {isForYou && !effectiveQuery && (
-        <>
-          {SECTIONS.map(({ key, title, sortKey }) => (
-            <section className="feed-section" key={key}>
-              <HorizontalCarousel title={title} items={globalContent[key]} loading={loadingGlobal} skeletonCount={6}>
-                {renderCards(globalContent[key], sortKey)}
-              </HorizontalCarousel>
-              <SeeMoreCTA href={buildViewAllLink(sortKey)} text={buildSeeMoreText({ sortKey })} />
-            </section>
-          ))}
-
-          {loadedCategoryBlocks.map((block, i) => (
-            <section className="category-block" key={`${String(block.category)}-${i}`}>
-              <div className="category-block-header">
-                <h3 className="cat-title">{block.category}</h3>
-              </div>
-              {SECTIONS.map(({ key, title, sortKey }) => (
-                <section className="feed-section" key={`${block.category}-${key}`}>
-                  <HorizontalCarousel
-                    title={`${title} in ${block.category}`}
-                    items={block[key]}
-                    loading={loadingGlobal}
-                    skeletonCount={4}
-                  >
-                    {renderCards(block[key], sortKey)}
-                  </HorizontalCarousel>
-                  <SeeMoreCTA
-                    href={buildViewAllLink(sortKey, block.category)}
-                    text={buildSeeMoreText({ sortKey, category: block.category })}
-                  />
-                </section>
-              ))}
-            </section>
-          ))}
-
-          <div ref={sentinelRef} style={{ height: 1, width: '100%' }} aria-hidden="true" />
-          {loadingCategories && <div className="categories-loading">Loading more categories...</div>}
-          {!hasMoreCategories && !loadingCategories && loadedCategoryBlocks.length > 0 && (
-            <div className="categories-end">You've reached the end of the line.</div>
-          )}
-        </>
-      )}
+      {renderContent()}
     </div>
   );
 };

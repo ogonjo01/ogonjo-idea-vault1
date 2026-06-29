@@ -1031,3 +1031,533 @@ html {
   .reader-controls { padding: 0 10px; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
   .rc-theme-dropdown { right: auto; left: 0; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW STYLES – append to the end of SummaryView.css
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Progress bar (inside header) ──────────────────────────────────────── */
+.summary-progress-track {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 4px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+}
+
+.summary-progress-bar {
+  height: 100%;
+  border-radius: 0 0 10px 10px;
+  transition: width 0.25s ease;
+}
+
+/* ── Read‑time badge (fades on scroll) ─────────────────────────────────── */
+.header-readtime-badge {
+  position: absolute;
+  top: calc(var(--header-height) + var(--category-height) + 56px); /* right below the sticky header */
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15,127,99,0.95);
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 24px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.1);
+  transition: opacity 0.25s ease;
+  opacity: 1;
+  pointer-events: none; /* users don't interact with it */
+}
+
+.header-readtime-badge .readtime-icon {
+  font-size: 1rem;
+}
+
+/* When the header is collapsed (scrolled) the badge is hidden by React state,
+   so no extra CSS needed. */
+
+/* ── Save button – desktop only ────────────────────────────────────────── */
+.save-btn-desktop {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 0.88rem !important;
+  background: #f9fafb !important;
+  border: 1.5px solid #e5e7eb !important;
+  color: #374151 !important;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.1s;
+}
+
+.save-btn-desktop:hover {
+  background: #f0fdf4 !important;
+  border-color: #0f7f63 !important;
+  color: #0f7f63 !important;
+}
+
+.save-btn-desktop.saved {
+  background: #0f7f63 !important;
+  border-color: #0f7f63 !important;
+  color: #fff !important;
+}
+
+/* Hide label text when header collapsed to save space */
+.summary-header.collapsed .save-btn-label {
+  display: none;
+}
+
+/* ── Save button – mobile only (inside engagement row) ─────────────────── */
+.save-btn-mobile {
+  display: none !important;  /* hidden on desktop */
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #eef3f6;
+  color: #374151;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.save-btn-mobile.saved {
+  background: #0f7f63 !important;
+  border-color: #0f7f63 !important;
+  color: #fff !important;
+}
+
+/* ── Mobile adjustments ────────────────────────────────────────────────── */
+@media (max-width: 780px) {
+  /* Show save button in engagement row, hide desktop save */
+  .save-btn-mobile {
+    display: inline-flex !important;
+  }
+  .save-btn-desktop {
+    display: none !important;
+  }
+
+  /* Make engagement row scrollable if needed */
+  .summary-engagement {
+    gap: 6px;
+  }
+}
+
+/* ── Ensure the header grid accommodates the progress bar row ─────────── */
+.summary-header {
+  grid-template-rows: auto auto auto; /* title, engagement, progress */
+}
+
+.summary-progress-track {
+  grid-row: 3 / 4;
+}
+
+/* ── Progress bar with dot ────────────────────────────────────────── */
+.summary-progress-track {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 4px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+}
+
+.summary-progress-bar {
+  position: relative;
+  height: 100%;
+  border-radius: 0 0 10px 10px;
+  transition: width 0.25s ease;
+}
+
+.summary-progress-dot {
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0,0,0,0.25);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW / UPDATED STYLES – append to the end of SummaryView.css
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Progress bar (inside header) ──────────────────────────────────────── */
+.summary-progress-track {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 4px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+}
+
+.summary-progress-bar {
+  position: relative;          /* enables dot positioning */
+  height: 100%;
+  border-radius: 0 0 10px 10px;
+  transition: width 0.25s ease;
+}
+
+.summary-progress-dot {
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0,0,0,0.25);
+}
+
+/* ── Read‑time badge ──────────────────────────────────────────────────── */
+.header-readtime-badge {
+  position: absolute;
+  top: calc(var(--header-height) + var(--category-height) + 56px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15,127,99,0.95);
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 24px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.1);
+  transition: opacity 0.25s ease;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.header-readtime-badge .readtime-icon {
+  font-size: 1rem;
+}
+
+/* ── Sign‑in popup (redesigned) ────────────────────────────────────────── */
+.signin-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+  animation: signinFadeIn 0.2s ease;
+}
+
+@keyframes signinFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.signin-popup {
+  background: #fff;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.15);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 36px 28px 28px;
+  animation: signinSlideUp 0.25s ease;
+}
+
+@keyframes signinSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.signin-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 1.1rem;
+  padding: 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s;
+}
+.signin-close:hover { color: #374151; }
+
+.signin-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.signin-icon-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0f7f63, #0a6b53);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(15,127,99,0.25);
+}
+
+.signin-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0b1220;
+  margin: 0;
+  text-align: center;
+}
+
+.signin-sub {
+  font-size: 0.88rem;
+  color: #6b7280;
+  margin: 0;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.signin-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 0.93rem;
+  color: #0b1220;
+  background: #f9fafb;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.signin-input:focus {
+  border-color: #0f7f63;
+  background: #fff;
+}
+
+.signin-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+.signin-submit {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #0f7f63, #0a6b53);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.12s, transform 0.1s;
+}
+.signin-submit:hover { opacity: 0.93; }
+.signin-submit:active { transform: scale(0.98); }
+.signin-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.signin-toggle {
+  background: none;
+  border: none;
+  color: #0f7f63;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  padding: 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Button rotation for desktop ──────────────────────────────────────── */
+
+/* Share button in meta row (desktop only) */
+.share-btn-meta {
+  display: none;                     /* hidden by default */
+}
+@media (min-width: 781px) {
+  .share-btn-meta {
+    display: inline-flex !important;
+    align-items: center;
+    padding: 4px 8px;
+    margin-left: 8px;
+  }
+ 
+  /* Hide difficulty badge from meta row (it's now in actions) */
+  .summary-difficulty-inline {
+    display: none !important;
+  }
+  /* Show the difficulty badge inside actions */
+  .difficulty-badge-actions {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+  }
+}
+/* On mobile, show the original share button (inside actions) */
+@media (max-width: 780px) {
+  .share-btn-meta {
+    display: none !important;
+  }
+  .summary-actions .share-btn {
+    display: inline-flex !important;
+  }
+  .summary-difficulty-inline {
+    display: flex !important;     /* keep difficulty in title area on mobile */
+  }
+  .difficulty-badge-actions {
+    display: none !important;
+  }
+}
+
+/* ── Save button – desktop only ──────────────────────────────────────── */
+.save-btn-desktop {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  font-size: 0.88rem !important;
+  background: #f9fafb !important;
+  border: 1.5px solid #e5e7eb !important;
+  color: #374151 !important;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.1s;
+}
+
+.save-btn-desktop:hover {
+  background: #f0fdf4 !important;
+  border-color: #0f7f63 !important;
+  color: #0f7f63 !important;
+}
+
+.save-btn-desktop.saved {
+  background: #0f7f63 !important;
+  border-color: #0f7f63 !important;
+  color: #fff !important;
+}
+
+.summary-header.collapsed .save-btn-label {
+  display: none;
+}
+
+/* ── Save button – mobile only (inside engagement row) ────────────────── */
+.save-btn-mobile {
+  display: none !important;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #eef3f6;
+  color: #374151;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.save-btn-mobile.saved {
+  background: #0f7f63 !important;
+  border-color: #0f7f63 !important;
+  color: #fff !important;
+}
+
+@media (max-width: 780px) {
+  .save-btn-mobile {
+    display: inline-flex !important;
+  }
+  .save-btn-desktop {
+    display: none !important;
+  }
+}
+
+/* ── Ensure header grid works with progress bar ─────────────────────── */
+.summary-header {
+  grid-template-rows: auto auto auto; /* title, engagement, progress */
+}
+.summary-progress-track {
+  grid-row: 3 / 4;
+}
+/* ══════════════════════════════════════════════════
+   MOBILE: star/author swap + save always visible
+══════════════════════════════════════════════════ */
+
+/* Rating-in-author-slot: hidden everywhere by default */
+.summary-stars-in-meta {
+  display: none;
+}
+
+@media (max-width: 780px) {
+
+  /* Save button always visible in engagement row on mobile */
+  .save-btn-mobile {
+    display: inline-flex !important;
+  }
+  .save-btn-desktop {
+    display: none !important;
+  }
+
+  /* EXPANDED on mobile: show author, hide rating-in-slot, show stars in engagement */
+  .summary-header.expanded .summary-author--expandable {
+    display: flex !important;
+  }
+  .summary-header.expanded .summary-stars-in-meta {
+    display: none !important;
+  }
+  .summary-header.expanded .rating-block--hideable {
+    display: flex !important;
+  }
+
+  /* COLLAPSED on mobile: hide author, show rating-in-slot, hide stars from engagement */
+  .summary-header.collapsed .summary-author--expandable {
+    display: none !important;
+  }
+  .summary-header.collapsed .summary-stars-in-meta {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .summary-stars-in-meta-value {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .summary-header.collapsed .rating-block--hideable {
+    display: none !important;
+  }
+}

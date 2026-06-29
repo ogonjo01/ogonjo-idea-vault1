@@ -3,70 +3,123 @@
    ========================= */
 
 .explore-page {
-  
-
   max-width: 1700px;
   margin: 0 auto;
   padding: 18px;
   padding-top: calc(var(--header-height, 64px) + 46px);
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
-/* =========================
-   HEADINGS
-   ========================= */
-
+/* ── Headings ── */
 .explore-page h2 {
   margin: 0 0 16px;
   font-size: 1.55rem;
   font-weight: 700;
   letter-spacing: -0.2px;
+  color: var(--text-primary, #111);
+}
+
+.explore-subtitle {
+  margin: -8px 0 20px;
+  font-size: 0.95rem;
+  color: var(--text-muted, #6b7280);
 }
 
 .explore-related-title {
   margin: 36px 0 14px;
   font-size: 1.2rem;
   font-weight: 700;
+  color: var(--text-primary, #111);
 }
 
-/* =========================
-   GRID
-   ========================= */
-
+/* ── Grid (desktop) ── */
 .explore-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
 }
 
-/* Related content slightly tighter */
+.explore-grid > * {
+  height: 100%;
+  min-width: 0;
+}
+
 .explore-grid.explore-related {
-  gap: 14px;
+  gap: 1.25rem;
 }
 
-/* =========================
-   EMPTY / LOADING STATES
-   ========================= */
+/* ── Mobile carousels (hidden on desktop) ── */
+.explore-mobile-carousels {
+  display: none;
+}
 
+/* ── End of feed CTA ── */
+.explore-end-cta {
+  text-align: center;
+  padding: 24px 0 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.explore-end-text {
+  color: var(--text-muted, #9ca3af);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.explore-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  border-radius: 24px;
+  border: 1px solid var(--border-color, #2d3748);
+  background: transparent;
+  color: var(--text-muted, #9ca3af);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.explore-back-btn:hover {
+  border-color: var(--accent, #06b6d4);
+  color: var(--accent, #06b6d4);
+  transform: translateY(-1px);
+}
+
+/* ── Empty / Loading / Error ── */
 .explore-empty {
   margin: 28px 0 12px;
-  padding: 28px 18px;
+  padding: 40px 20px;
   text-align: center;
-  color: #6b7280;
+  border-radius: 12px;
+  background: var(--bg-surface, rgba(255,255,255,0.03));
 }
 
 .explore-empty h3 {
   margin: 0 0 8px;
   font-size: 1.15rem;
   font-weight: 700;
-  color: #111;
+  color: var(--text-primary, #111);
+}
+
+.explore-empty p {
+  color: var(--text-muted, #6b7280);
+  max-width: 480px;
+  margin: 0 auto;
 }
 
 .explore-loading {
   margin: 18px 0;
   text-align: center;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--text-muted, #6b7280);
 }
 
 .explore-error {
@@ -75,18 +128,19 @@
   color: #b91c1c;
 }
 
-/* =========================
-   INFINITE SCROLL SENTINEL
-   ========================= */
-
+/* ── Sentinel ── */
 .explore-sentinel {
   height: 1px;
   margin-top: 24px;
 }
 
-/* =========================
-   MOBILE REFINEMENT
-   ========================= */
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .explore-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.25rem;
+  }
+}
 
 @media (max-width: 768px) {
   .explore-page {
@@ -100,10 +154,70 @@
   }
 
   .explore-grid {
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
   }
 
   .explore-related-title {
     margin-top: 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Hide grid, show carousels */
+  .explore-grid {
+    display: none;
+  }
+
+  .explore-mobile-carousels {
+    display: block;
+    margin: 1rem 0 1.5rem;
+  }
+
+  .explore-mobile-carousels .horizontal-carousel {
+    margin-bottom: 1.25rem;
+  }
+
+  .explore-page {
+    padding: 10px 8px;
+  }
+
+  .explore-page h2 {
+    font-size: 1.1rem;
+  }
+
+  .explore-related-title {
+    margin-top: 24px;
+  }
+
+  .explore-end-cta {
+    padding: 16px 0 24px;
+  }
+
+  .explore-back-btn {
+    padding: 6px 18px;
+    font-size: 0.8rem;
+  }
+}
+
+/* ── Dark mode ── */
+@media (prefers-color-scheme: dark) {
+  .explore-empty {
+    background: rgba(255,255,255,0.04);
+  }
+  .explore-empty h3 {
+    color: #f1f5f9;
+  }
+  .explore-empty p {
+    color: #94a3b8;
+  }
+
+  .explore-back-btn {
+    border-color: #2d3748;
+    color: #9ca3af;
+  }
+  .explore-back-btn:hover {
+    border-color: #06b6d4;
+    color: #06b6d4;
   }
 }

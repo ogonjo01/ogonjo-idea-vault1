@@ -21,6 +21,7 @@ const THEMES = {
     aiSurface:'rgba(139,92,246,0.06)', aiBorder:'rgba(139,92,246,0.2)', aiAccent:'#a78bfa',
     tooltipBg:'#0f172a', chatUserBg:'rgba(6,182,212,0.15)', chatAiBg:'rgba(255,255,255,0.04)',
     liveBg:'rgba(255,255,255,0.02)', liveBorder:'rgba(6,182,212,0.2)',
+    card:'rgba(255,255,255,0.04)',
   },
   white: {
     id:'white', label:'☀️ Light',
@@ -36,6 +37,7 @@ const THEMES = {
     aiSurface:'rgba(99,102,241,0.04)', aiBorder:'rgba(99,102,241,0.18)', aiAccent:'#6366f1',
     tooltipBg:'#1e293b', chatUserBg:'rgba(6,182,212,0.12)', chatAiBg:'rgba(0,0,0,0.04)',
     liveBg:'rgba(0,0,0,0.02)', liveBorder:'rgba(6,182,212,0.15)',
+    card:'rgba(0,0,0,0.03)',
   },
   green: {
     id:'green', label:'🌿 Premium',
@@ -51,6 +53,7 @@ const THEMES = {
     aiSurface:'rgba(16,185,129,0.06)', aiBorder:'rgba(16,185,129,0.22)', aiAccent:'#34d399',
     tooltipBg:'#022c22', chatUserBg:'rgba(16,185,129,0.15)', chatAiBg:'rgba(16,185,129,0.04)',
     liveBg:'rgba(16,185,129,0.03)', liveBorder:'rgba(16,185,129,0.2)',
+    card:'rgba(16,185,129,0.05)',
   },
 };
 
@@ -80,6 +83,12 @@ const ago = (iso) => {
   if(s<3600) return `${Math.round(s/60)}m ago`;
   if(s<86400) return `${Math.round(s/3600)}h ago`;
   return `${Math.round(s/86400)}d ago`;
+};
+const parseCount = (v) => {
+  if (v == null) return 0;
+  if (Array.isArray(v)) return Number(v[0]?.count ?? 0);
+  if (typeof v === 'object' && 'count' in v) return Number(v.count ?? 0);
+  return Number(v || 0);
 };
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
@@ -537,6 +546,495 @@ const PlatformBrief = ({ theme:T, topContent, catData, stats, prev, rawViews, pe
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// READER ENGAGEMENT (admin/team) — platform-wide aggregate, anonymous-safe.
+//
+// SCHEMA ASSUMPTION: behavior_events needs a `session_id` column (a random
+// UUID the frontend generates once per browser and stores in a cookie or
+// localStorage) IN ADDITION to the existing nullable `user_id`. Almost all
+// readers are not logged in, so counting by user_id alone misses them —
+// session_id is what lets us count and track anonymous readers too.
+// Expected event rows from the reading tracker, fired for every visitor
+// (signed in or not):
+//   { session_id, user_id?, article_id, event_type:'scroll_depth', value:0-100, created_at }
+//   { session_id, user_id?, article_id, event_type:'time_spent',   value:<seconds>, created_at }
+//   { session_id, user_id?, article_id, event_type:'completed',    created_at }
+// If you haven't added session_id yet, this still works for whatever rows
+// have a user_id — it just won't see anonymous traffic until the tracker
+// sends a session_id with every event.
+// ─────────────────────────────────────────────────────────────────────────────
+const formatSeconds = (s) => {
+  const sec = Math.round(s || 0);
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60), r = sec % 60;
+  return `${m}m ${r}s`;
+};
+
+const ReaderEngagement = ({ theme:T, period }) => {
+  const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState(null);
+  const [activeReaders,setActiveReaders]=useState(0);
+  const [articlesRead,setArticlesRead]=useState(0);
+  const [avgGoalPct,setAvgGoalPct]=useState(0);
+  const [savedTotal,setSavedTotal]=useState(0);
+  const [topCategories,setTopCategories]=useState([]);
+  const [activity,setActivity]=useState([]); // recent reading sessions, anon-safe
+
+  const load=useCallback(async()=>{
+    setLoading(true); setLoadError(null);
+    try {
+      const now=Date.now();
+      const since=new Date(now-periodMs[period]).toISOString();
+
+      // Pull every scroll / time / completion event in the period.
+      const { data:evts, error:evtsErr } = await supabase
+        .from('behavior_events')
+        .select('session_id,user_id,event_type,article_id,value,created_at')
+        .gte('created_at',since)
+        .in('event_type',['scroll_depth','time_spent','completed']);
+
+      if(evtsErr){
+        // Most common cause: Row Level Security blocking the SELECT for
+        // this client (e.g. a policy scoped to user_id = auth.uid(), or no
+        // SELECT policy at all). The rows can still exist in the table —
+        // check Supabase → Authentication → Policies on behavior_events.
+        console.error('behavior_events select error', evtsErr);
+        setLoadError(evtsErr.message || 'Could not read behavior_events (check RLS policies).');
+        setActiveReaders(0); setArticlesRead(0); setTopCategories([]); setActivity([]);
+        setLoading(false);
+        return;
+      }
+
+      // A "reader" is identified by session_id when present, falling back
+      // to user_id for older rows that predate anonymous tracking.
+      const readerKey = (e) => e.session_id || (e.user_id ? `u:${e.user_id}` : null);
+
+      const readerSet=new Set();
+      // Per (reader, article): max scroll %, total seconds, completed flag, last seen.
+      const sessions={};
+      (evts||[]).forEach(e=>{
+        const rk=readerKey(e); if(!rk) return;
+        readerSet.add(rk);
+        const key=`${rk}::${e.article_id}`;
+        if(!sessions[key]) sessions[key]={ readerKey:rk, article_id:e.article_id, progress:0, seconds:0, completed:false, lastSeen:e.created_at };
+        const s=sessions[key];
+        const v=Number(e.value)||0; // value is stored as text — coerce or time_spent sums string-concatenate
+        if(e.event_type==='scroll_depth') s.progress=Math.max(s.progress,v);
+        if(e.event_type==='time_spent')   s.seconds+=v;
+        if(e.event_type==='completed'){ s.completed=true; s.progress=100; }
+        if(new Date(e.created_at)>new Date(s.lastSeen)) s.lastSeen=e.created_at;
+      });
+
+      setActiveReaders(readerSet.size);
+
+      const sessionList=Object.values(sessions);
+      // "Read" = finished, or scrolled past 75% of the article.
+      const readSessions=sessionList.filter(s=>s.completed||s.progress>=75);
+      setArticlesRead(readSessions.length);
+
+      // Recent reading activity — EVERY session in the period, regardless
+      // of how far it got. This is intentionally not filtered by the 75%
+      // "read" threshold, so it still shows up while you're testing the
+      // tracker (e.g. scroll_depth stuck at 0 from a frontend bug).
+      const recent=sessionList.sort((a,b)=>new Date(b.lastSeen)-new Date(a.lastSeen)).slice(0,10);
+      const allTouchedIds=[...new Set(sessionList.map(s=>s.article_id))];
+
+      if(allTouchedIds.length){
+        const chunks=[]; for(let i=0;i<allTouchedIds.length;i+=100) chunks.push(allTouchedIds.slice(i,i+100));
+        const arts=(await Promise.all(chunks.map(c=>
+          supabase.from('book_summaries').select('id,title,category').in('id',c).then(r=>r.data||[])
+        ))).flat();
+        const artMap={}; arts.forEach(a=>{ artMap[a.id]={ title:a.title, category:a.category||'General' }; });
+
+        const catCountMap={};
+        readSessions.forEach(s=>{ const c=artMap[s.article_id]?.category||'General'; catCountMap[c]=(catCountMap[c]||0)+1; });
+        setTopCategories(Object.entries(catCountMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,count],i)=>({ name, count, color:CAT_COLOURS[i%CAT_COLOURS.length] })));
+
+        setActivity(recent.map(s=>({
+          ...s,
+          title:artMap[s.article_id]?.title||'Untitled',
+          category:artMap[s.article_id]?.category||'',
+          isAnon: !s.readerKey.startsWith('u:'),
+        })));
+      } else { setTopCategories([]); setActivity([]); }
+
+      // Weekly-goal progress only applies to signed-in readers (goals are
+      // stored per user_id), so this stat covers that subset only.
+      const { data:goals } = await supabase.from('reading_goals').select('user_id,target').eq('goal_type','weekly_articles');
+      if(goals&&goals.length){
+        const weekAgo=new Date(now-periodMs.Week).toISOString();
+        const { data:weekEvts } = await supabase.from('behavior_events').select('user_id').in('event_type',['time_spent','completed']).gte('created_at',weekAgo).not('user_id','is',null);
+        const weekCountByUser={};
+        (weekEvts||[]).forEach(e=>{ weekCountByUser[e.user_id]=(weekCountByUser[e.user_id]||0)+1; });
+        const pcts=goals.map(g=>Math.min(100,Math.round(((weekCountByUser[g.user_id]||0)/Math.max(1,g.target))*100)));
+        setAvgGoalPct(pcts.length?Math.round(pcts.reduce((s,v)=>s+v,0)/pcts.length):0);
+      } else setAvgGoalPct(0);
+
+      const { count:savedCount } = await supabase.from('saved_articles').select('*',{count:'exact',head:true});
+      setSavedTotal(savedCount||0);
+
+    } catch(err){
+      console.error('ReaderEngagement error', err);
+      setLoadError(err.message||'Something went wrong loading engagement data.');
+    }
+    finally{ setLoading(false); }
+  },[period]);
+
+  useEffect(()=>{ load(); },[load]);
+
+  if(loading) return (
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12,color:T.textMuted,fontSize:12,textAlign:'center'}}>
+      Loading reader engagement…
+    </div>
+  );
+
+  return (
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:1.5,color:T.textSub}}>📚 Reader Engagement — {period} <span style={{color:T.textMuted,fontWeight:500,textTransform:'none',letterSpacing:0}}>(includes non-signed-in readers)</span></div>
+        <button onClick={load} style={{background:'none',border:'none',color:T.textMuted,cursor:'pointer',fontSize:13}}>↻</button>
+      </div>
+      {loadError && (
+        <div style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:9,padding:'8px 12px',color:'#f87171',fontSize:11,marginBottom:12,lineHeight:1.5}}>
+          ⚠️ Couldn't read engagement data: <strong>{loadError}</strong>. This usually means Row Level Security on <code>behavior_events</code> is blocking the SELECT for this account — check Supabase → Authentication → Policies, not the data itself.
+        </div>
+      )}
+      <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+        <StatCard label="Active Readers" value={activeReaders} icon="🧑‍💻" accent="#06b6d4" theme={T}/>
+        <StatCard label="Articles Read" value={articlesRead} icon="✅" accent="#10b981" theme={T}/>
+        <StatCard label="Saved (all-time)" value={savedTotal} icon="🔖" accent="#f59e0b" theme={T}/>
+        <StatCard label="Avg Goal Progress" value={`${avgGoalPct}%`} icon="🎯" accent="#8b5cf6" theme={T}/>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1.3fr',gap:10}}>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:T.textMuted,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Top Categories (read)</div>
+          {topCategories.length===0
+            ? <div style={{fontSize:12,color:T.textMuted}}>No reading activity yet</div>
+            : topCategories.map(c=>(
+              <div key={c.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <div style={{width:6,height:6,borderRadius:'50%',background:c.color,flexShrink:0}}/>
+                  <span style={{fontSize:11,color:T.text}}>{c.name}</span>
+                </div>
+                <span style={{fontSize:11,fontWeight:600,color:T.textSub}}>{c.count}</span>
+              </div>
+            ))
+          }
+        </div>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:T.textMuted,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>📖 Recent Reading Activity</div>
+          {activity.length===0
+            ? <div style={{fontSize:12,color:T.textMuted}}>No reading activity yet — try reading an article yourself to test the tracker</div>
+            : <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:280,overflowY:'auto',paddingRight:2}}>
+              {activity.map((s,i)=>(
+                <div key={`${s.readerKey}-${s.article_id}-${i}`} style={{background:T.card||T.surface,border:`1px solid ${T.border}`,borderRadius:9,padding:'8px 10px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:5}}>
+                    <span style={{fontSize:11,fontWeight:600,color:T.text,lineHeight:1.35,flex:1,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:1,WebkitBoxOrient:'vertical'}}>{s.title}</span>
+                    <span style={{fontSize:9,color:s.isAnon?T.textMuted:T.accent,background:s.isAnon?T.surface:T.accent+'18',border:`1px solid ${s.isAnon?T.border:T.accent+'33'}`,padding:'1px 6px',borderRadius:20,flexShrink:0,whiteSpace:'nowrap'}}>{s.isAnon?'👤 guest':'✓ signed in'}</span>
+                  </div>
+                  <div style={{height:5,background:T.border,borderRadius:3,overflow:'hidden',marginBottom:5}}>
+                    <div style={{width:`${Math.min(100,Math.round(s.progress))}%`,height:'100%',background:s.completed?'#34d399':T.accent,borderRadius:3,transition:'width 0.4s ease'}}/>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:10,color:T.textMuted}}>{Math.min(100,Math.round(s.progress))}% scrolled{s.completed?' · completed':''}</span>
+                    <span style={{fontSize:10,color:T.textSub}}>⏱ {formatSeconds(s.seconds)} · {ago(s.lastSeen)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEARNING DASHBOARD (per-user) — streaks, badges, goals, saved, continue
+// reading, recommendations, Ogonjo Briefs. Available to every signed-in user.
+// ─────────────────────────────────────────────────────────────────────────────
+const LearningDashboard = ({ userId, theme:T }) => {
+  const [streak,setStreak]=useState(0);
+  const [articlesWeek,setArticlesWeek]=useState(0);
+  const [badges,setBadges]=useState([]);
+  const [saved,setSaved]=useState([]);
+  const [continueList,setContinueList]=useState([]);
+  const [nextRead,setNextRead]=useState([]);
+  const [briefs,setBriefs]=useState([]);
+  const [showBriefs,setShowBriefs]=useState(true);
+  const [weeklyGoal,setWeeklyGoal]=useState(3);
+  const [goalInput,setGoalInput]=useState(3);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    if(!userId) return;
+    const run=async()=>{
+      setLoading(true);
+      try {
+        const { data:evts } = await supabase
+          .from('behavior_events').select('created_at')
+          .eq('user_id',userId).order('created_at',{ascending:false}).limit(300);
+        if(evts){
+          const days=new Set(evts.map(e=>e.created_at.slice(0,10)));
+          let s=0; const d=new Date();
+          while(days.has(d.toISOString().slice(0,10))){ s++; d.setDate(d.getDate()-1); }
+          setStreak(s);
+        }
+
+        const weekAgo=new Date(Date.now()-7*86400000).toISOString();
+        const { count:weekCount } = await supabase
+          .from('behavior_events').select('*',{count:'exact',head:true})
+          .eq('user_id',userId).in('event_type',['time_spent','completed']).gte('created_at',weekAgo);
+        setArticlesWeek(weekCount||0);
+
+        const { data:completedEvts } = await supabase
+          .from('behavior_events').select('article_id')
+          .eq('user_id',userId).eq('event_type','completed');
+        if(completedEvts&&completedEvts.length){
+          const ids=[...new Set(completedEvts.map(e=>e.article_id))];
+          const chunks=[]; for(let i=0;i<ids.length;i+=100) chunks.push(ids.slice(i,i+100));
+          const articleData=(await Promise.all(chunks.map(c=>
+            supabase.from('book_summaries').select('category, tags').in('id',c).then(r=>r.data||[])
+          ))).flat();
+          const catCount={}, tagCount={};
+          articleData.forEach(a=>{
+            const cat=a.category||'General'; catCount[cat]=(catCount[cat]||0)+1;
+            (a.tags||[]).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; });
+          });
+          const earned=[
+            ...Object.entries(catCount).filter(([,c])=>c>=5).map(([name,c])=>({type:'category',name,count:c,icon:'🏆'})),
+            ...Object.entries(tagCount).filter(([,c])=>c>=5).map(([name,c])=>({type:'tag',name,count:c,icon:'🎯'})),
+          ].sort((a,b)=>b.count-a.count).slice(0,12);
+          setBadges(earned);
+        }
+
+        const { data:savedData } = await supabase
+          .from('saved_articles')
+          .select('article_id, saved_at, book_summaries(id, title, slug, category, image_url)')
+          .eq('user_id',userId).order('saved_at',{ascending:false}).limit(10);
+        setSaved((savedData||[]).map(s=>({
+          id:s.article_id, title:s.book_summaries?.title||'Untitled', slug:s.book_summaries?.slug,
+          category:s.book_summaries?.category, image:s.book_summaries?.image_url, saved_at:s.saved_at,
+        })));
+
+        const { data:scrollEvts } = await supabase
+          .from('behavior_events').select('article_id, value, created_at')
+          .eq('user_id',userId).eq('event_type','scroll_depth')
+          .order('created_at',{ascending:false}).limit(200);
+        if(scrollEvts){
+          const maxDepth={};
+          scrollEvts.forEach(r=>{
+            const v=r.value||0;
+            if(v>(maxDepth[r.article_id]?.value||0)) maxDepth[r.article_id]={value:v,ts:r.created_at};
+          });
+          const inProgress=Object.entries(maxDepth)
+            .filter(([,v])=>v.value>5&&v.value<90)
+            .sort((a,b)=>new Date(b[1].ts)-new Date(a[1].ts)).slice(0,6);
+          if(inProgress.length){
+            const ids=inProgress.map(([id])=>id);
+            const { data:arts } = await supabase.from('book_summaries').select('id, title, slug, category, image_url').in('id',ids);
+            setContinueList(inProgress.map(([id,v])=>{
+              const a=(arts||[]).find(x=>x.id===id);
+              return { id, title:a?.title||'Unknown', slug:a?.slug, category:a?.category, image:a?.image_url, progress:v.value };
+            }).filter(x=>x.title!=='Unknown'));
+          }
+        }
+
+        const { data:profile } = await supabase
+          .from('user_topic_profiles').select('topic_weights').eq('user_id',userId).maybeSingle();
+        if(profile?.topic_weights && Object.keys(profile.topic_weights).length){
+          const weights=profile.topic_weights;
+          const { data:pool } = await supabase
+            .from('book_summaries')
+            .select('id, title, slug, category, tags, image_url, avg_rating, views_count:views!views_post_id_fkey(count)')
+            .eq('status','published').order('created_at',{ascending:false}).limit(300);
+          const scored=(pool||[]).map(a=>{
+            const score=(a.tags||[]).reduce((s,t)=>s+(weights[t.toLowerCase()]||0),0);
+            return { ...a, views_count:parseCount(a.views_count), _score:score };
+          }).filter(a=>a._score>0).sort((a,b)=>b._score-a._score).slice(0,8);
+          setNextRead(scored);
+        }
+
+        const since24=new Date(Date.now()-24*3600000).toISOString();
+        const { data:briefData } = await supabase
+          .from('book_summaries')
+          .select('id, title, slug, category, description, created_at')
+          .eq('status','published').eq('category','Ogonjo Briefs')
+          .gte('created_at',since24).order('created_at',{ascending:false}).limit(10);
+        setBriefs(briefData||[]);
+
+        const { data:goalData } = await supabase
+          .from('reading_goals').select('target')
+          .eq('user_id',userId).eq('goal_type','weekly_articles').maybeSingle();
+        if(goalData){ setWeeklyGoal(goalData.target); setGoalInput(goalData.target); }
+
+      } catch(err){ console.error('LearningDashboard error', err); }
+      setLoading(false);
+    };
+    run();
+  },[userId]);
+
+  const saveGoal=async()=>{
+    try {
+      await supabase.from('reading_goals').upsert({ user_id:userId, goal_type:'weekly_articles', target:goalInput }, { onConflict:'user_id,goal_type' });
+      setWeeklyGoal(goalInput);
+    } catch {}
+  };
+
+  const goalPct=Math.min(100,Math.round((articlesWeek/Math.max(1,weeklyGoal))*100));
+  const BADGE_COLORS=['#06b6d4','#10b981','#f59e0b','#8b5cf6','#f97316','#ec4899','#3b82f6','#14b8a6'];
+
+  const SectionHead=({children})=>(
+    <div style={{ fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:1.5, color:T.textMuted, marginBottom:10 }}>{children}</div>
+  );
+
+  const ArticleChip=({ title, slug, id, category, progress, image })=>(
+    <a href={`/summary/${slug||id}`} style={{ textDecoration:'none', flex:'0 0 180px', background:T.card, border:`1px solid ${T.border}`, borderRadius:10, overflow:'hidden', display:'flex', flexDirection:'column', transition:'border-color 0.15s' }}
+      onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+      onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+      {image && <img src={image} alt="" style={{ width:'100%', height:90, objectFit:'cover', display:'block' }} />}
+      {!image && <div style={{ width:'100%', height:90, background:`linear-gradient(135deg, ${T.accent}33, ${T.accent}11)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:28 }}>📖</div>}
+      <div style={{ padding:'8px 10px', flex:1 }}>
+        {category && <div style={{ fontSize:9, color:T.accent, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, marginBottom:3 }}>{category}</div>}
+        <div style={{ fontSize:11, fontWeight:700, color:T.text, lineHeight:1.35, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{title}</div>
+        {progress!==undefined && (
+          <>
+            <div style={{ height:3, background:T.border, borderRadius:2, overflow:'hidden', margin:'6px 0 3px' }}>
+              <div style={{ width:`${progress}%`, height:'100%', background:T.accent, borderRadius:2 }} />
+            </div>
+            <div style={{ fontSize:9, color:T.textMuted }}>{progress}% read</div>
+          </>
+        )}
+      </div>
+    </a>
+  );
+
+  if(loading) return <div style={{ color:T.textMuted, padding:24, textAlign:'center', fontSize:13 }}>Loading your learning dashboard…</div>;
+
+  return (
+    <div style={{ overflowY:'auto', flex:1, paddingRight:4, paddingBottom:24, color:T.text }}>
+
+      <div style={{ display:'flex', gap:10, marginBottom:18, flexWrap:'wrap' }}>
+        <div style={{ flex:'1 1 120px', background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px', textAlign:'center' }}>
+          <div style={{ fontSize:28 }}>🔥</div>
+          <div style={{ fontSize:24, fontWeight:900, color:'#f97316', lineHeight:1 }}>{streak}</div>
+          <div style={{ fontSize:10, color:T.textMuted, textTransform:'uppercase', letterSpacing:1, marginTop:4 }}>Day Streak</div>
+        </div>
+
+        <div style={{ flex:'1 1 120px', background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 16px', textAlign:'center' }}>
+          <div style={{ fontSize:28 }}>📚</div>
+          <div style={{ fontSize:24, fontWeight:900, color:T.accent, lineHeight:1 }}>{articlesWeek}</div>
+          <div style={{ fontSize:10, color:T.textMuted, textTransform:'uppercase', letterSpacing:1, marginTop:4 }}>This Week</div>
+        </div>
+
+        <div style={{ flex:'2 1 260px', background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:'14px 18px' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+            <span style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:1, color:T.textSub }}>📖 Weekly Reading Goal</span>
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              <input type="number" min={1} max={30} value={goalInput} onChange={e=>setGoalInput(Number(e.target.value))} onBlur={saveGoal}
+                style={{ width:44, padding:'3px 6px', borderRadius:6, border:`1px solid ${T.inputBorder}`, background:T.inputBg, color:T.text, fontSize:12, textAlign:'center', outline:'none' }} />
+              <span style={{ fontSize:10, color:T.textMuted }}>/ week</span>
+            </div>
+          </div>
+          <div style={{ height:8, background:T.border, borderRadius:4, overflow:'hidden', marginBottom:6 }}>
+            <div style={{ width:`${goalPct}%`, height:'100%', background:goalPct>=100?'#34d399':T.accent, borderRadius:4, transition:'width 0.6s ease' }} />
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:11 }}>
+            <span style={{ color:T.text, fontWeight:600 }}>{articlesWeek} read</span>
+            <span style={{ color:T.textMuted }}>{weeklyGoal} goal {goalPct>=100?'✅':''}</span>
+          </div>
+        </div>
+      </div>
+
+      {badges.length>0 && (
+        <div style={{ marginBottom:20 }}>
+          <SectionHead>🏅 Topic Mastery Badges</SectionHead>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+            {badges.map((b,i)=>(
+              <div key={`${b.type}-${b.name}`} style={{ background:BADGE_COLORS[i%BADGE_COLORS.length]+'18', border:`1px solid ${BADGE_COLORS[i%BADGE_COLORS.length]}44`, borderRadius:20, padding:'5px 12px', display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ fontSize:14 }}>{b.icon}</span>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.text }}>{b.name}</div>
+                  <div style={{ fontSize:9, color:T.textMuted }}>{b.count} completed</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {continueList.length>0 && (
+        <div style={{ marginBottom:20 }}>
+          <SectionHead>📌 Continue Reading</SectionHead>
+          <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:8 }}>
+            {continueList.map(a=><ArticleChip key={a.id} {...a} />)}
+          </div>
+        </div>
+      )}
+
+      {nextRead.length>0 && (
+        <div style={{ marginBottom:20 }}>
+          <SectionHead>✨ Recommended For You</SectionHead>
+          <div style={{ display:'flex', gap:10, overflowX:'auto', paddingBottom:8 }}>
+            {nextRead.map(a=><ArticleChip key={a.id} title={a.title} slug={a.slug} id={a.id} category={a.category} image={a.image_url} />)}
+          </div>
+        </div>
+      )}
+
+      {saved.length>0 && (
+        <div style={{ marginBottom:20 }}>
+          <SectionHead>🔖 Reading List ({saved.length})</SectionHead>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {saved.map(a=>(
+              <a key={a.id} href={`/summary/${a.slug||a.id}`}
+                style={{ textDecoration:'none', display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 12px', borderRadius:9, background:T.card, border:`1px solid ${T.border}`, transition:'border-color 0.15s' }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.title}</div>
+                  {a.category && <div style={{ fontSize:10, color:T.accent, marginTop:2 }}>{a.category}</div>}
+                </div>
+                <span style={{ fontSize:10, color:T.textMuted, flexShrink:0, marginLeft:12 }}>
+                  {new Date(a.saved_at).toLocaleDateString('en-US',{ month:'short', day:'numeric' })}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginBottom:8 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:showBriefs?10:0 }}>
+          <SectionHead>📰 Ogonjo Briefs — Last 24 Hours</SectionHead>
+          <button onClick={()=>setShowBriefs(v=>!v)}
+            style={{ background:'none', border:`1px solid ${T.border}`, borderRadius:6, color:T.textMuted, fontSize:10, padding:'2px 10px', cursor:'pointer' }}>
+            {showBriefs?'Hide':'Show'}
+          </button>
+        </div>
+        {showBriefs && (
+          briefs.length===0
+            ? <div style={{ fontSize:12, color:T.textMuted, padding:'8px 0' }}>No briefs published in the last 24 hours. Check back soon.</div>
+            : <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {briefs.map(b=>(
+                <a key={b.id} href={`/summary/${b.slug||b.id}`}
+                  style={{ textDecoration:'none', display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'10px 12px', borderRadius:9, background:T.aiSurface, border:`1px solid ${T.aiBorder}`, transition:'border-color 0.15s' }}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor=T.aiAccent}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor=T.aiBorder}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:T.text, lineHeight:1.4, marginBottom:3 }}>{b.title}</div>
+                    {b.description && <div style={{ fontSize:10, color:T.textSub, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:360 }}>{b.description.replace(/<[^>]*>/g,'')}</div>}
+                  </div>
+                  <span style={{ fontSize:9, color:T.textMuted, flexShrink:0, marginLeft:12, marginTop:2 }}>{ago(b.created_at)}</span>
+                </a>
+              ))}
+            </div>
+        )}
+      </div>
+
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ANALYTICS DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 const FLAG_MAP = {
@@ -607,7 +1105,6 @@ const TrafficPanel = ({ theme:T, rawViews, period, ga4Data }) => {
 
   const allCountries = Object.entries(countryMap).sort((a,b)=>b[1]-a[1]);
   const allCities    = Object.entries(cityMap).sort((a,b)=>b[1]-a[1]);
-  const allSources   = Object.entries(sourceMap).sort((a,b)=>b[1]-a[1]);
 
   const filteredViews = (rawViews||[]).filter(r => {
     const matchCountry = countryFilter === 'All' || r.country === countryFilter;
@@ -862,6 +1359,7 @@ const AnalyticsDashboard = ({ theme:T, onAskMarcus }) => {
           </ResponsiveContainer>
         }
       </div>
+      <ReaderEngagement theme={T} period={period}/>
       <TrafficPanel theme={T} rawViews={rawViews} period={period} ga4Data={ga4Data}/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 220px',gap:10,marginBottom:12}}>
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'14px 16px'}}>
@@ -1107,14 +1605,12 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
     <div style={{display:'flex',flexDirection:'column',flex:1,minHeight:0,overflowY:'auto'}}>
       <style>{`@keyframes wnSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
-      {/* Config panel */}
       <div style={{background:`linear-gradient(135deg,${T.accent}10,${T.aiAccent}06)`,border:`1px solid ${T.accent}22`,borderRadius:12,padding:'16px 18px',marginBottom:14}}>
         <div style={{fontSize:13,fontWeight:800,color:T.text,marginBottom:3}}>⚽ Betting Slip Generator</div>
         <div style={{fontSize:11,color:T.textSub,lineHeight:1.6,marginBottom:14}}>
           Fetches <strong style={{color:T.accent}}>today's real matches</strong> from the web, scores each one for confidence, removes weak picks, and builds you structured betting slips ready to use.
         </div>
 
-        {/* Row 1: slips + teams */}
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
           <div>
             <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8,marginBottom:5}}>Number of slips</div>
@@ -1134,7 +1630,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
           </div>
         </div>
 
-        {/* Row 2: confidence threshold */}
         <div style={{marginBottom:10}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
             <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8}}>Min confidence threshold</div>
@@ -1150,7 +1645,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
           </div>
         </div>
 
-        {/* Row 3: stake mode */}
         <div style={{marginBottom:14}}>
           <div style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:'uppercase',letterSpacing:0.8,marginBottom:6}}>Money (optional)</div>
           <div style={{display:'flex',gap:6,marginBottom:8}}>
@@ -1170,7 +1664,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
           )}
         </div>
 
-        {/* Generate button */}
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
           <button
             onClick={generateSlips}
@@ -1190,7 +1683,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
         )}
       </div>
 
-      {/* Loading state */}
       {wnLoading && (
         <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,padding:'40px 0'}}>
           <div style={{position:'relative',width:56,height:56}}>
@@ -1205,7 +1697,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
         </div>
       )}
 
-      {/* Slips output */}
       {wnSlips && !wnLoading && (
         <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'16px',flex:1,minHeight:0}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
@@ -1221,7 +1712,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
         </div>
       )}
 
-      {/* Empty state */}
       {!wnSlips && !wnLoading && (
         <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:10,padding:'40px 0',color:T.textMuted}}>
           <div style={{fontSize:40}}>⚽</div>
@@ -1252,7 +1742,6 @@ const AIAdvisor = ({ theme:T, initialQuestion, onQuestionConsumed }) => {
 
   return(
     <div style={{overflowY:(isChat||isWorldNet)?'hidden':'auto',flex:1,paddingRight:4,paddingBottom:8,display:'flex',flexDirection:'column'}}>
-      {/* Tab bar */}
       <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:'12px 14px',marginBottom:12,flexShrink:0}}>
         <div style={{display:'flex',gap:4,marginBottom:(isChat||isWorldNet)?0:12,background:T.bg,borderRadius:8,padding:3,border:`1px solid ${T.border}`}}>
           {SUB_TABS.map(t=>(<button key={t.id} onClick={()=>setSubTab(t.id)} style={{flex:1,background:subTab===t.id?(t.id==='worldnet'?T.accent+'22':T.tabActive):'transparent',border:'none',color:subTab===t.id?(t.id==='worldnet'?T.accent:T.tabText):(t.id==='worldnet'?T.accent+'88':T.tabInactive),padding:'6px 8px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600,transition:'all 0.15s',whiteSpace:'nowrap'}}>{t.label}</button>))}
@@ -1331,59 +1820,262 @@ const ProfileEdit = ({ profile, onSaved, theme:T }) => {
 // MAIN EXPORT
 // ─────────────────────────────────────────────────────────────────────────────
 const UserProfile = ({ onClose, onUpdated }) => {
-  const [profile,setProfile]=useState(null);
-  const [loading,setLoading]=useState(true);
-  const [activeTab,setTab]=useState('profile');
-  const [theme,setTheme]=useState(()=>{try{const s=localStorage.getItem('ogonjo_theme');return s&&THEMES[s]?THEMES[s]:THEMES.green;}catch{return THEMES.green;}});
-  const [marcusQuestion,setMarcusQuestion]=useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setTab] = useState('learning'); // default to Learning for all
+  const [theme, setTheme] = useState(() => {
+    try {
+      const s = localStorage.getItem('ogonjo_theme');
+      return s && THEMES[s] ? THEMES[s] : THEMES.green;
+    } catch { return THEMES.green; }
+  });
+  const [marcusQuestion, setMarcusQuestion] = useState(null);
 
-  useEffect(()=>{
-    let mounted=true;
-    const load=async()=>{setLoading(true);try{const{data:authData}=await supabase.auth.getUser();const user=authData?.user;if(!user){if(mounted)setLoading(false);return;}const{data,error}=await supabase.from('profiles').select('id,username,avatar_url,role,can_add_summary').eq('id',user.id).maybeSingle();if(!mounted)return;if(error||!data){const{data:upserted}=await supabase.from('profiles').upsert({id:user.id,username:'',role:'user'},{onConflict:'id'}).select();const row=Array.isArray(upserted)?upserted[0]:upserted;if(mounted)setProfile(row||{id:user.id,username:'',role:'user'});}else{if(mounted)setProfile(data);}}catch(err){console.error('Profile load error',err);}finally{if(mounted)setLoading(false);}};
-    load();return()=>{mounted=false;};
-  },[]);
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+        if (!user) { if (mounted) setLoading(false); return; }
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id,username,avatar_url,role,can_add_summary')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (!mounted) return;
+        if (error || !data) {
+          const { data: upserted } = await supabase
+            .from('profiles')
+            .upsert({ id: user.id, username: '', role: 'user' }, { onConflict: 'id' })
+            .select();
+          const row = Array.isArray(upserted) ? upserted[0] : upserted;
+          if (mounted) setProfile(row || { id: user.id, username: '', role: 'user' });
+        } else {
+          if (mounted) setProfile(data);
+        }
+      } catch (err) { console.error('Profile load error', err); }
+      finally { if (mounted) setLoading(false); }
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
 
-  const handleSaved=(newUsername)=>{setProfile(p=>({...p,username:newUsername}));if(typeof onUpdated==='function')onUpdated({username:newUsername});};
-  const role=profile?.role||'user';
-  const avatarLetter=(profile?.username||'U')[0]?.toUpperCase()||'U';
-  const showDash=canSeeDashboard(role),showTeam=canManageRoles(role),T=theme;
+  const handleSaved = (newUsername) => {
+    setProfile(p => ({ ...p, username: newUsername }));
+    if (typeof onUpdated === 'function') onUpdated({ username: newUsername });
+  };
 
-  if(loading) return(<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1400}}><div style={{color:'#94a3b8',fontSize:13}}>Loading…</div></div>);
+  const role = profile?.role || 'user';
+  const avatarLetter = (profile?.username || 'U')[0]?.toUpperCase() || 'U';
+  const showDash = canSeeDashboard(role);
+  const showTeam = canManageRoles(role);
+  const T = theme;
 
-  if(showDash){
-    const tabs=[{id:'profile',label:'👤 Profile'},{id:'dashboard',label:'📊 Dashboard'},{id:'ai',label:'✨ AI Advisor'},...(showTeam?[{id:'team',label:'👥 Team'}]:[])];
-    return(
-      <div style={{position:'fixed',inset:0,background:T.overlay,display:'flex',alignItems:'center',justifyContent:'center',zIndex:1400,padding:'3%',boxSizing:'border-box'}} role="dialog" aria-modal="true">
-        <div style={{background:T.bg,backgroundImage:T.bgGradient,width:'100%',height:'100%',borderRadius:16,border:`1px solid ${T.border}`,boxShadow:T.shadow,padding:'20px 24px',position:'relative',display:'flex',flexDirection:'column',fontFamily:"'DM Sans',sans-serif",overflow:'hidden'}}>
-          <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
-          <button onClick={onClose} style={{position:'absolute',right:16,top:12,background:'none',border:'none',fontSize:'1.5rem',cursor:'pointer',color:T.closeColor,zIndex:10,lineHeight:1}}>&times;</button>
-          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:18,paddingRight:36,flexShrink:0}}>
-            <div style={{width:42,height:42,borderRadius:10,flexShrink:0,background:`linear-gradient(135deg,${T.accent},${T.aiAccent})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:17,fontWeight:800,color:'#fff'}}>{avatarLetter}</div>
-            <div><div style={{fontSize:14,fontWeight:700,color:T.text}}>{profile?.username||'User'}</div><div style={{display:'flex',alignItems:'center',gap:6,marginTop:2}}><span style={{background:ROLE_COLOURS[role]+'22',color:ROLE_COLOURS[role],padding:'1px 8px',borderRadius:20,fontSize:10,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase'}}>{ROLE_LABELS[role]}</span><span style={{fontSize:11,color:T.textMuted}}>Ogonjo Platform</span></div></div>
-            <div style={{flex:1}}/>
-            <ThemeSwitcher theme={theme} setTheme={setTheme}/>
-            <div style={{display:'flex',gap:3,background:T.surface,borderRadius:8,padding:3,border:`1px solid ${T.border}`}}>
-              {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{background:activeTab===t.id?T.tabActive:'transparent',border:'none',color:activeTab===t.id?T.tabText:T.tabInactive,padding:'5px 14px',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap',transition:'all 0.15s'}}>{t.label}</button>))}
-            </div>
-          </div>
-          <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',minHeight:0}}>
-            {activeTab==='profile'  &&(<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:18}}><ProfileEdit profile={profile} onSaved={handleSaved} theme={T}/></div>)}
-            {activeTab==='dashboard'&&<AnalyticsDashboard theme={T} onAskMarcus={(q)=>{setTab('ai');setMarcusQuestion(q);}}/>}
-            {activeTab==='ai'       &&<AIAdvisor theme={T} initialQuestion={marcusQuestion} onQuestionConsumed={()=>setMarcusQuestion(null)}/>}
-            {activeTab==='team'     &&showTeam&&<TeamManager theme={T}/>}
-          </div>
-        </div>
+  if (loading) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1400 }}>
+        <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading…</div>
       </div>
     );
   }
 
-  return(
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="User profile">
-      <div className="modal-panel">
-        <button className="modal-close" onClick={onClose} aria-label="Close profile">&times;</button>
-        <div className="profile-modal-body">
-          <div className="profile-modal-avatar"><span className="letter-avatar-large">{avatarLetter}</span></div>
-          <div className="profile-modal-info"><h2 className="profile-modal-name">{profile?.username||'User'}</h2><ProfileEdit profile={profile} onSaved={handleSaved} theme={THEMES.white}/><div className="profile-modal-actions" style={{marginTop:8}}><button className="btn btn-outline" onClick={onClose}>Close</button></div></div>
+  // ── Build tabs for ALL users ──
+  const tabs = [
+    { id: 'profile', label: '👤 Profile' },
+    { id: 'learning', label: '📚 Learning' },
+  ];
+  if (showDash) {
+    tabs.push(
+      { id: 'dashboard', label: '📊 Dashboard' },
+      { id: 'ai', label: '✨ AI Advisor' }
+    );
+  }
+  if (showTeam) {
+    tabs.push({ id: 'team', label: '👥 Team' });
+  }
+
+  // ── Always render the full‑screen modal ──
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: T.overlay,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1400,
+        padding: '3%',
+        boxSizing: 'border-box',
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        style={{
+          background: T.bg,
+          backgroundImage: T.bgGradient,
+          width: '100%',
+          height: '100%',
+          borderRadius: 16,
+          border: `1px solid ${T.border}`,
+          boxShadow: T.shadow,
+          padding: '20px 24px',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          fontFamily: "'DM Sans',sans-serif",
+          overflow: 'hidden',
+        }}
+      >
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            right: 16,
+            top: 12,
+            background: 'none',
+            border: 'none',
+            fontSize: '1.5rem',
+            cursor: 'pointer',
+            color: T.closeColor,
+            zIndex: 10,
+            lineHeight: 1,
+          }}
+        >
+          &times;
+        </button>
+
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 18,
+            paddingRight: 36,
+            flexShrink: 0,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 10,
+              flexShrink: 0,
+              background: `linear-gradient(135deg,${T.accent},${T.aiAccent})`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 17,
+              fontWeight: 800,
+              color: '#fff',
+            }}
+          >
+            {avatarLetter}
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>
+              {profile?.username || 'User'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <span
+                style={{
+                  background: ROLE_COLOURS[role] + '22',
+                  color: ROLE_COLOURS[role],
+                  padding: '1px 8px',
+                  borderRadius: 20,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {ROLE_LABELS[role]}
+              </span>
+              <span style={{ fontSize: 11, color: T.textMuted }}>Ogonjo Platform</span>
+            </div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <ThemeSwitcher theme={theme} setTheme={setTheme} />
+          <div
+            style={{
+              display: 'flex',
+              gap: 3,
+              background: T.surface,
+              borderRadius: 8,
+              padding: 3,
+              border: `1px solid ${T.border}`,
+            }}
+          >
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                style={{
+                  background: activeTab === t.id ? T.tabActive : 'transparent',
+                  border: 'none',
+                  color: activeTab === t.id ? T.tabText : T.tabInactive,
+                  padding: '5px 14px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div
+          style={{
+            flex: 1,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          {activeTab === 'profile' && (
+            <div
+              style={{
+                background: T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: 12,
+                padding: 18,
+              }}
+            >
+              <ProfileEdit profile={profile} onSaved={handleSaved} theme={T} />
+            </div>
+          )}
+          {activeTab === 'learning' && <LearningDashboard userId={profile?.id} theme={T} />}
+          {activeTab === 'dashboard' && showDash && (
+            <AnalyticsDashboard
+              theme={T}
+              onAskMarcus={(q) => {
+                setTab('ai');
+                setMarcusQuestion(q);
+              }}
+            />
+          )}
+          {activeTab === 'ai' && showDash && (
+            <AIAdvisor
+              theme={T}
+              initialQuestion={marcusQuestion}
+              onQuestionConsumed={() => setMarcusQuestion(null)}
+            />
+          )}
+          {activeTab === 'team' && showTeam && <TeamManager theme={T} />}
         </div>
       </div>
     </div>

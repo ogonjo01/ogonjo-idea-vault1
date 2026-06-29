@@ -1,0 +1,87 @@
+/* src/components/FeedCard/FeedCard.css */
+.feed-card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  flex-shrink: 0;
+}
+
+.feed-card {
+  width: 240px;               /* adjust as needed – big enough */
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.feed-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}
+
+.feed-card-img-wrap {
+  position: relative;
+  width: 100%;
+  height: 135px;              /* 16:9 would be ~135px for 240w */
+  overflow: hidden;
+}
+
+.feed-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.feed-card-img-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #f0f2f5;
+}
+
+.feed-card-title-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+  padding: 16px 12px 10px;
+}
+
+.feed-card-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  font-family: "Times New Roman", Times, serif;
+}
+
+.feed-card-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.feed-card-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.feed-card-author {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100px;
+}

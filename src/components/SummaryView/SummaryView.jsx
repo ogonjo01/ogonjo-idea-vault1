@@ -1,12 +1,9 @@
 // src/components/SummaryView/SummaryView.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// KEY CHANGES in this version:
-// 1. Reading theme switcher (white/cream/brown/navy/forest) persisted to localStorage
-// 2. Scroll-collapse header — uses a MutationObserver+scroll combo that works
-//    regardless of which element is the scroll container
-// 3. Article heading lines + paragraph spacing driven by CSS vars from the active theme
-// 4. Theme dropdown with click-outside close
-// 5. ExportModal receives articleHtml prop so preview works
+// FIXED PROGRESS BAR – uses viewport‑relative geometry.
+// All other features (sticky header, read‑time badge, Save button, sign‑in
+// popup, behaviour tracking) are intact.
+// MOBILE: author hides + star rating appears in meta row when header collapses.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -16,6 +13,7 @@ import {
   FaThumbsUp, FaStar, FaComment, FaEye,
   FaPlus, FaMinus, FaShareAlt,
   FaArrowLeft, FaFileDownload, FaChevronDown, FaPalette,
+  FaBookmark, FaRegBookmark, FaTimes,
 } from 'react-icons/fa';
 import CommentsSection from '../CommentsSection/CommentsSection';
 import HorizontalCarousel from '../HorizontalCarousel/HorizontalCarousel';
@@ -27,28 +25,36 @@ import AdSlot from '../Ad/Ad';
 import { injectAds } from '../../utils/injectAds';
 import { fetchWorkbookRecommendations } from '../../utils/fetchWorkbookRecommendations';
 import ExportModal from '../ExportModal/ExportModal';
+import { useArticleTracker } from '../../hooks/useArticleTracker';
 
 import './SummaryView.css';
 
-/* ─── Reading themes ─────────────────────────────────────────────────────── */
+/* ─── Reading themes ─────────────────────────────────────────────────── */
 const READING_THEMES = {
-  white:  { label: 'White',  bg: '#ffffff', text: '#0b1220', headingLine: '#d1d5db', accent: '#2563eb' },
-  cream:  { label: 'Cream',  bg: '#fdf8f0', text: '#3b2a1a', headingLine: '#d6c9b0', accent: '#92400e' },
-  brown:  { label: 'Brown',  bg: '#2e1f14', text: '#f5ede0', headingLine: '#6b4c39', accent: '#f59e0b' },
-  navy:   { label: 'Navy',   bg: '#0f1f3d', text: '#e8eef8', headingLine: '#1e3a5f', accent: '#60a5fa' },
-  forest: { label: 'Forest', bg: '#1a2f1e', text: '#e8f5e9', headingLine: '#2d4a32', accent: '#4ade80' },
+  white:  { label: 'White',  bg: '#ffffff', text: '#0b1220', headingLine: '#d1d5db', accent: '#2563eb',  progress: '#2563eb' },
+  cream:  { label: 'Cream',  bg: '#fdf8f0', text: '#3b2a1a', headingLine: '#d6c9b0', accent: '#92400e',  progress: '#92400e' },
+  brown:  { label: 'Brown',  bg: '#2e1f14', text: '#f5ede0', headingLine: '#6b4c39', accent: '#f59e0b',  progress: '#f59e0b' },
+  navy:   { label: 'Navy',   bg: '#0f1f3d', text: '#e8eef8', headingLine: '#1e3a5f', accent: '#60a5fa',  progress: '#60a5fa' },
+  forest: { label: 'Forest', bg: '#1a2f1e', text: '#e8f5e9', headingLine: '#2d4a32', accent: '#4ade80',  progress: '#4ade80' },
 };
 
 const THEME_STORAGE_KEY = 'ogonjo_reading_theme';
 
-/* ─── Constants ──────────────────────────────────────────────────────────── */
+/* ─── Read time estimator ────────────────────────────────────────────── */
+const estimateReadTime = (html = '') => {
+  const text = String(html || '').replace(/<[^>]*>/g, '').trim();
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 200));
+};
+
+/* ─── Constants ──────────────────────────────────────────────────────── */
 const SELECT_WITH_COUNTS = `*,
   likes_count:likes!likes_post_id_fkey(count),
   views_count:views!views_post_id_fkey(count),
   comments_count:comments!comments_post_id_fkey(count)
 `;
 
-/* ─── Small utilities ────────────────────────────────────────────────────── */
+/* ─── Utilities ──────────────────────────────────────────────────────── */
 const toNum = (v) => {
   if (v == null) return 0;
   if (Array.isArray(v)) return Number(v[0]?.count ?? 0);
@@ -107,7 +113,7 @@ const buildLightItem = (nr = {}, src = {}) => {
   };
 };
 
-/* ─── Inline loader ──────────────────────────────────────────────────────── */
+/* ─── Inline loader ──────────────────────────────────────────────────── */
 const InlineLoader = ({ label = 'Loading content' }) => (
   <div className="summary-inline-loader" aria-live="polite" aria-busy="true" role="status"
     style={{ textAlign: 'center', padding: 20 }}>
@@ -124,12 +130,71 @@ const InlineLoader = ({ label = 'Loading content' }) => (
   </div>
 );
 
+/* ─── Sign‑in popup ──────────────────────────────────────────────────── */
+const SignInPopup = ({ onClose, onSuccess, pendingAction = 'save this article' }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('signin');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async () => {
+    if (!email || !password) { setError('Please fill in both fields.'); return; }
+    setLoading(true); setError('');
+    try {
+      if (mode === 'signin') {
+        const { error: e } = await supabase.auth.signInWithPassword({ email, password });
+        if (e) throw e;
+      } else {
+        const { error: e } = await supabase.auth.signUp({ email, password });
+        if (e) throw e;
+      }
+      onSuccess?.();
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Something went wrong. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="signin-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="signin-popup" role="dialog" aria-modal="true" aria-label="Sign in">
+        <button className="signin-close" onClick={onClose} aria-label="Close"><FaTimes /></button>
+        <div className="signin-icon">🔖</div>
+        <h2 className="signin-title">Sign in to {pendingAction}</h2>
+        <p className="signin-sub">Your reading list saves across all your devices.</p>
+        {error && <div className="signin-error">{error}</div>}
+        <input
+          className="signin-input" type="email" placeholder="Email address"
+          value={email} onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          autoFocus autoComplete="email"
+        />
+        <input
+          className="signin-input" type="password" placeholder="Password"
+          value={password} onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+        />
+        <button className="signin-submit" onClick={handleSubmit} disabled={loading}>
+          {loading ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+        </button>
+        <button className="signin-toggle" onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setError(''); }}>
+          {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /* ══════════════════════════════════════════════════════════════════════════ */
 const SummaryView = () => {
   const { param } = useParams();
   const navigate = useNavigate();
 
-  /* ── Reading theme (localStorage-persisted) ──────────────────────────── */
+  /* ── Reading theme ────────────────────────────────────────────────── */
   const [readingThemeKey, setReadingThemeKey] = useState(() => {
     try { return localStorage.getItem(THEME_STORAGE_KEY) || 'white'; } catch { return 'white'; }
   });
@@ -143,7 +208,6 @@ const SummaryView = () => {
     setShowThemeDropdown(false);
   };
 
-  /* ── Close dropdown on outside click ────────────────────────────────── */
   useEffect(() => {
     if (!showThemeDropdown) return;
     const handler = (e) => {
@@ -154,18 +218,25 @@ const SummaryView = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, [showThemeDropdown]);
 
-  /* ── Other UI state ──────────────────────────────────────────────────── */
+  /* ── UI state ─────────────────────────────────────────────────────── */
   const [fontSize, setFontSize] = useState(18);
   const [readingMode, setReadingMode] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [hideReadtimeBadge, setHideReadtimeBadge] = useState(false);
 
-  /* ── Content state ───────────────────────────────────────────────────── */
+  /* ── Save / sign‑in state ─────────────────────────────────────────── */
+  const [isSaved, setIsSaved] = useState(false);
+  const [showSignInPopup, setShowSignInPopup] = useState(false);
+  const [savingArticle, setSavingArticle] = useState(false);
+
+  /* ── Content state ────────────────────────────────────────────────── */
   const [summary, setSummary] = useState(null);
   const [postId, setPostId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  /* ── Engagement ──────────────────────────────────────────────────────── */
+  /* ── Engagement ───────────────────────────────────────────────────── */
   const [likes, setLikes] = useState(0);
   const [userHasLiked, setUserHasLiked] = useState(false);
   const [views, setViews] = useState(0);
@@ -175,34 +246,46 @@ const SummaryView = () => {
   const [hoverRating, setHoverRating] = useState(0);
   const [savingRating, setSavingRating] = useState(false);
 
-  /* ── Recommendations ─────────────────────────────────────────────────── */
+  /* ── Recommendations ──────────────────────────────────────────────── */
   const [recommendedContent, setRecommendedContent] = useState([]);
   const [isRecommending, setIsRecommending] = useState(false);
   const [recError, setRecError] = useState(null);
 
-  /* ── Auth / edit ─────────────────────────────────────────────────────── */
+  /* ── Auth / edit ──────────────────────────────────────────────────── */
   const [ownerId, setOwnerId] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
 
-  /* ── Article HTML / ads ──────────────────────────────────────────────── */
+  /* ── Article HTML / ads ───────────────────────────────────────────── */
   const [processedSummaryHtml, setProcessedSummaryHtml] = useState('');
   const [slotWorkbooks, setSlotWorkbooks] = useState([]);
 
-  /* ── Refs ────────────────────────────────────────────────────────────── */
+  /* ── Refs ─────────────────────────────────────────────────────────── */
   const pageRef = useRef(null);
   const headerRef = useRef(null);
+  const articleRef = useRef(null);
   const slugCache = useRef(new Map());
   const commentsRef = useRef(null);
 
-  /* ─── Workbooks ─────────────────────────────────────────────────────── */
+  /* ── Behavior tracker (silent) ───────────────────────────────────── */
+const { trackNavigationClick } = useArticleTracker(
+  postId,
+  summary?.tags || [],
+  currentUserId,
+  articleRef          
+);
+
+  /* ── Read time ───────────────────────────────────────────────────── */
+  const readTime = useMemo(() => estimateReadTime(summary?.summary || ''), [summary?.summary]);
+
+  /* ── Workbooks ───────────────────────────────────────────────────── */
   useEffect(() => {
     if (!summary?.id) return;
     if (summary?.category === 'Workbooks') { setSlotWorkbooks([]); return; }
     fetchWorkbookRecommendations(summary, 8).then(setSlotWorkbooks).catch(() => setSlotWorkbooks([]));
-  }, [summary?.id]); // eslint-disable-line
+  }, [summary?.id]);
 
-  /* ─── Ad segments ───────────────────────────────────────────────────── */
+  /* ── Ad segments ─────────────────────────────────────────────────── */
   const articleSegments = useMemo(() => injectAds(processedSummaryHtml), [processedSummaryHtml]);
 
   useEffect(() => {
@@ -219,40 +302,99 @@ const SummaryView = () => {
     return () => { try { window.ezstandalone.cmd.push(() => window.ezstandalone.destroyAll()); } catch {} };
   }, [articleSegments, slotWorkbooks]);
 
-  /* ─── Scroll-collapse header ─────────────────────────────────────────
-     Strategy: listen on every candidate scroll container simultaneously.
-     The first one that fires with scrollTop > 80 wins.
-  ──────────────────────────────────────────────────────────────────────── */
+  /* ── Scroll: collapse header + progress + hide read‑time badge ─── */
   useEffect(() => {
-    const getScrollTop = () => {
-      const els = [
-        document.querySelector('.main-content'),
-        document.querySelector('main'),
-        document.querySelector('#root > div'),
-        document.documentElement,
-        document.body,
-      ].filter(Boolean);
-      for (const el of els) {
-        const st = el.scrollTop;
-        if (st > 0) return st;
+    let ticking = false;
+
+    const findScrollContainer = () => {
+      if (!articleRef.current) return null;
+      let el = articleRef.current.parentElement;
+      while (el) {
+        const style = window.getComputedStyle(el);
+        const overflowY = style.overflowY;
+        if (
+          (overflowY === 'auto' || overflowY === 'scroll') &&
+          el.scrollHeight > el.clientHeight
+        ) {
+          return el;
+        }
+        el = el.parentElement;
       }
+      return null;
+    };
+
+    let activeContainer = null;
+
+    const getScrollTop = () => {
+      if (activeContainer) return activeContainer.scrollTop;
       return window.scrollY || window.pageYOffset || 0;
     };
 
-    const handleScroll = () => setCollapsed(getScrollTop() > 80);
+    const calcProgress = () => {
+      const article = articleRef.current;
+      if (!article) return 0;
 
-    // Attach to all candidates + window
-    const candidates = [
-      document.querySelector('.main-content'),
-      document.querySelector('main'),
-      window,
-    ].filter(Boolean);
+      const rect = article.getBoundingClientRect();
+      const viewportH = window.innerHeight;
+      const articleH = article.offsetHeight;
 
-    candidates.forEach(el => el.addEventListener('scroll', handleScroll, { passive: true }));
-    return () => candidates.forEach(el => el.removeEventListener('scroll', handleScroll));
+      const scrolledPastTop = viewportH - rect.top;
+      const totalDistance = articleH + viewportH;
+
+      if (totalDistance <= 0) return 0;
+      const pct = Math.min(100, Math.max(0, Math.round((scrolledPastTop / totalDistance) * 100)));
+      return pct;
+    };
+
+    const handleScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(() => {
+          const scrollTop = getScrollTop();
+          setCollapsed(scrollTop > 80);
+          setScrollProgress(calcProgress());
+          setHideReadtimeBadge(prev => prev || scrollTop > 80);
+          ticking = false;
+        });
+      }
+    };
+
+    const setup = () => {
+      activeContainer = findScrollContainer();
+      if (activeContainer) {
+        activeContainer.addEventListener('scroll', handleScroll, { passive: true });
+      } else {
+        window.addEventListener('scroll', handleScroll, { passive: true });
+      }
+      window.addEventListener('resize', handleScroll, { passive: true });
+
+      requestAnimationFrame(() => {
+        setScrollProgress(calcProgress());
+      });
+    };
+
+    let retryTimer;
+    const trySetup = () => {
+      if (articleRef.current) {
+        setup();
+      } else {
+        retryTimer = setTimeout(trySetup, 150);
+      }
+    };
+    trySetup();
+
+    return () => {
+      clearTimeout(retryTimer);
+      if (activeContainer) {
+        activeContainer.removeEventListener('scroll', handleScroll);
+      } else {
+        window.removeEventListener('scroll', handleScroll);
+      }
+      window.removeEventListener('resize', handleScroll);
+    };
   }, []);
 
-  /* ─── Auth ──────────────────────────────────────────────────────────── */
+  /* ── Auth ─────────────────────────────────────────────────────────── */
   useEffect(() => {
     (async () => {
       try { const { data } = await supabase.auth.getUser(); setCurrentUserId(data?.user?.id ?? null); }
@@ -260,13 +402,22 @@ const SummaryView = () => {
     })();
   }, []);
 
-  /* ─── Scroll to top ─────────────────────────────────────────────────── */
+  /* ── Check if article is saved ──────────────────────────────────── */
+  useEffect(() => {
+    if (!currentUserId || !postId) { setIsSaved(false); return; }
+    supabase.from('saved_articles')
+      .select('id').eq('user_id', currentUserId).eq('article_id', postId).maybeSingle()
+      .then(({ data }) => setIsSaved(!!data))
+      .catch(() => setIsSaved(false));
+  }, [currentUserId, postId]);
+
+  /* ── Scroll to top on article change ──────────────────────────────── */
   const scrollToTop = useCallback((behavior = 'auto') => {
     try {
-      const mainEl = document.querySelector('.main-content');
-      const el = mainEl && typeof mainEl.scrollTo === 'function' ? mainEl :
-        pageRef.current && typeof pageRef.current.scrollTo === 'function' ? pageRef.current :
-        document.scrollingElement || document.documentElement;
+      const container = document.querySelector('.main-content');
+      const el = container && typeof container.scrollTo === 'function' ? container :
+        (pageRef.current && typeof pageRef.current.scrollTo === 'function' ? pageRef.current :
+        document.scrollingElement || document.documentElement);
       if (window?.location?.hash) {
         try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch {}
       }
@@ -281,7 +432,7 @@ const SummaryView = () => {
     return () => clearTimeout(t);
   }, [param, scrollToTop]);
 
-  /* ─── Recommendations ───────────────────────────────────────────────── */
+  /* ── Recommendations (fallback tag‑based) ────────────────────────── */
   const fetchRecommendedByTags = useCallback(async (tags = [], limit = 10, resolvedPostId = null) => {
     setIsRecommending(true); setRecError(null);
     try {
@@ -326,7 +477,7 @@ const SummaryView = () => {
     finally { setIsRecommending(false); }
   }, []);
 
-  /* ─── Background followups ──────────────────────────────────────────── */
+  /* ── Background followups ─────────────────────────────────────────── */
   const backgroundFetchFollowups = useCallback(async (resolvedPostId, category='', tags=[]) => {
     try {
       const { data, error } = await supabase.from('book_summaries').select(SELECT_WITH_COUNTS).eq('id', resolvedPostId).single();
@@ -364,7 +515,7 @@ const SummaryView = () => {
     } catch (err) { console.error('backgroundFetchFollowups error', err); }
   }, [fetchRecommendedByCategory, fetchRecommendedByTags]);
 
-  /* ─── Data loading ──────────────────────────────────────────────────── */
+  /* ── Data loading ─────────────────────────────────────────────────── */
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -389,80 +540,120 @@ const SummaryView = () => {
     return () => { mounted = false; };
   }, [param, navigate, backgroundFetchFollowups]);
 
-  /* ─── Handlers ──────────────────────────────────────────────────────── */
+  /* ── Save article ─────────────────────────────────────────────────── */
+const handleSave = async () => {
+  if (!postId) return;
+  if (!currentUserId) { setShowSignInPopup(true); return; }
+
+  setSavingArticle(true);
+  try {
+    if (isSaved) {
+      // Unsave
+      await supabase.from('saved_articles')
+        .delete()
+        .eq('user_id', currentUserId)
+        .eq('article_id', postId);
+      setIsSaved(false);
+    } else {
+      // Save
+      const { error } = await supabase.from('saved_articles')
+        .insert({ user_id: currentUserId, article_id: postId });
+      if (error) throw error;
+      setIsSaved(true);
+
+      // Silently log the save event for the algorithm
+      try {
+        await supabase.from('behavior_events').insert({
+          user_id: currentUserId,
+          article_id: postId,
+          event_type: 'saved',
+          value: 1,
+          session_id: `save_${Date.now()}`,
+        });
+      } catch (eventError) {
+        // ignore – don't break the UI if this fails
+        console.debug('Failed to log save event', eventError);
+      }
+    }
+  } catch (err) {
+    console.error('Save error', err);
+    alert('Could not save article. Please try again.');
+  } finally {
+    setSavingArticle(false);
+  }
+};
+
+  const handleSignInSuccess = async () => {
+    const { data } = await supabase.auth.getUser();
+    if (data?.user?.id) {
+      setCurrentUserId(data.user.id);
+      setTimeout(async () => {
+        if (!postId) return;
+        await supabase.from('saved_articles')
+          .insert({ user_id: data.user.id, article_id: postId })
+          .catch(() => {});
+        setIsSaved(true);
+      }, 300);
+    }
+  };
+
+  /* ── Handlers ─────────────────────────────────────────────────────── */
   const handleLike = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { alert('Please sign in to like content.'); return; }
-      if (!postId) { alert('Content not ready.'); return; }
+      if (!user) { setShowSignInPopup(true); return; }
+      if (!postId) return;
       if (userHasLiked) {
-        const { error } = await supabase.from('likes').delete().eq('post_id',postId).eq('user_id',user.id);
+        const { error } = await supabase.from('likes').delete().eq('post_id', postId).eq('user_id', user.id);
         if (error) throw error;
-        setUserHasLiked(false); setLikes(l=>Math.max(0,l-1));
+        setUserHasLiked(false); setLikes(l => Math.max(0, l - 1));
       } else {
-        const { error } = await supabase.from('likes').insert([{ post_id:postId, user_id:user.id }]);
+        const { error } = await supabase.from('likes').insert([{ post_id: postId, user_id: user.id }]);
         if (error) throw error;
-        setUserHasLiked(true); setLikes(l=>(Number(l)||0)+1);
+        setUserHasLiked(true); setLikes(l => (Number(l) || 0) + 1);
       }
-    } catch (err) { console.error('Like error', err); alert('Could not update like. Try again.'); }
+    } catch (err) { console.error('Like error', err); }
   };
 
   const saveRating = async (value) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { alert('Please sign in to rate'); return false; }
+      if (!user) { setShowSignInPopup(true); return false; }
       if (!postId) return false;
       setSavingRating(true);
-      const { error } = await supabase.rpc('rate_post', { p_post_id:postId, p_user_id:user.id, p_rating:value });
-      if (error) { alert('Could not save rating. Try again later.'); return false; }
+      const { error } = await supabase.rpc('rate_post', { p_post_id: postId, p_user_id: user.id, p_rating: value });
+      if (error) { return false; }
       try {
         const { data: rd } = await supabase.rpc('get_average_rating', { p_post_id: postId });
-        if (Array.isArray(rd) && rd[0]?.average_rating != null) setAvgRating(Math.round(Number(rd[0].average_rating)*10)/10);
+        if (Array.isArray(rd) && rd[0]?.average_rating != null) setAvgRating(Math.round(Number(rd[0].average_rating) * 10) / 10);
       } catch {}
       setUserRating(value); return true;
-    } catch (err) { alert('Could not save rating. Try again.'); return false; }
+    } catch { return false; }
     finally { setSavingRating(false); }
   };
 
   const handleSetRating = async (value) => { setHoverRating(0); await saveRating(value); };
-
-  const renderStars = (size = 'md') => {
-    const active = hoverRating || userRating;
-    return Array.from({ length: 5 }, (_, i) => {
-      const n = i+1;
-      return (
-        <button key={n} type="button"
-          className={`star-button ${n<=active?'active':''} ${size==='sm'?'small':''}`}
-          onMouseEnter={()=>setHoverRating(n)} onMouseLeave={()=>setHoverRating(0)}
-          onFocus={()=>setHoverRating(n)} onBlur={()=>setHoverRating(0)}
-          onClick={()=>handleSetRating(n)} disabled={savingRating}
-          aria-label={`Rate ${n} star${n>1?'s':''}`}
-        ><FaStar /></button>
-      );
-    });
-  };
-
-  const handleScrollToComments = () => commentsRef.current?.scrollIntoView({ behavior:'smooth', block:'start' });
+  const handleScrollToComments = () => commentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const handleBackToArticle = () => { if (window.history.length > 1) navigate(-1); else navigate('/explore'); };
 
-  /* ─── Link resolution ───────────────────────────────────────────────── */
+  /* ── Link resolution ──────────────────────────────────────────────── */
   const resolveInternalLinksInHtml = useCallback(async (html) => {
     if (!html) return '';
     const sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ['data-summary-id'] });
     const container = document.createElement('div');
     container.innerHTML = sanitized;
     const anchors = Array.from(container.querySelectorAll('a[data-summary-id]'));
-    const fallbackAnchors = anchors.length===0 ? Array.from(container.querySelectorAll('a[href*="#summary-"]')) : [];
+    const fallbackAnchors = anchors.length === 0 ? Array.from(container.querySelectorAll('a[href*="#summary-"]')) : [];
     const targets = new Map();
-    anchors.forEach(a => { const id=String(a.getAttribute('data-summary-id')||'').trim(); if(id){if(!targets.has(id))targets.set(id,[]);targets.get(id).push(a);} });
-    fallbackAnchors.forEach(a => { const m=(a.getAttribute('href')||'').match(/#summary-([0-9a-fA-F-]+)/); if(m?.[1]){const key=String(m[1]);a.setAttribute('data-summary-id',key);if(!targets.has(key))targets.set(key,[]);targets.get(key).push(a);} });
-    if (targets.size===0) return container.innerHTML;
-    const idsToFetch = Array.from(targets.keys()).filter(id=>!slugCache.current.has(id));
-    if (idsToFetch.length>0) {
-      try { const { data, error } = await supabase.from('book_summaries').select('id,slug').in('id',idsToFetch); if(!error&&Array.isArray(data)) data.forEach(r=>slugCache.current.set(String(r.id),r.slug||null)); } catch {}
-      idsToFetch.forEach(id=>{if(!slugCache.current.has(id))slugCache.current.set(id,null);});
+    anchors.forEach(a => { const id = String(a.getAttribute('data-summary-id') || '').trim(); if (id) { if (!targets.has(id)) targets.set(id, []); targets.get(id).push(a); } });
+    fallbackAnchors.forEach(a => { const m = (a.getAttribute('href') || '').match(/#summary-([0-9a-fA-F-]+)/); if (m?.[1]) { const key = String(m[1]); a.setAttribute('data-summary-id', key); if (!targets.has(key)) targets.set(key, []); targets.get(key).push(a); } });
+    if (targets.size === 0) return container.innerHTML;
+    const idsToFetch = Array.from(targets.keys()).filter(id => !slugCache.current.has(id));
+    if (idsToFetch.length > 0) {
+      try { const { data, error } = await supabase.from('book_summaries').select('id,slug').in('id', idsToFetch); if (!error && Array.isArray(data)) data.forEach(r => slugCache.current.set(String(r.id), r.slug || null)); } catch {}
+      idsToFetch.forEach(id => { if (!slugCache.current.has(id)) slugCache.current.set(id, null); });
     }
-    targets.forEach((nodes,id)=>{const slug=slugCache.current.get(id)||null;nodes.forEach(a=>{if(slug){a.setAttribute('href',`/summary/${slug}`);a.setAttribute('data-summary-slug',slug);a.classList.add('internal-summary-link');}else{a.removeAttribute('href');a.classList.add('internal-summary-link-broken');a.setAttribute('aria-disabled','true');}});});
+    targets.forEach((nodes, id) => { const slug = slugCache.current.get(id) || null; nodes.forEach(a => { if (slug) { a.setAttribute('href', `/summary/${slug}`); a.setAttribute('data-summary-slug', slug); a.classList.add('internal-summary-link'); } else { a.removeAttribute('href'); a.classList.add('internal-summary-link-broken'); a.setAttribute('aria-disabled', 'true'); } }); });
     return container.innerHTML;
   }, []);
 
@@ -470,14 +661,14 @@ const SummaryView = () => {
     let cancelled = false;
     const run = async () => {
       if (!summary?.summary) { setProcessedSummaryHtml(''); return; }
-      try { const resolved = await resolveInternalLinksInHtml(summary.summary); if(!cancelled) setProcessedSummaryHtml(resolved); }
-      catch { if(!cancelled) setProcessedSummaryHtml(DOMPurify.sanitize(summary.summary)); }
+      try { const resolved = await resolveInternalLinksInHtml(summary.summary); if (!cancelled) setProcessedSummaryHtml(resolved); }
+      catch { if (!cancelled) setProcessedSummaryHtml(DOMPurify.sanitize(summary.summary)); }
     };
     run();
     return () => { cancelled = true; };
   }, [summary?.summary, resolveInternalLinksInHtml]);
 
-  /* ─── Article click intercept ───────────────────────────────────────── */
+  /* ── Article click intercept ──────────────────────────────────────── */
   const onArticleClick = (e) => {
     const a = e.target?.closest?.('a');
     if (!a) return;
@@ -486,86 +677,107 @@ const SummaryView = () => {
     if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(href)) return;
     if (!dataSlug && !href.startsWith('/summary/')) return;
     e.preventDefault();
-    const slug = dataSlug || href.replace(/^\/summary\//,'').split(/[/?#]/)[0] || null;
-    if (slug) { navigate(`/summary/${slug}`); setTimeout(()=>scrollToTop('auto'),10); }
+    const slug = dataSlug || href.replace(/^\/summary\//, '').split(/[/?#]/)[0] || null;
+    if (slug) {
+      const targetId = a.getAttribute('data-summary-id');
+      if (targetId) trackNavigationClick(targetId);
+      navigate(`/summary/${slug}`);
+      setTimeout(() => scrollToTop('auto'), 10);
+    }
   };
 
-  /* ─── Reader controls ───────────────────────────────────────────────── */
-  const increaseFont = () => setFontSize(s=>Math.min(28,s+2));
-  const decreaseFont = () => setFontSize(s=>Math.max(12,s-2));
-  const toggleReadingMode = () => setReadingMode(r=>!r);
+  /* ── Reader controls ──────────────────────────────────────────────── */
+  const increaseFont = () => setFontSize(s => Math.min(28, s + 2));
+  const decreaseFont = () => setFontSize(s => Math.max(12, s - 2));
   const resetTypography = () => { setFontSize(18); setReadingMode(true); applyTheme('white'); };
 
-  /* ─── Share ─────────────────────────────────────────────────────────── */
+  /* ── Share ────────────────────────────────────────────────────────── */
   const handleShare = async () => {
     if (!summary) return;
     const title = summary.title || 'Check this out on OGONJO';
     const description = makeSafeDescription(summary.description || summary.summary || '', 140);
     const shareText = `${title}\n\n${description}\n\n${pageUrl}`;
     if (navigator.share) { try { await navigator.share({ title, text: description, url: pageUrl }); return; } catch {} }
-    if (navigator.clipboard?.writeText) { try { await navigator.clipboard.writeText(shareText); alert('Copied to clipboard!'); return; } catch {} }
+    if (navigator.clipboard?.writeText) { try { await navigator.clipboard.writeText(shareText); return; } catch {} }
     try { window.prompt('Copy to share:', shareText); } catch {}
   };
 
-  /* ─── Edit saved ────────────────────────────────────────────────────── */
+  /* ── Edit saved ───────────────────────────────────────────────────── */
   const handleEditSaved = (updatedRow) => {
     if (!updatedRow) { setShowEdit(false); return; }
     const normalized = normalizeRow(updatedRow);
-    setSummary(prev=>prev?{...prev,...normalized}:normalized);
-    backgroundFetchFollowups(normalized.id, normalized.category, normalized.tags).catch(()=>{});
-    try { window.dispatchEvent(new CustomEvent('summary:updated',{detail:{id:normalized.id}})); } catch {}
+    setSummary(prev => prev ? { ...prev, ...normalized } : normalized);
+    backgroundFetchFollowups(normalized.id, normalized.category, normalized.tags).catch(() => {});
+    try { window.dispatchEvent(new CustomEvent('summary:updated', { detail: { id: normalized.id } })); } catch {}
     setShowEdit(false);
   };
 
-  /* ─── Meta ──────────────────────────────────────────────────────────── */
+  /* ── Meta ─────────────────────────────────────────────────────────── */
   const BRAND = 'OGONJO';
   const SITE_DEFAULT_OG = useMemo(() => { try { return `${window.location.origin}/ogonjo.jpg`; } catch { return ''; } }, []);
-  const metaTitle = useMemo(() => `${summary?.title||'Loading…'} – ${BRAND}`, [summary?.title]);
-  const metaDescription = useMemo(() => makeSafeDescription(summary?.description||summary?.summary||'', 160), [summary?.description, summary?.summary]);
-  const pageUrl = useMemo(() => { try { const u=new URL(window.location.href); return `${u.origin}${u.pathname}`; } catch { return `https://ogonjo.com/summary/${summary?.slug||''}`; } }, [summary?.slug]);
+  const metaTitle = useMemo(() => `${summary?.title || 'Loading…'} – ${BRAND}`, [summary?.title]);
+  const metaDescription = useMemo(() => makeSafeDescription(summary?.description || summary?.summary || '', 160), [summary?.description, summary?.summary]);
+  const pageUrl = useMemo(() => { try { const u = new URL(window.location.href); return `${u.origin}${u.pathname}`; } catch { return `https://ogonjo.com/summary/${summary?.slug || ''}`; } }, [summary?.slug]);
   const ogImage = summary?.image_url || SITE_DEFAULT_OG;
 
   const ldJson = useMemo(() => {
     const base = {
-      '@context':'https://schema.org','@type':'Article',
-      headline:summary?.title||BRAND, description:metaDescription,
-      author:{'@type':'Person',name:summary?.author||BRAND},
-      datePublished:summary?.created_at||undefined,
-      image:ogImage, mainEntityOfPage:{'@type':'WebPage','@id':pageUrl},
-      publisher:{'@type':'Organization',name:BRAND,logo:{'@type':'ImageObject',url:SITE_DEFAULT_OG}},
+      '@context': 'https://schema.org', '@type': 'Article',
+      headline: summary?.title || BRAND, description: metaDescription,
+      author: { '@type': 'Person', name: summary?.author || BRAND },
+      datePublished: summary?.created_at || undefined,
+      image: ogImage, mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl },
+      publisher: { '@type': 'Organization', name: BRAND, logo: { '@type': 'ImageObject', url: SITE_DEFAULT_OG } },
     };
-    if (avgRating||summary?.rating_count||commentsCount) {
-      base.aggregateRating={'@type':'AggregateRating',...(avgRating?{ratingValue:Number(avgRating).toFixed(1)}:{}),...(summary?.rating_count?{ratingCount:Number(summary.rating_count)}:{}),...(commentsCount?{reviewCount:Number(commentsCount)}:{})};
+    if (avgRating || summary?.rating_count || commentsCount) {
+      base.aggregateRating = { '@type': 'AggregateRating', ...(avgRating ? { ratingValue: Number(avgRating).toFixed(1) } : {}), ...(summary?.rating_count ? { ratingCount: Number(summary.rating_count) } : {}), ...(commentsCount ? { reviewCount: Number(commentsCount) } : {}) };
     }
     return base;
   }, [summary, metaDescription, ogImage, pageUrl, SITE_DEFAULT_OG, BRAND, avgRating, commentsCount]);
 
-  /* ─── Derived ───────────────────────────────────────────────────────── */
+  /* ── Derived ──────────────────────────────────────────────────────── */
   const renderDifficultyBadge = (lvl) => {
     if (!lvl) return null;
     const text = String(lvl);
-    return <span className={`difficulty-label difficulty-${text.toLowerCase().replace(/\s+/g,'-')}`}>{text}</span>;
+    return <span className={`difficulty-label difficulty-${text.toLowerCase().replace(/\s+/g, '-')}`}>{text}</span>;
   };
 
   const resolveAffiliateLink = (raw) => {
-    if (!raw) return { url:null, type:null };
+    if (!raw) return { url: null, type: null };
     try {
-      if (typeof raw === 'string') { const p=raw.split('|',2).map(s=>s.trim()); if(p.length===2&&p[1]) return {url:p[1],type:p[0].toLowerCase()}; return {url:raw.trim(),type:'book'}; }
-      if (typeof raw === 'object') { const url=raw.url||raw.link; if(url) return {url:String(url),type:(raw.type||'book').toLowerCase()}; }
+      if (typeof raw === 'string') { const p = raw.split('|', 2).map(s => s.trim()); if (p.length === 2 && p[1]) return { url: p[1], type: p[0].toLowerCase() }; return { url: raw.trim(), type: 'book' }; }
+      if (typeof raw === 'object') { const url = raw.url || raw.link; if (url) return { url: String(url), type: (raw.type || 'book').toLowerCase() }; }
     } catch {}
-    return { url:null, type:null };
+    return { url: null, type: null };
   };
 
   const showLoading = Boolean(isLoading);
   const showNotFound = !isLoading && !summary;
-  const headerTitle = summary?.title||(showLoading?'Loading…':'Content Under Development');
+  const headerTitle = summary?.title || (showLoading ? 'Loading…' : 'Content Under Development');
   const headerAuthor = summary?.author || '';
   const headerImage = summary?.image_url || null;
-  const descriptionPreview = useMemo(() => makeSafeDescription(summary?.description||'', 120), [summary?.description]);
+  const descriptionPreview = useMemo(() => makeSafeDescription(summary?.description || '', 120), [summary?.description]);
   const { url: affiliateUrl, type: affiliateType } = resolveAffiliateLink(summary?.affiliate_link);
-  const affiliateLabel = affiliateType==='pdf'?'Get PDF':affiliateType==='app'?'Open App':'Get Book';
+  const affiliateLabel = affiliateType === 'pdf' ? 'Get PDF' : affiliateType === 'app' ? 'Open App' : 'Get Book';
 
-  /* ─── Article inline styles ─────────────────────────────────────────── */
+  /* ── Stars renderer ───────────────────────────────────────────────── */
+  const renderStars = (size = 'md') => {
+    const active = hoverRating || userRating;
+    return Array.from({ length: 5 }, (_, i) => {
+      const n = i + 1;
+      return (
+        <button key={n} type="button"
+          className={`star-button ${n <= active ? 'active' : ''} ${size === 'sm' ? 'small' : ''}`}
+          onMouseEnter={() => setHoverRating(n)} onMouseLeave={() => setHoverRating(0)}
+          onFocus={() => setHoverRating(n)} onBlur={() => setHoverRating(0)}
+          onClick={() => handleSetRating(n)} disabled={savingRating}
+          aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
+        ><FaStar /></button>
+      );
+    });
+  };
+
+  /* ── Article inline styles ──────────────────────────────────────── */
   const articleStyle = {
     fontFamily: '"Times New Roman", Times, serif',
     fontSize: `${fontSize}px`,
@@ -579,12 +791,11 @@ const SummaryView = () => {
     color: rt.text,
     wordBreak: 'break-word',
     minHeight: 180,
-    // CSS vars for heading lines
     '--heading-line-color': rt.headingLine,
     '--article-accent': rt.accent,
   };
 
-  /* ══════════════════════════════════════════════════════════════════════ */
+  /* ══════════════════════════════════════════════════════════════════ */
   return (
     <div className={`summary-page ${collapsed ? 'title-collapsed' : ''}`} ref={pageRef}
       data-collapsed={collapsed ? '1' : '0'} style={{ background: '#fff', color: '#0b1220' }}>
@@ -601,7 +812,7 @@ const SummaryView = () => {
         <meta property="og:image" content={ogImage} />
         {summary?.created_at && <meta property="article:published_time" content={summary.created_at} />}
         {summary?.author && <meta property="article:author" content={summary.author} />}
-        {Array.isArray(summary?.tags) && summary.tags.map(t=><meta key={`og-tag-${t}`} property="article:tag" content={t} />)}
+        {Array.isArray(summary?.tags) && summary.tags.map(t => <meta key={`og-tag-${t}`} property="article:tag" content={t} />)}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={metaTitle} />
         <meta name="twitter:description" content={metaDescription} />
@@ -612,26 +823,31 @@ const SummaryView = () => {
 
       <div className="summary-top-spacer" aria-hidden="true" />
 
-      {/* ── Sticky header ────────────────────────────────────────────── */}
+      {/* ── Sticky header ────────────────────────────────────────── */}
       <header className={`summary-header ${collapsed ? 'collapsed' : 'expanded'}`}
         ref={headerRef} role="banner" aria-expanded={!collapsed}>
 
-        {/* Thumbnail */}
+        {/* Thumbnail (desktop) */}
         <div className="summary-thumb-wrap" aria-hidden="true">
           {headerImage
             ? <img className="summary-thumb" src={headerImage} alt={headerTitle} />
             : <div className="summary-thumb placeholder" />}
         </div>
 
-        {/* Title / author / description */}
+        {/* Title / meta / description */}
         <div className="summary-title-left">
-          <h1 className="summary-title" title={headerTitle} style={{ fontFamily: '"Times New Roman", Times, serif' }}>
-            {headerTitle}
-          </h1>
+          <h1 className="summary-title" title={headerTitle}>{headerTitle}</h1>
           <div className="summary-meta-row">
-            <div className="summary-author" title={headerAuthor}>
+            <div className="summary-author summary-author--expandable">
               <span className="author-prefix">by&nbsp;</span>
               <span className="author-name">{headerAuthor}</span>
+            </div>
+            {/* Stars that appear IN the meta row when the header is collapsed on mobile */}
+            <div className="summary-stars-in-meta">
+              <span className="summary-stars-in-meta-value">
+                {avgRating ? Number(avgRating).toFixed(1) : '0.0'}
+              </span>
+              <FaStar style={{ color: '#f1c40f', fontSize: '0.8rem' }} />
             </div>
             <div className="summary-difficulty-inline">{renderDifficultyBadge(summary?.difficulty_level)}</div>
           </div>
@@ -640,44 +856,87 @@ const SummaryView = () => {
           )}
         </div>
 
-        {/* Actions */}
+        {/* Actions – desktop: includes Save */}
         <div className="summary-actions">
           {affiliateUrl && (
-            <a className={`affiliate-btn${affiliateType?` affiliate-${affiliateType}`:''}`}
+            <a className={`affiliate-btn${affiliateType ? ` affiliate-${affiliateType}` : ''}`}
               href={affiliateUrl} target="_blank" rel="noopener noreferrer">
               {affiliateLabel}
             </a>
           )}
-          <button className="hf-btn export-btn" type="button" onClick={()=>setShowExportModal(true)}
+          <button className="hf-btn export-btn" type="button" onClick={() => setShowExportModal(true)}
             title="Export document" aria-label="Export this document">
             <FaFileDownload /><span className="export-btn-label"> Export</span>
           </button>
           <button className="hf-btn share-btn" type="button" onClick={handleShare} title="Share">
             <FaShareAlt />
           </button>
-          {ownerId && currentUserId && ownerId===currentUserId && (
-            <button className="hf-btn" type="button" onClick={()=>setShowEdit(true)}>Edit</button>
+          {/* Save – visible only on desktop (hidden on mobile via CSS) */}
+          <button
+            className={`hf-btn save-btn-desktop ${isSaved ? 'saved' : ''}`}
+            type="button"
+            onClick={handleSave}
+            disabled={savingArticle}
+            title={isSaved ? 'Remove from reading list' : 'Save to reading list'}
+            aria-label={isSaved ? 'Saved' : 'Save article'}
+          >
+            {isSaved ? <FaBookmark /> : <FaRegBookmark />}
+            <span className="save-btn-label">{isSaved ? 'Saved' : 'Save'}</span>
+          </button>
+          {ownerId && currentUserId && ownerId === currentUserId && (
+            <button className="hf-btn" type="button" onClick={() => setShowEdit(true)}>Edit</button>
           )}
         </div>
 
-        {/* Engagement */}
+        {/* Engagement row – always visible */}
         <div className="summary-engagement" role="group" aria-label="Engagement">
-          <button className={`eng-btn like-btn ${userHasLiked?'liked':''}`} onClick={handleLike}
-            aria-pressed={userHasLiked} title={userHasLiked?'Unlike':'Like'}>
-            <FaThumbsUp /><span>{likes??0}</span>
+          <button className={`eng-btn like-btn ${userHasLiked ? 'liked' : ''}`} onClick={handleLike}
+            aria-pressed={userHasLiked} title={userHasLiked ? 'Unlike' : 'Like'}>
+            <FaThumbsUp /><span>{likes ?? 0}</span>
           </button>
           <button className="eng-btn" onClick={handleScrollToComments} title="Jump to comments">
-            <FaComment /><span>{commentsCount??0}</span>
+            <FaComment /><span>{commentsCount ?? 0}</span>
           </button>
-          <div className="eng-item" title="Views"><FaEye /><span>{views??0}</span></div>
-          <div className="rating-block">
+          <div className="eng-item" title="Views"><FaEye /><span>{views ?? 0}</span></div>
+          {/* Stars: always visible on desktop; on mobile hidden when collapsed */}
+          <div className="rating-block rating-block--hideable">
             <div className="rating-stars">{renderStars('md')}</div>
-            <div className="avg-text">{avgRating?Number(avgRating).toFixed(1):'0.0'}</div>
+            <div className="avg-text">{avgRating ? Number(avgRating).toFixed(1) : '0.0'}</div>
+          </div>
+          {/* Save – visible only on mobile (hidden on desktop via CSS) */}
+          <button
+            className={`eng-btn save-btn-mobile ${isSaved ? 'saved' : ''}`}
+            type="button"
+            onClick={handleSave}
+            disabled={savingArticle}
+            title={isSaved ? 'Remove from reading list' : 'Save'}
+            aria-label={isSaved ? 'Saved' : 'Save article'}
+          >
+            {isSaved ? <FaBookmark /> : <FaRegBookmark />}
+            <span className="save-btn-label-mobile">{isSaved ? 'Saved' : 'Save'}</span>
+          </button>
+        </div>
+
+        {/* Progress bar – bottom edge, with a leading dot */}
+        <div className="summary-progress-track" aria-hidden="true">
+          <div className="summary-progress-bar"
+            style={{ width: `${scrollProgress}%`, background: rt.progress }}>
+            {scrollProgress > 0 && scrollProgress < 100 && (
+              <div className="summary-progress-dot" style={{ background: rt.progress }} />
+            )}
           </div>
         </div>
       </header>
 
-      {/* ── Reader controls ──────────────────────────────────────────── */}
+      {/* ── Read‑time badge (fades on scroll past 80px) ──────────── */}
+      {!showLoading && !hideReadtimeBadge && (
+        <div className="header-readtime-badge" aria-label={`Estimated read time: ${readTime} minutes`}>
+          <span className="readtime-icon">⏱️</span>
+          <span className="readtime-text">{readTime} min read</span>
+        </div>
+      )}
+
+      {/* ── Reader controls ──────────────────────────────────────── */}
       {!showLoading && (
         <div className="reader-controls">
           <div className="rc-group">
@@ -685,43 +944,39 @@ const SummaryView = () => {
             <span className="rc-value">{fontSize}px</span>
             <button className="hf-btn" aria-label="Increase font" onClick={increaseFont}><FaPlus /></button>
           </div>
-
-          {/* Theme dropdown */}
           <div className="rc-group rc-theme-wrap" ref={themeDropdownRef}>
             <button className="hf-btn rc-theme-btn" type="button"
-              onClick={()=>setShowThemeDropdown(v=>!v)}
+              onClick={() => setShowThemeDropdown(v => !v)}
               aria-haspopup="listbox" aria-expanded={showThemeDropdown}
               title="Change reading theme">
-              <span className="rc-theme-dot"
-                style={{ background: rt.bg, border: `2px solid ${rt.headingLine}` }} />
+              <span className="rc-theme-dot" style={{ background: rt.bg, border: `2px solid ${rt.headingLine}` }} />
               <span className="rc-theme-label">{rt.label}</span>
-              <FaChevronDown style={{ fontSize:9, marginLeft:4 }} />
+              <FaChevronDown style={{ fontSize: 9, marginLeft: 4 }} />
             </button>
             {showThemeDropdown && (
               <div className="rc-theme-dropdown" role="listbox">
                 {Object.entries(READING_THEMES).map(([key, t]) => (
                   <button key={key} type="button"
-                    className={`rc-theme-option ${readingThemeKey===key?'active':''}`}
-                    role="option" aria-selected={readingThemeKey===key}
-                    onClick={()=>applyTheme(key)}>
+                    className={`rc-theme-option ${readingThemeKey === key ? 'active' : ''}`}
+                    role="option" aria-selected={readingThemeKey === key}
+                    onClick={() => applyTheme(key)}>
                     <span className="rc-theme-dot" style={{ background: t.bg, border: `2px solid ${t.headingLine}` }} />
                     {t.label}
-                    {readingThemeKey===key && <span style={{marginLeft:'auto',color:t.accent}}>✓</span>}
+                    {readingThemeKey === key && <span style={{ marginLeft: 'auto', color: t.accent }}>✓</span>}
                   </button>
                 ))}
               </div>
             )}
           </div>
-
           <div className="rc-group">
             <button className="hf-btn" title="Reset to defaults" onClick={resetTypography}>Reset</button>
           </div>
         </div>
       )}
 
-      {/* ── YouTube embed ────────────────────────────────────────────── */}
+      {/* ── YouTube embed ────────────────────────────────────────── */}
       {!showLoading && extractYouTubeId(summary?.youtube_url) && (
-        <div style={{ maxWidth:980, margin:'10px auto', padding:'0 18px' }}>
+        <div style={{ maxWidth: 980, margin: '10px auto', padding: '0 18px' }}>
           <div className="youtube-embed">
             <div className="embed-inner">
               <iframe className="youtube-iframe" title="YouTube clip"
@@ -734,28 +989,28 @@ const SummaryView = () => {
         </div>
       )}
 
-      {/* ── Article body ────────────────────────────────────────────── */}
-      <main style={{ maxWidth:980, margin:'0 auto', padding:'0 18px' }}>
+      {/* ── Article body ────────────────────────────────────────── */}
+      <main style={{ maxWidth: 980, margin: '0 auto', padding: '0 18px' }}>
         {showLoading ? (
           <div style={articleStyle}><InlineLoader label="Loading content" /></div>
         ) : showNotFound ? (
-          <div style={{ ...articleStyle, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'40px 32px' }}>
-            <div style={{ fontSize:42, marginBottom:16, opacity:0.7 }}>📖</div>
-            <div style={{ fontSize:20, fontWeight:600, marginBottom:10, color:'#0b1220' }}>Content Under Development</div>
-            <div style={{ fontSize:15, lineHeight:1.6, color:'#4b5563', marginBottom:6, maxWidth:480 }}>
+          <div style={{ ...articleStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '40px 32px' }}>
+            <div style={{ fontSize: 42, marginBottom: 16, opacity: 0.7 }}>📖</div>
+            <div style={{ fontSize: 20, fontWeight: 600, marginBottom: 10, color: '#0b1220' }}>Content Under Development</div>
+            <div style={{ fontSize: 15, lineHeight: 1.6, color: '#4b5563', marginBottom: 6, maxWidth: 480 }}>
               This resource is being carefully curated to ensure the highest quality insights.
             </div>
             <button onClick={handleBackToArticle} className="hf-btn"
-              style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 24px', fontSize:15, fontWeight:500, backgroundColor:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', marginTop:12 }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', fontSize: 15, fontWeight: 500, backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', marginTop: 12 }}>
               <FaArrowLeft /> Back to Library
             </button>
           </div>
         ) : (
-          <article className={`summary-body summary-theme-${readingThemeKey}`}
+          <article ref={articleRef} className={`summary-body summary-theme-${readingThemeKey}`}
             style={articleStyle} onClick={onArticleClick}>
             {articleSegments.map((segment, idx) => {
               if (segment.type === 'ad') {
-                const workbook = slotWorkbooks[segment.adIndex-1] ?? null;
+                const workbook = slotWorkbooks[segment.adIndex - 1] ?? null;
                 if (!workbook) return null;
                 return <AdSlot key={`ad-${idx}`} index={segment.adIndex} workbook={workbook} />;
               }
@@ -765,38 +1020,43 @@ const SummaryView = () => {
         )}
       </main>
 
-      {/* ── Recommendations ──────────────────────────────────────────── */}
+      {/* ── Recommendations ─────────────────────────────────────── */}
       {(isRecommending || recommendedContent?.length > 0) && (
         <HorizontalCarousel title="More like this" items={recommendedContent} loading={isRecommending}
-          skeletonCount={4} tag={summary?.tags?.[0]??null} sortKey="views">
-          {recommendedContent.map(item=><BookSummaryCard key={String(item.id||item.slug)} summary={item} />)}
+          skeletonCount={4} tag={summary?.tags?.[0] ?? null} sortKey="views">
+          {recommendedContent.map(item => <BookSummaryCard key={String(item.id || item.slug)} summary={item} />)}
         </HorizontalCarousel>
       )}
       {!isRecommending && !recommendedContent?.length && !recError && (
-        <div style={{ padding:'12px 16px', color:'#6b7280' }}>No similar items found.</div>
+        <div style={{ padding: '12px 16px', color: '#6b7280' }}>No similar items found.</div>
       )}
       {recError && (
-        <div style={{ padding:'12px 16px', color:'#b45309' }}>
-          {recError} <button onClick={()=>{if(summary?.tags?.length)fetchRecommendedByTags(summary.tags,10,summary.id);else if(summary?.category)fetchRecommendedByCategory(summary.category,10,summary.id);}}>Retry</button>
+        <div style={{ padding: '12px 16px', color: '#b45309' }}>
+          {recError} <button onClick={() => { if (summary?.tags?.length) fetchRecommendedByTags(summary.tags, 10, summary.id); else if (summary?.category) fetchRecommendedByCategory(summary.category, 10, summary.id); }}>Retry</button>
         </div>
       )}
 
-      {/* ── Comments ────────────────────────────────────────────────── */}
+      {/* ── Comments ────────────────────────────────────────────── */}
       <section ref={commentsRef} className="summary-comments"
-        style={{ width:'80%', margin:'20px auto', padding:'0 18px', boxSizing:'border-box' }}>
+        style={{ width: '80%', margin: '20px auto', padding: '0 18px', boxSizing: 'border-box' }}>
         <h3>Comments</h3>
-        {summary?.id ? <CommentsSection postId={summary.id} /> : <div style={{ color:'#6b7280' }}>Comments will appear once content loads.</div>}
+        {summary?.id ? <CommentsSection postId={summary.id} /> : <div style={{ color: '#6b7280' }}>Comments will appear once content loads.</div>}
       </section>
 
-      {/* ── Edit form ───────────────────────────────────────────────── */}
-      {showEdit && <EditSummaryForm summary={summary} onClose={()=>setShowEdit(false)} onUpdate={handleEditSaved} />}
+      {/* ── Edit form ───────────────────────────────────────────── */}
+      {showEdit && <EditSummaryForm summary={summary} onClose={() => setShowEdit(false)} onUpdate={handleEditSaved} />}
 
-      {/* ── Export modal ─────────────────────────────────────────────── */}
+      {/* ── Export modal ─────────────────────────────────────────── */}
       {showExportModal && (
-        <ExportModal
-          summary={summary}
-          articleHtml={processedSummaryHtml}
-          onClose={()=>setShowExportModal(false)}
+        <ExportModal summary={summary} articleHtml={processedSummaryHtml} onClose={() => setShowExportModal(false)} />
+      )}
+
+      {/* ── Sign‑in popup ───────────────────────────────────────── */}
+      {showSignInPopup && (
+        <SignInPopup
+          onClose={() => setShowSignInPopup(false)}
+          onSuccess={handleSignInSuccess}
+          pendingAction="save this article"
         />
       )}
     </div>
