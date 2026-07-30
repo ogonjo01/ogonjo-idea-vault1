@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/copy-redirects.js",
-    "build:dev": "vite build --mode development && node scripts/copy-redirects.js",
+    "build": "npx tsx scripts/generate-sitemap.ts && vite build && node scripts/copy-redirects.js",
+    "build:dev": "npx tsx scripts/generate-sitemap.ts && vite build --mode development && node scripts/copy-redirects.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server.js"
@@ -127,8 +127,10 @@
     "globals": "^15.9.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
-    "vite": "^5.3.5"
+    "vite": "^5.3.5",
+    "vite-plugin-sitemap": "^0.8.2"
   }
 }

@@ -16,12 +16,12 @@ import './ContentFeed.css';
 /* ─────────────────────────────────────────────────────────────
    CONSTANTS
 ───────────────────────────────────────────────────────────── */
-const ITEMS_PER_CAROUSEL = 12;   // cards per horizontal row — UNCHANGED
-const INITIAL_ROWS       = 5;    // show 5 rows (60 cards) on first load
-const LOAD_MORE_ROWS     = 2;    // add 2 rows (24 cards) each scroll
+const ITEMS_PER_CAROUSEL = 12;
+const INITIAL_ROWS       = 5;
+const LOAD_MORE_ROWS     = 2;
 const INITIAL_VISIBLE    = ITEMS_PER_CAROUSEL * INITIAL_ROWS;   // 60
 const LOAD_MORE_BATCH    = ITEMS_PER_CAROUSEL * LOAD_MORE_ROWS; // 24
-const MAX_FEED_ITEMS     = 500;  // fetch up to 500 articles so there are plenty of rows
+const MAX_FEED_ITEMS     = 500;
 const CATEGORY_BATCH     = 3;
 const MIN_LOAD_MS        = 350;
 const DRAFTS_TAB         = '📝 Drafts';
@@ -29,7 +29,7 @@ const FOR_YOU_TAB        = 'For You';
 const BRIEFS_TAB         = '📰 Ogonjo Briefs';
 const BRIEFS_CATEGORY    = 'Ogonjo Briefs';
 const BRIEFS_PAGE_SIZE   = 100;
-const BRIEFS_MAX_AGE_HOURS = 48;
+const BRIEFS_MAX_AGE_HOURS = 48; // used only for For You feed filtering
 
 /* ─────────────────────────────────────────────────────────────
    SELECT STRINGS
@@ -164,7 +164,9 @@ const formatDate = (dateStr) => {
 };
 
 /* ─────────────────────────────────────────────────────────────
-   FILTER: remove Ogonjo Briefs older than 48h from any list
+   FILTER: remove Ogonjo Briefs older than 48h from For You feed
+   NOTE: this is NOT applied inside fetchBriefs — the Briefs tab
+   is unrestricted and uses its own date-archive browser.
 ───────────────────────────────────────────────────────────── */
 const filterOutOldBriefs = (items) => {
   const now      = Date.now();
@@ -234,23 +236,27 @@ const fetchTopCategories = async (limit = 50) => {
 
 /* ─────────────────────────────────────────────────────────────
    BRIEFS DATA FETCHER
+   Unrestricted — no age cutoff. The Briefs tab owns its own
+   date-archive browser; freshness filtering stays in For You.
 ───────────────────────────────────────────────────────────── */
 const fetchBriefs = async (sortBy = 'newest', limit = BRIEFS_PAGE_SIZE) => {
   try {
-    let q = supabase.from('book_summaries').select(SELECT_WITH_COUNTS)
-      .eq('status', 'published').eq('category', BRIEFS_CATEGORY)
-      .order('created_at', { ascending: false }).limit(limit);
+    let q = supabase.from('book_summaries')
+      .select(SELECT_WITH_COUNTS)
+      .eq('status', 'published')
+      .eq('category', BRIEFS_CATEGORY)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
     const { data, error } = await q;
     if (error) throw error;
     const rows = (data || []).map(normalizeRow);
-    const now = Date.now();
-    const maxAgeMs = BRIEFS_MAX_AGE_HOURS * 3600000;
-    const filtered = rows.filter(item => item.created_at && (now - new Date(item.created_at).getTime()) <= maxAgeMs);
-    if (sortBy === 'views')  filtered.sort((a, b) => (b.views_count  || 0) - (a.views_count  || 0));
-    else if (sortBy === 'liked') filtered.sort((a, b) => (b.likes_count  || 0) - (a.likes_count  || 0));
-    else if (sortBy === 'rated') filtered.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
-    else filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    return filtered;
+
+    if (sortBy === 'views')  rows.sort((a, b) => (b.views_count  || 0) - (a.views_count  || 0));
+    if (sortBy === 'liked')  rows.sort((a, b) => (b.likes_count  || 0) - (a.likes_count  || 0));
+    if (sortBy === 'rated')  rows.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
+
+    return rows;
   } catch (err) { console.error('fetchBriefs error', err); return []; }
 };
 
@@ -269,7 +275,7 @@ const BriefRow = ({ item, index }) => {
       </div>
       <div className="brief-row-meta" aria-hidden="true">
         <span className="brief-meta-item"><FaHeart className="brief-meta-icon" /> {item.likes_count || 0}</span>
-        <span className="brief-meta-item"><FaEye  className="brief-meta-icon" /> {item.views_count  || 0}</span>
+        <span className="brief-meta-item"><FaEye   className="brief-meta-icon" /> {item.views_count  || 0}</span>
         <span className="brief-meta-item">
           <FaStar className="brief-meta-icon brief-meta-star" />{' '}
           {item.avg_rating ? Number(item.avg_rating).toFixed(1) : '0.0'}
@@ -283,54 +289,235 @@ const BriefRow = ({ item, index }) => {
 /* ─────────────────────────────────────────────────────────────
    BRIEFS FEED
 ───────────────────────────────────────────────────────────── */
-const BriefsFeed = () => {
-  const [briefs,  setBriefs]  = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [sortBy,  setSortBy]  = useState('newest');
+const BRIEF_SORT_OPTIONS = [
+  { key: 'newest', label: 'Newest'      },
+  { key: 'views',  label: 'Most Viewed' },
+  { key: 'liked',  label: 'Most Liked'  },
+  { key: 'rated',  label: 'Top Rated'   },
+];
 
-  const load = useCallback(async () => {
+const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+
+const BRIEFS_PER_PAGE = 10;
+
+const BriefsFeed = () => {
+  const [sortBy,       setSortBy]       = useState('newest');
+  const [allItems,     setAllItems]     = useState([]);
+  const [visible,      setVisible]      = useState(BRIEFS_PER_PAGE);
+  const [loading,      setLoading]      = useState(true);
+  const [loadingMore,  setLoadingMore]  = useState(false);
+
+  const _today = new Date();
+  const [selectedYear,  setSelectedYear]  = useState(String(_today.getFullYear()));
+  const [selectedMonth, setSelectedMonth] = useState(String(_today.getMonth()));
+  const [selectedDay,   setSelectedDay]   = useState(String(_today.getDate()));
+
+  useEffect(() => {
+    let alive = true;
     setLoading(true);
-    setBriefs(await fetchBriefs(sortBy, BRIEFS_PAGE_SIZE));
-    setLoading(false);
+    setVisible(BRIEFS_PER_PAGE);
+    const _t = new Date();
+    setSelectedYear(String(_t.getFullYear()));
+    setSelectedMonth(String(_t.getMonth()));
+    setSelectedDay(String(_t.getDate()));
+    fetchBriefs(sortBy).then(rows => {
+      if (alive) { setAllItems(rows); setLoading(false); }
+    });
+    return () => { alive = false; };
   }, [sortBy]);
 
-  useEffect(() => { load(); }, [load]);
+  const availableYears = React.useMemo(() => {
+    const years = new Set(
+      allItems.filter(r => r.created_at).map(r => new Date(r.created_at).getFullYear())
+    );
+    return [...years].sort((a, b) => b - a);
+  }, [allItems]);
 
-  if (loading) return (
-    <div className="centered-loader-viewport">
-      <div className="centered-loader"><div className="spinner" /><p className="loader-text">Loading briefs…</p></div>
-    </div>
-  );
+  const availableMonths = React.useMemo(() => {
+    if (!selectedYear) return [];
+    const months = new Set(
+      allItems
+        .filter(r => r.created_at && new Date(r.created_at).getFullYear() === Number(selectedYear))
+        .map(r => new Date(r.created_at).getMonth())
+    );
+    return [...months].sort((a, b) => a - b);
+  }, [allItems, selectedYear]);
 
-  if (!briefs.length) return (
-    <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
-      <p>No Ogonjo Briefs from the last {BRIEFS_MAX_AGE_HOURS} hours.</p>
-      <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>Check back later for fresh business intelligence.</p>
-    </div>
-  );
+  const availableDays = React.useMemo(() => {
+    if (!selectedYear || selectedMonth === '') return [];
+    const daysInMonth = new Date(Number(selectedYear), Number(selectedMonth) + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  }, [selectedYear, selectedMonth]);
+
+  const dateFilteredItems = React.useMemo(() => {
+    if (sortBy === 'newest') return allItems;
+    return allItems.filter(r => {
+      if (!r.created_at) return false;
+      const d = new Date(r.created_at);
+      if (selectedYear  && d.getFullYear() !== Number(selectedYear))  return false;
+      if (selectedMonth !== '' && d.getMonth() !== Number(selectedMonth)) return false;
+      if (selectedDay   && d.getDate()    !== Number(selectedDay))    return false;
+      return true;
+    });
+  }, [allItems, sortBy, selectedYear, selectedMonth, selectedDay]);
+
+  const displayedItems = dateFilteredItems.slice(0, visible);
+  const hasMore        = visible < dateFilteredItems.length;
+  const showDateFilter = sortBy !== 'newest';
+
+  const handleLoadMore = () => {
+    setLoadingMore(true);
+    setTimeout(() => { setVisible(v => v + BRIEFS_PER_PAGE); setLoadingMore(false); }, 200);
+  };
+
+  const handleSortChange = (key) => {
+    setSortBy(key);
+    setVisible(BRIEFS_PER_PAGE);
+    try {
+      const el = document.querySelector('.briefs-feed');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (_) {}
+  };
+
+  const handleYearChange = (e) => {
+    setSelectedYear(e.target.value); setSelectedMonth(''); setSelectedDay(''); setVisible(BRIEFS_PER_PAGE);
+  };
+  const handleMonthChange = (e) => {
+    setSelectedMonth(e.target.value); setSelectedDay(''); setVisible(BRIEFS_PER_PAGE);
+  };
+  const handleDayChange = (e) => {
+    setSelectedDay(e.target.value); setVisible(BRIEFS_PER_PAGE);
+  };
+  const clearDateFilter = () => {
+    const _t = new Date();
+    setSelectedYear(String(_t.getFullYear())); setSelectedMonth(String(_t.getMonth())); setSelectedDay(String(_t.getDate())); setVisible(BRIEFS_PER_PAGE);
+  };
+
+  const selectStyle = {
+    padding: '5px 10px', borderRadius: 6,
+    border: '1px solid rgba(255,255,255,0.12)',
+    background: 'rgba(255,255,255,0.06)',
+    color: 'inherit', fontSize: 12, fontWeight: 600,
+    cursor: 'pointer', outline: 'none',
+  };
 
   return (
     <div className="briefs-feed">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f1f5f9' }}>📰 Ogonjo Briefs</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {['newest', 'views', 'liked', 'rated'].map(opt => (
-            <button key={opt} onClick={() => setSortBy(opt)}
-              style={{ padding: '4px 12px', borderRadius: '20px', border: '1px solid', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, transition: 'all 0.15s',
-                borderColor: sortBy === opt ? '#06b6d4' : 'rgba(255,255,255,0.1)',
-                background:  sortBy === opt ? 'rgba(6,182,212,0.15)' : 'transparent',
-                color:       sortBy === opt ? '#06b6d4' : '#94a3b8' }}>
-              {opt === 'newest' ? 'Newest' : opt === 'views' ? 'Most Viewed' : opt === 'liked' ? 'Most Liked' : 'Most Rated'}
+      {/* Header */}
+      <div className="briefs-feed-header">
+        <div className="briefs-feed-title-block">
+          <h2 className="briefs-feed-title">Ogonjo Briefs</h2>
+          <p className="briefs-feed-subtitle">
+            Business ideas spotted in the news — for founders who want to move first.
+          </p>
+        </div>
+        <div className="briefs-sort-bar" role="group" aria-label="Sort briefs">
+          {BRIEF_SORT_OPTIONS.map(opt => (
+            <button key={opt.key} type="button"
+              className={`briefs-sort-btn${sortBy === opt.key ? ' active' : ''}`}
+              onClick={() => handleSortChange(opt.key)}
+              aria-pressed={sortBy === opt.key}>
+              {opt.label}
             </button>
           ))}
-          <button onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); load(); }}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-            title="Refresh briefs"><FaSync /></button>
         </div>
       </div>
-      <div className="briefs-list">
-        {briefs.map((item, idx) => <BriefRow key={item.id} item={item} index={idx} />)}
-      </div>
+
+      {/* Date filter bar */}
+      {showDateFilter && !loading && allItems.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 0', marginBottom: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.5 }}>
+            📅 Filter by
+          </span>
+          <select value={selectedYear} onChange={handleYearChange} style={selectStyle} aria-label="Filter by year">
+            <option value="">All years</option>
+            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {selectedYear && (
+            <select value={selectedMonth} onChange={handleMonthChange} style={selectStyle} aria-label="Filter by month">
+              <option value="">All months</option>
+              {availableMonths.map(m => <option key={m} value={m}>{MONTH_NAMES[m]}</option>)}
+            </select>
+          )}
+          {selectedYear && selectedMonth !== '' && (
+            <select value={selectedDay} onChange={handleDayChange} style={selectStyle} aria-label="Filter by day">
+              <option value="">All days</option>
+              {availableDays.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          <button type="button" onClick={clearDateFilter}
+            style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, color: 'inherit', fontSize: 11, padding: '4px 10px', cursor: 'pointer', opacity: 0.6 }}>
+            ↺ This month
+          </button>
+          <span style={{ fontSize: 11, opacity: 0.5 }}>
+            {selectedDay
+              ? `${MONTH_NAMES[Number(selectedMonth)]} ${selectedDay}, ${selectedYear}`
+              : selectedMonth !== '' ? `${MONTH_NAMES[Number(selectedMonth)]} ${selectedYear}` : selectedYear}
+          </span>
+        </div>
+      )}
+
+      {/* List */}
+      {loading ? (
+        <div className="briefs-loading">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="brief-row-skeleton" aria-hidden="true">
+              <div className="brs-index" /><div className="brs-body"><div className="brs-title" /><div className="brs-desc" /></div><div className="brs-meta" />
+            </div>
+          ))}
+        </div>
+      ) : allItems.length === 0 ? (
+        <div className="briefs-empty">
+          <p>No briefs published yet. Check back soon.</p>
+        </div>
+      ) : dateFilteredItems.length === 0 ? (
+        <div className="briefs-empty" style={{ padding: '3rem 0', textAlign: 'center' }}>
+          <p style={{ fontSize: 15, opacity: 0.5, margin: 0 }}>
+            Nothing for{' '}
+            {selectedDay
+              ? `${MONTH_NAMES[Number(selectedMonth)]} ${selectedDay}, ${selectedYear}`
+              : `${MONTH_NAMES[Number(selectedMonth)]} ${selectedYear}`}.
+          </p>
+          <p style={{ fontSize: 12, opacity: 0.4, margin: '6px 0 0' }}>
+            Try a different {selectedDay ? 'day' : 'month'}.
+          </p>
+          <button type="button" onClick={clearDateFilter}
+            style={{ marginTop: 12, background: 'none', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: 'inherit', fontSize: 12, padding: '6px 16px', cursor: 'pointer' }}>
+            Clear filter
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="briefs-list" role="list">
+            {displayedItems.map((item, i) => <BriefRow key={item.id ?? item.slug} item={item} index={i} />)}
+          </div>
+          <p className="briefs-count" aria-live="polite">
+            Showing {displayedItems.length} of {dateFilteredItems.length}
+            {allItems.length !== dateFilteredItems.length ? ` (filtered from ${allItems.length} total)` : ''}
+          </p>
+          {hasMore && (
+            <div className="briefs-load-more-wrapper">
+              <button type="button" className="briefs-load-more-btn" onClick={handleLoadMore} disabled={loadingMore}>
+                {loadingMore ? 'Loading…' : `Load more (${dateFilteredItems.length - visible} remaining)`}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Footer CTA */}
+      {!loading && dateFilteredItems.length > 0 && !hasMore && (
+        <div className="briefs-footer-cta">
+          <p className="briefs-footer-text">That's everything for now. Explore the full library.</p>
+          <button type="button" className="briefs-footer-btn"
+            onClick={() => window.dispatchEvent(new CustomEvent('ogonjo:navigate-tab', { detail: { tab: 'For You' } }))}>
+            More content →
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -347,10 +534,6 @@ const SECTIONS = [
 
 /* ─────────────────────────────────────────────────────────────
    PERSONALISED FEED
-   Key numbers:
-     • INITIAL_VISIBLE = 60  → 5 horizontal rows shown immediately
-     • LOAD_MORE_BATCH = 24  → 2 more rows appear each scroll
-     • MAX_FEED_ITEMS  = 500 → up to ~41 rows available before refresh
 ───────────────────────────────────────────────────────────── */
 const PersonalisedFeed = ({ userId }) => {
   const [allArticles,    setAllArticles]    = useState([]);
@@ -461,7 +644,7 @@ const PersonalisedFeed = ({ userId }) => {
       } catch {}
     }
 
-    /* 5. fetch pool — 1000 articles gives plenty of rows */
+    /* 5. fetch pool */
     const { data: articles } = await supabase.from('book_summaries').select(`
         id, created_at, title, author, description, category, tags, keywords,
         image_url, avg_rating, slug,
@@ -507,7 +690,6 @@ const PersonalisedFeed = ({ userId }) => {
     const rand     = scored.slice(Math.floor(total * 0.8));
     const shuffle  = arr => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
-    /* ★ Use MAX_FEED_ITEMS (500) so there are ~41 rows available */
     const finalFeed = shuffle([
       ...shuffle(topMatch).slice(0, Math.ceil(MAX_FEED_ITEMS * 0.50)),
       ...shuffle(related).slice(0,  Math.ceil(MAX_FEED_ITEMS * 0.25)),
@@ -515,19 +697,17 @@ const PersonalisedFeed = ({ userId }) => {
       ...shuffle(rand).slice(0,     Math.ceil(MAX_FEED_ITEMS * 0.10)),
     ]).slice(0, MAX_FEED_ITEMS);
 
-    /* 8. tags for filter bar */
     const tagSet = new Set();
     finalFeed.forEach(a => (a.tags || []).forEach(t => tagSet.add(t)));
 
     setAllArticles(finalFeed);
     setAvailableTags([...tagSet].sort());
-    setVisibleCount(INITIAL_VISIBLE); // show 60 cards = 5 rows immediately
+    setVisibleCount(INITIAL_VISIBLE);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => { loadFeed(); }, [loadFeed, refreshKey]);
 
-  /* IntersectionObserver: add LOAD_MORE_BATCH (24) cards = 2 more rows each time */
   useEffect(() => {
     if (!sentinelRef.current || loading) return;
     const obs = new IntersectionObserver(
@@ -546,20 +726,13 @@ const PersonalisedFeed = ({ userId }) => {
     ? allArticles.filter(a => (a.tags || []).includes(activeTag))
     : allArticles;
 
-  /* Split into horizontal rows of ITEMS_PER_CAROUSEL (12) */
   const visible = filteredArticles.slice(0, visibleCount);
   const rows    = [];
   for (let i = 0; i < visible.length; i += ITEMS_PER_CAROUSEL)
     rows.push(visible.slice(i, i + ITEMS_PER_CAROUSEL));
 
-  const handleTagClick = (tag) => {
-    setActiveTag(prev => prev === tag ? null : tag);
-    setVisibleCount(INITIAL_VISIBLE);
-  };
-  const handleRefresh = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    setRefreshKey(prev => prev + 1);
-  };
+  const handleTagClick = (tag) => { setActiveTag(prev => prev === tag ? null : tag); setVisibleCount(INITIAL_VISIBLE); };
+  const handleRefresh  = () => { window.scrollTo({ top: 0, behavior: 'smooth' }); setRefreshKey(prev => prev + 1); };
 
   if (loading) return (
     <div className="centered-loader-viewport">
@@ -575,11 +748,9 @@ const PersonalisedFeed = ({ userId }) => {
 
   return (
     <div className="personalised-feed">
-      {/* Tag filter bar */}
       {availableTags.length > 0 && (
         <div className="categories-bar" style={{ alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', flexWrap: 'nowrap',
-            WebkitOverflowScrolling: 'touch', padding: '0 8px 8px', maxWidth: '100%' }}>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', padding: '0 8px 8px', maxWidth: '100%' }}>
             {availableTags.map(tag => (
               <button key={tag} type="button" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                 className={`category-chip${activeTag === tag ? ' active' : ''}`}
@@ -596,36 +767,23 @@ const PersonalisedFeed = ({ userId }) => {
         </div>
       )}
 
-      {/* ★ Horizontal rows — each row = one HorizontalCarousel */}
       {rows.map((row, idx) => (
-        <HorizontalCarousel
-          key={idx}
-          title={idx === 0 ? '✨ For You' : ''}
-          items={row}
-          loading={false}
-          skeletonCount={6}
-        >
-          {row.map(article => (
-            <BookSummaryCard key={article.id} summary={article} />
-          ))}
+        <HorizontalCarousel key={idx} title={idx === 0 ? '✨ For You' : ''} items={row} loading={false} skeletonCount={6}>
+          {row.map(article => <BookSummaryCard key={article.id} summary={article} />)}
         </HorizontalCarousel>
       ))}
 
-      {/* Sentinel: triggers 2 more rows */}
       {visibleCount < filteredArticles.length && (
         <div ref={sentinelRef} style={{ height: 1, width: '100%' }} aria-hidden="true" />
       )}
 
-      {/* End of feed */}
       {visibleCount >= filteredArticles.length && allArticles.length > 0 && (
         <div style={{ textAlign: 'center', padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
           <p style={{ color: '#9ca3af', fontSize: '0.85rem', margin: 0 }}>
             You've seen everything. Keep reading to improve your recommendations.
           </p>
           <button onClick={handleRefresh}
-            style={{ padding: '6px 20px', borderRadius: '20px', border: '1px solid #2d3748',
-              background: 'transparent', color: '#9ca3af', fontSize: '0.8rem', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}
+            style={{ padding: '6px 20px', borderRadius: '20px', border: '1px solid #2d3748', background: 'transparent', color: '#9ca3af', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s' }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = '#06b6d4'; e.currentTarget.style.color = '#06b6d4'; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = '#2d3748'; e.currentTarget.style.color = '#9ca3af'; }}>
             <FaSync /> Refresh Feed
@@ -731,7 +889,7 @@ const ContentFeed = ({
       const BASE = 'OGONJO — Business Knowledge for Builders';
       let title = BASE, description = BASE;
       if (isDraftTab)        { title = 'Drafts — OGONJO'; description = 'Your unpublished drafts.'; }
-      else if (isBriefTab)   { title = 'Ogonjo Briefs — Business Intelligence'; description = 'Curated business intelligence for founders and investors.'; }
+      else if (isBriefTab)   { title = 'Ogonjo Briefs — Business Ideas'; description = 'Business ideas spotted in the news, for founders who want to move first.'; }
       else if (effectiveQuery) { title = `Results for "${effectiveQuery}" — OGONJO`; description = `Search results for "${effectiveQuery}".`; }
       else if (!isForYou)    { title = `${selectedCategory} — OGONJO`; description = `Explore ${selectedCategory} on OGONJO.`; }
       document.title = title;
@@ -768,6 +926,7 @@ const ContentFeed = ({
       if (category) q = q.eq('category', category);
       const { data, error } = await q; if (error) throw error;
       const rows     = (data || []).map(normalizeRow);
+      // Only filter Briefs out of For You feed, not the Briefs tab itself
       const filtered = category === BRIEFS_CATEGORY ? filterOutOldBriefs(rows) : rows;
       fastCacheRef.current.set(key, filtered);
       return filtered;
@@ -784,6 +943,7 @@ const ContentFeed = ({
         fetchRpcOrFallback('get_top_viewed',    { category }),
       ]);
       if (Date.now() - start < 50) await sleep(50);
+      // Filter stale Briefs out of For You sections only
       const f = items => category === BRIEFS_CATEGORY ? filterOutOldBriefs(items) : items;
       return { category, newest: f(newest || []), mostLiked: f(mostLiked || []), highestRated: f(highestRated || []), mostViewed: f(mostViewed || []) };
     } catch (err) { console.error('fetchContentBlock error', err); return { category, newest: [], mostLiked: [], highestRated: [], mostViewed: [] }; }
@@ -799,9 +959,8 @@ const ContentFeed = ({
 
   const rankItemsWithBoost = useCallback((items = [], tags = [], sortKey = 'newest') => {
     if (!items.length) return [];
-    const filtered = filterOutOldBriefs(items); if (!filtered.length) return [];
     if (!tags.length) {
-      const copy = filtered.slice();
+      const copy = items.slice();
       if (sortKey === 'newest') return copy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       if (sortKey === 'likes')  return copy.sort((a, b) => (b.likes_count  || 0) - (a.likes_count  || 0));
       if (sortKey === 'rating') return copy.sort((a, b) => (b.avg_rating   || 0) - (a.avg_rating   || 0));
@@ -809,7 +968,7 @@ const ContentFeed = ({
       return copy;
     }
     const tagSet = new Set(tags.map(t => t.toLowerCase()));
-    return filtered.map(it => {
+    return items.map(it => {
       const mc = (Array.isArray(it.tags) ? it.tags.map(t => t.toLowerCase()) : []).reduce((acc, t) => acc + (tagSet.has(t) ? 1 : 0), 0);
       return { it, mc };
     }).sort((a, b) => {
