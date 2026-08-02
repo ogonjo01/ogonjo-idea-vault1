@@ -207,7 +207,7 @@ useEffect(() => {
             <UserProfile onEdit={handleEdit} onDelete={handleDelete} />
           } />
           <Route path="/library/:param" element={<SummaryView />} />
-          <Route path="/summary/:param"  element={<SummaryView />} />
+         
           <Route path="/explore"         element={<ExplorePage />} />
           <Route path="/features"        element={<Features />} />
           <Route path="/contact"         element={<Contact />} />
