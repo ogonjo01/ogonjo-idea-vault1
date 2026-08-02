@@ -4,6 +4,8 @@
 // All other features (sticky header, read‑time badge, Save button, sign‑in
 // popup, behaviour tracking) are intact.
 // MOBILE: author hides + star rating appears in meta row when header collapses.
+// SEO FIX: all internal navigation/canonical now uses /library/ instead of
+// /summary/ so we stop re-creating duplicate-content URLs after the redirect.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -527,7 +529,8 @@ const { trackNavigationClick } = useArticleTracker(
         if (!data) { ({ data } = await supabase.from('book_summaries').select(FIELDS).eq('id', param).maybeSingle()); if (data) fetchedBy='id'; }
         if (!mounted) return;
         if (!data) { setIsLoading(false); return; }
-        if (fetchedBy==='id' && data.slug && data.slug!==param) { navigate(`/summary/${data.slug}`, { replace: true }); return; }
+        // FIX: was navigating to /summary/:slug — now consistently uses /library/:slug
+        if (fetchedBy==='id' && data.slug && data.slug!==param) { navigate(`/library/${data.slug}`, { replace: true }); return; }
         const normalized = normalizeRow(data);
         normalized.category = String(normalized?.category ?? '').trim();
         setSummary(normalized); setPostId(normalized.id); setOwnerId(normalized.user_id ?? null);
@@ -653,7 +656,8 @@ const handleSave = async () => {
       try { const { data, error } = await supabase.from('book_summaries').select('id,slug').in('id', idsToFetch); if (!error && Array.isArray(data)) data.forEach(r => slugCache.current.set(String(r.id), r.slug || null)); } catch {}
       idsToFetch.forEach(id => { if (!slugCache.current.has(id)) slugCache.current.set(id, null); });
     }
-    targets.forEach((nodes, id) => { const slug = slugCache.current.get(id) || null; nodes.forEach(a => { if (slug) { a.setAttribute('href', `/summary/${slug}`); a.setAttribute('data-summary-slug', slug); a.classList.add('internal-summary-link'); } else { a.removeAttribute('href'); a.classList.add('internal-summary-link-broken'); a.setAttribute('aria-disabled', 'true'); } }); });
+    // FIX: internal links now point to /library/:slug instead of /summary/:slug
+    targets.forEach((nodes, id) => { const slug = slugCache.current.get(id) || null; nodes.forEach(a => { if (slug) { a.setAttribute('href', `/library/${slug}`); a.setAttribute('data-summary-slug', slug); a.classList.add('internal-summary-link'); } else { a.removeAttribute('href'); a.classList.add('internal-summary-link-broken'); a.setAttribute('aria-disabled', 'true'); } }); });
     return container.innerHTML;
   }, []);
 
@@ -675,13 +679,16 @@ const handleSave = async () => {
     const href = a.getAttribute('href') || '';
     const dataSlug = a.getAttribute('data-summary-slug');
     if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(href)) return;
-    if (!dataSlug && !href.startsWith('/summary/')) return;
+    // FIX: now recognizes /library/ links (still falls back to legacy /summary/
+    // hrefs already stored in old article HTML, so old content keeps working
+    // until it's resaved, but new navigation always targets /library/)
+    if (!dataSlug && !href.startsWith('/library/') && !href.startsWith('/summary/')) return;
     e.preventDefault();
-    const slug = dataSlug || href.replace(/^\/summary\//, '').split(/[/?#]/)[0] || null;
+    const slug = dataSlug || href.replace(/^\/(library|summary)\//, '').split(/[/?#]/)[0] || null;
     if (slug) {
       const targetId = a.getAttribute('data-summary-id');
       if (targetId) trackNavigationClick(targetId);
-      navigate(`/summary/${slug}`);
+      navigate(`/library/${slug}`);
       setTimeout(() => scrollToTop('auto'), 10);
     }
   };
@@ -717,7 +724,15 @@ const handleSave = async () => {
   const SITE_DEFAULT_OG = useMemo(() => { try { return `${window.location.origin}/ogonjo.jpg`; } catch { return ''; } }, []);
   const metaTitle = useMemo(() => `${summary?.title || 'Loading…'} – ${BRAND}`, [summary?.title]);
   const metaDescription = useMemo(() => makeSafeDescription(summary?.description || summary?.summary || '', 160), [summary?.description, summary?.summary]);
-  const pageUrl = useMemo(() => { try { const u = new URL(window.location.href); return `${u.origin}${u.pathname}`; } catch { return `https://ogonjo.com/summary/${summary?.slug || ''}`; } }, [summary?.slug]);
+  // FIX: canonical always resolves to /library/:slug regardless of the path
+  // the page happens to be rendered at (window.location no longer used here),
+  // so even if an old /summary/ URL is ever served client-side before the
+  // Netlify redirect fires, the canonical tag still points Google to the
+  // single correct URL.
+  const pageUrl = useMemo(() => {
+    const slug = summary?.slug || param || '';
+    return `https://ogonjo.com/library/${slug}`;
+  }, [summary?.slug, param]);
   const ogImage = summary?.image_url || SITE_DEFAULT_OG;
 
   const ldJson = useMemo(() => {

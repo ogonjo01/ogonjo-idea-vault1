@@ -1,6 +1,7 @@
 // src/pages/ExplorePage.jsx
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { supabase } from "../../supabase/supabaseClient";
 import BookSummaryCard from "../BookSummaryCard/BookSummaryCard";
 import HorizontalCarousel from "../HorizontalCarousel/HorizontalCarousel";
@@ -135,6 +136,25 @@ const BackToFeedButton = () => (
     <p className="explore-end-text">You've seen everything here.</p>
     <a href="/" className="explore-back-btn">Back to Feed</a>
   </div>
+);
+
+/* ─────────────────────────────────────────────────────────────
+   SEO — canonical + noindex for filtered/sorted/searched views.
+   Every /explore variant (sort, category, tag, q) points its
+   canonical back to the bare /explore URL, and gets noindex so
+   Google doesn't try to rank dozens of near-duplicate query
+   combinations. Links on the page are still followed, so the
+   underlying /library/:slug articles still get discovered.
+───────────────────────────────────────────────────────────── */
+const ExploreSeo = ({ hasFilters }) => (
+  <Helmet>
+    <link rel="canonical" href="https://ogonjo.com/explore" />
+    {hasFilters ? (
+      <meta name="robots" content="noindex, follow" />
+    ) : (
+      <meta name="robots" content="index, follow" />
+    )}
+  </Helmet>
 );
 
 /* ─────────────────────────────────────────────────────────────
@@ -463,6 +483,10 @@ const ExplorePage = () => {
 
   const showPersonalised = !searchTerm && !category && tagList.length === 0;
 
+  // True whenever this view is anything other than the plain /explore page —
+  // used to decide whether Google should index this URL or just follow it.
+  const hasFilters = Boolean(searchTerm || category || tagList.length > 0 || sort !== "newest");
+
   // ── Filtered (search/browse) mode ──
   const [items,   setItems]   = useState([]);
   const [related, setRelated] = useState([]);
@@ -681,6 +705,7 @@ const ExplorePage = () => {
     if (!authChecked) return <div className="explore-loading">Loading…</div>;
     return (
       <div className="explore-page">
+        <ExploreSeo hasFilters={false} />
         <h2>Explore</h2>
         <p className="explore-subtitle">Personalised recommendations based on your interests</p>
         <PersonalisedExploreFeed userId={currentUserId} />
@@ -690,6 +715,7 @@ const ExplorePage = () => {
 
   return (
     <div className="explore-page">
+      <ExploreSeo hasFilters={hasFilters} />
       <h2>{renderTitle()}</h2>
 
       {items.length > 0 && (
